@@ -1,0 +1,6 @@
+SaaS connectors go here (Phase 1+):
+- Google Workspace (Calendar, Drive, Gmail)
+- Slack
+- etc.
+
+For Phase 0, integrations are simulated via agent knowledge bases.
