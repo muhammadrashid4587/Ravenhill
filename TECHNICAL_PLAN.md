@@ -113,9 +113,10 @@ This means we don't need to build our own messaging infrastructure. ETO is the n
 
 ---
 
-## Phase 0: The Demo (Weeks 1-5)
+## Phase 0: The Demo (2-Week Sprint — Mar 16-27)
 
 **Goal**: Two agents talking to each other live. Sells the vision in 60 seconds.
+**Ship date**: March 27, 2026. Demo meetings start March 30.
 
 ### What we're building
 
@@ -128,11 +129,10 @@ This means we don't need to build our own messaging infrastructure. ETO is the n
 
 ### Week-by-week
 
-**Week 1**: Repo setup, FastAPI backend, two hardcoded agent instances, Claude API wired up
-**Week 2**: ETO integration for agent-to-agent messaging, agent registry with role/knowledge metadata
-**Week 3**: React UI — chat interface, dual-agent view, approval pop-up component
-**Week 4**: ETO file transfer demo, end-to-end scenario wiring
-**Week 5**: Polish, demo script, edge cases, deploy to Fly.io
+**Week 1 (Mar 16-20)**: Backend end-to-end (agents + Claude + ETO + routing), frontend core (split-screen demo UI, both demos wired up), deploy to Fly.io on Day 1
+**Week 2 (Mar 23-27)**: ETO production integration, visual polish, hardening, production lockdown, demo day
+
+See `IMPLEMENTATION_PLAN.md` for the full day-by-day breakdown.
 
 ### What we're NOT building yet
 

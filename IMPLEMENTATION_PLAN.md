@@ -1,208 +1,278 @@
-# e-agent Implementation Plan
+# e-agent Implementation Plan — 2-Week Sprint
 
 **Team**: Muhammad (CTO), Max (CEO), Likitha (COO)
-**Date**: March 15, 2026
-**Target**: Phase 0 Demo — two agents talking live, sells the vision in 60 seconds
+**Start**: Monday, March 16, 2026
+**Ship date**: Friday, March 27, 2026
+**Target**: Live demo on a public URL — two agents talking, sells the vision in 60 seconds
 
 ---
 
-## Team Roles for Phase 0
+## Philosophy
+
+10 days. One engineer. No fluff.
+
+- Deploy to Fly.io on Day 1 — the live URL exists from the start, not the end.
+- Build the backend and frontend in parallel within the same days, not sequential weeks.
+- ETO is the plan. Redis pub/sub is the fallback. If ETO's sandbox isn't ready by Day 3, switch to the fallback and swap ETO in later — never be blocked on an external dependency.
+- Both demos ship. Knowledge routing (Demo 1) is the priority. File sharing (Demo 2) is the closer. If time runs out, Demo 1 alone is enough to raise money.
+- Every day ends with something demoable. If Muhammad gets hit by a bus on Day 6, whatever's deployed still tells the story.
+
+---
+
+## Team Roles
 
 ### Muhammad (CTO) — Builder
-Owns all engineering. Writes all production code. Makes all technical decisions.
+All engineering. Every line of production code. Sole focus: make the demo work.
 
-### Likitha (COO) — Product & QA & Ops
-Owns the demo experience end-to-end. Defines what the demo *feels* like, tests everything, writes demo scripts, manages the ETO partner relationship day-to-day, and handles operational setup (accounts, environments, tooling access). Can pick up lighter frontend/config work over time.
+### Likitha (COO) — Product, QA, Ops
+Owns the demo *experience*. Writes the script, defines what the agents say, tests every flow, manages ETO coordination, handles all non-coding setup. She is the quality gate — nothing goes live without her running it 10 times.
 
-### Max (CEO) — Business & Fundraising
-Owns the narrative. Uses the demo to pitch investors and design partners. Feeds back what resonates and what doesn't. Runs design partner outreach in parallel with the build.
-
----
-
-## Week 1: Foundation (Mar 17 – Mar 21)
-
-### Muhammad
-- [ ] Initialize monorepo (`packages/api`, `packages/web`, `packages/shared`)
-- [ ] Set up FastAPI backend with project structure
-- [ ] Wire up Claude API (Haiku for routing, Sonnet for reasoning)
-- [ ] Build two hardcoded agent instances ("Sales Rep" + "Finance Analyst")
-- [ ] Basic agent runtime: receives a message, calls Claude, returns a response
-- [ ] PostgreSQL + pgvector setup (Docker Compose for local dev)
-- [ ] Seed data: pre-loaded personas with role metadata and knowledge snippets
-
-### Likitha
-- [ ] Set up project management board (Linear, Notion, or whatever the team uses)
-- [ ] Write detailed persona definitions for both demo agents:
-  - Sales Rep: name, role, what they know, what files they own
-  - Finance Analyst: name, role, what they know, what files they own
-- [ ] Draft v1 of the demo script — the exact conversation flow for both demos
-- [ ] Set up shared dev environment access (GitHub, Fly.io account, API keys)
-- [ ] Coordinate with ETO: get API docs, sandbox access, point of contact for integration questions
-
-### Max
-- [ ] Refine the 60-second pitch narrative around the demo
-- [ ] Start building a target list of 10-15 design partner companies (via Foundry network)
-- [ ] Begin warm outreach to 3-5 potential design partners ("we're building something, want to see it in 4 weeks?")
-
-### Sync
-- **End of week**: 30-min all-hands. Muhammad demos what's running locally. Likitha walks through demo script. Max shares outreach pipeline.
+### Max (CEO) — Narrative, Fundraising, Distribution
+Builds the pitch around the demo. Lines up meetings for Week 3. Listens in on coding sessions to build technical fluency. His job during these 2 weeks: make sure that the moment the demo is ready, there are people waiting to see it.
 
 ---
 
-## Week 2: Inter-Agent Communication (Mar 24 – Mar 28)
+## Day-by-Day: Muhammad (Engineering)
 
-### Muhammad
-- [ ] Integrate ETO SDK/API for agent-to-agent messaging
-- [ ] Implement the inter-agent message format (QUERY, DOC_REQUEST types)
-- [ ] Build agent registry service: stores agent metadata (role, department, knowledge areas)
-- [ ] Implement targeted routing: Agent A's query gets routed to the right agent based on registry lookup
-- [ ] End-to-end flow working in terminal: Agent A asks question → ETO routes → Agent B answers
-- [ ] Basic permission context attached to every message
+### Day 1 — Monday, Mar 16: Boot Everything
 
-### Likitha
-- [ ] Test the ETO integration as it comes online — flag issues immediately
-- [ ] Refine demo script based on what's actually working vs. what's not
-- [ ] Document the exact API contract between our agents and ETO (for the team's reference)
-- [ ] Research and wireframe the approval pop-up UX (screenshot references, sketch in Figma or on paper)
-- [ ] Start drafting FAQ / objection handling doc for Max's investor conversations
+- [ ] Get the API server running locally (`uvicorn main:app --reload`)
+- [ ] Verify Claude API calls work: send a message to sales agent, get a response
+- [ ] Verify both demo agents (Jordan Chen + Karen Park) respond in-character
+- [ ] Deploy the skeleton to Fly.io — even if it's just the `/health` endpoint. Live URL exists from today.
+- [ ] Set up CI: push to main → auto-deploy to Fly.io (GitHub Actions, ~20 min to configure)
 
-### Max
-- [ ] Schedule 3-5 demo meetings for end of Week 5
-- [ ] First pass at pitch deck (even if slides are rough — the demo is the pitch)
-- [ ] Get feedback on positioning from 2-3 trusted Foundry contacts
+**End of day**: You can `curl` the Fly.io URL and get a health check. You can chat with both agents locally via `/docs`.
 
-### Sync
-- **End of week**: Muhammad demos two agents talking via ETO in the terminal. Team validates the message flow matches the demo script.
+### Day 2 — Tuesday, Mar 17: Inter-Agent Messaging
 
----
+- [ ] Build the orchestrator: the brain that takes a user question, classifies intent (Haiku), queries the registry, routes to the right agent, and returns the answer
+- [ ] Wire up the full Demo 1 flow in the backend:
+  - User asks Jordan (Sales): "Who owns Q4 revenue forecast?"
+  - Jordan's agent classifies → QUERY about finance
+  - Registry lookup → finds Karen (Finance)
+  - Message sent to Karen's agent → Karen's agent answers
+  - Answer returned to the user through Jordan
+- [ ] Test with 5+ different queries to make sure routing is reliable
+- [ ] Start ETO integration — if sandbox is live, wire real messaging. If not, use in-memory message passing (swap later).
 
-## Week 3: Frontend (Mar 31 – Apr 4)
+**End of day**: Demo 1 works end-to-end via API calls. You can show it in a terminal.
 
-### Muhammad
-- [ ] Scaffold Next.js app (`packages/web`)
-- [ ] Build chat interface component (message input, message history, typing indicators)
-- [ ] Build dual-agent split-screen view (see both agents side by side)
-- [ ] Connect frontend to FastAPI backend via WebSocket or SSE (real-time message streaming)
-- [ ] Build approval pop-up component (request summary + approve/deny buttons)
-- [ ] Demo 1 working end-to-end in browser: knowledge routing query → answer appears
+### Day 3 — Wednesday, Mar 18: Frontend Core
 
-### Likitha
-- [ ] QA the web UI aggressively — every edge case, every broken state, every confusing label
-- [ ] Write exact demo script v2 with specific questions/responses that showcase the product best
-- [ ] Test on different screen sizes (this will be demoed on projectors, Zoom screenshare, laptops)
-- [ ] Create demo seed data: realistic company names, employee names, document titles
-- [ ] Help style the UI if comfortable (CSS tweaks, copy changes — Muhammad can pair on this)
+- [ ] Build the demo page (`/demo`): split-screen layout with two agent panels
+- [ ] Left panel: "You + Jordan (Sales)" — chat interface where the user talks to their agent
+- [ ] Right panel: "Karen (Finance)" — shows Karen's agent activity (receives query, sends response)
+- [ ] Connect frontend to backend via API calls (polling is fine for now, WebSocket is a nice-to-have)
+- [ ] Real-time feel: show typing indicators and message-by-message rendering
 
-### Max
-- [ ] Review the UI and give feedback from a "what would impress an investor" lens
-- [ ] Finalize pitch deck structure — demo will be embedded/screenshotted into slides
-- [ ] Confirm 3+ demo meetings for Week 5
+**End of day**: Demo 1 works in a browser. Type a question on the left, see the answer flow through both panels.
 
-### Sync
-- **Mid-week**: Quick 15-min check-in. Is the UI telling the right story?
-- **End of week**: Full team walkthrough of Demo 1 in the browser.
+### Day 4 — Thursday, Mar 19: Demo 1 Polish + Approval Backend
 
----
+- [ ] Polish Demo 1: make the inter-agent flow *visible* — show the routing step ("Searching for the right agent..."), show Karen's agent receiving the query, show the answer flowing back
+- [ ] The magic is seeing the agents *talk to each other*. Add visual steps so a non-technical viewer understands what's happening.
+- [ ] Build approval flow backend: when a DOC_REQUEST comes in, create a pending approval, expose it via WebSocket/SSE to the frontend
+- [ ] Start wiring Demo 2 backend: file request → approval created → approval resolved → file "transferred"
 
-## Week 4: File Transfer + Full Scenarios (Apr 7 – Apr 11)
+**End of day**: Demo 1 is polished and impressive in the browser. Approval backend is ready for Demo 2.
 
-### Muhammad
-- [ ] Integrate ETO file transfer for Demo 2 (document sharing flow)
-- [ ] Build the full Demo 2 flow: file request → approval pop-up → file delivered
-- [ ] Wire up both demos as selectable scenarios in the UI
-- [ ] Add visual polish: loading states, success animations, agent avatars/icons
-- [ ] Error handling: graceful fallbacks if ETO is slow or Claude returns unexpected output
-- [ ] Basic observability: structured logging so we can debug demo failures fast
+### Day 5 — Friday, Mar 19: Demo 2 Frontend + Deploy
 
-### Likitha
-- [ ] End-to-end QA of both demo scenarios — run them 20+ times each
-- [ ] Build a "demo run checklist" — everything that needs to be true before a live demo
-- [ ] Time the demos — each scenario should land in under 30 seconds
-- [ ] Create backup plan: what do we show if ETO is down? (pre-recorded fallback?)
-- [ ] Prepare the "how it works" explanation for non-technical audiences (2-3 slides Max can use)
+- [ ] Build the approval pop-up in the demo UI: Karen gets a notification, sees the request summary, clicks Approve/Deny
+- [ ] Wire Demo 2 end-to-end:
+  - User tells Jordan: "Get me the focus group results from Karen's team"
+  - Jordan's agent → DOC_REQUEST → Karen's agent
+  - Karen's panel shows the approval pop-up
+  - Click Approve → file "delivered" → confirmation shown on both sides
+- [ ] Add demo scenario selector: buttons to launch Demo 1 or Demo 2
+- [ ] Deploy current state to Fly.io — both demos should be accessible on the live URL
 
-### Max
-- [ ] Do a practice pitch using the working demo — time it, record it, review it
-- [ ] Share a short video clip or GIF of the demo with warm leads to build hype
-- [ ] Lock in final demo meeting schedule
-
-### Sync
-- **End of week**: Full dress rehearsal. Run both demos back-to-back as if it's a real pitch. Time it. Note every stumble.
+**End of day**: Both demos work on the live URL. Rough around the edges but functional. Team does a Friday walkthrough.
 
 ---
 
-## Week 5: Polish + Deploy + Demo (Apr 14 – Apr 18)
+### Weekend buffer
 
-### Muhammad
-- [ ] Deploy to Fly.io (Docker containerized, environment variables locked down)
-- [ ] Fix every bug from Likitha's QA list
-- [ ] Performance tuning: response times should feel instant (< 2s for routing, < 5s for full answer)
-- [ ] Add a "reset demo" button that clears state for back-to-back demos
-- [ ] Harden: make sure the demo doesn't break if someone types something unexpected
-- [ ] SSL, domain setup (demo.e-agent.ai or similar)
-
-### Likitha
-- [ ] Final QA on production deployment — run full test suite on Fly.io, not just local
-- [ ] Prepare demo environment: seed data loaded, agents initialized, everything warm
-- [ ] Write the "demo day" runbook: step-by-step for whoever is driving the demo
-- [ ] Be on standby during live demos to monitor for issues
-- [ ] Start scoping Phase 1 ops: what design partner onboarding looks like
-
-### Max
-- [ ] Deliver demos to design partner candidates
-- [ ] Collect feedback: what excited them, what confused them, what would make them pay
-- [ ] Start fundraising conversations using demo as proof of concept
-- [ ] Debrief with team: what did the market tell us? Does it change our Phase 1 priorities?
-
-### Sync
-- **Monday**: Final go/no-go on production readiness
-- **Wednesday+**: Live demos begin
-- **Friday**: Full team retro — what worked, what didn't, what's Phase 1
+Muhammad takes a break or knocks out small fixes. No major features on weekends — that's how you burn out in Week 2 when it matters most.
 
 ---
 
-## Weekly Rituals
+### Day 6 — Monday, Mar 23: ETO Integration (Real)
 
-| Ritual | When | Who | Format |
-|--------|------|-----|--------|
-| All-hands sync | Friday 4pm | Everyone | 30 min, demo + blockers + next week |
-| Muhammad ↔ Likitha | Daily standup | Muhammad, Likitha | 10 min async (Slack) or quick call |
-| Max check-in | Tuesday + Thursday | Max + whoever | 15 min, pipeline updates + feedback |
-| Demo dry run | Week 4 Friday | Everyone | 45 min, full dress rehearsal |
+- [ ] If using fallback messaging: swap in real ETO API now that the flow is proven
+- [ ] Verify all inter-agent messages route through ETO with blockchain-verified delivery
+- [ ] ETO file transfer: wire up the real file transfer for Demo 2 (replaces simulated transfer)
+- [ ] Handle ETO edge cases: timeouts, retries, error states
+- [ ] If ETO integration hits problems, keep the fallback working and flag to Likitha to coordinate with ETO team
+
+**End of day**: Inter-agent communication runs through ETO. If ETO is still blocked, fallback works and the demo is unaffected.
+
+### Day 7 — Tuesday, Mar 24: Visual Polish
+
+- [ ] Agent avatars/icons for Jordan and Karen
+- [ ] Loading states, typing animations, success confirmations
+- [ ] Message transitions and smooth scrolling
+- [ ] "Powered by e-agent" branding, clean typography
+- [ ] Mobile/responsive check — demo needs to look good on Zoom screenshare
+- [ ] Dark mode polish (already dark — refine it)
+
+**End of day**: The demo looks like a product, not a prototype.
+
+### Day 8 — Wednesday, Mar 25: Hardening
+
+- [ ] Fix every bug on Likitha's QA list (she's been testing since Day 3)
+- [ ] Handle unexpected inputs: what if someone types gibberish, SQL injection, a 5000-word message?
+- [ ] Graceful error states: if Claude is slow, if ETO is down, show a clean error, not a crash
+- [ ] Add "Reset Demo" button — clears all state for back-to-back demos
+- [ ] Response time optimization: target < 3s for routing, < 5s for full answer
+- [ ] Structured logging so you can debug issues during a live demo from your phone
+
+**End of day**: Demo is bulletproof. Likitha can't break it.
+
+### Day 9 — Thursday, Mar 26: Production Lockdown
+
+- [ ] Final deploy to Fly.io with production environment variables
+- [ ] SSL + custom domain (demo.e-agent.ai or similar)
+- [ ] Pre-warm: make sure first request isn't slow (cold start issue on Fly.io)
+- [ ] Run both demos 10 times on the live URL — every run must be clean
+- [ ] Record a backup video of both demos in case of live demo failure
+- [ ] Fix any last issues
+
+**End of day**: Production is locked. No more code changes unless something is broken.
+
+### Day 10 — Friday, Mar 27: Demo Day
+
+- [ ] Morning: full dress rehearsal with Max driving the demo (Muhammad watches, doesn't touch the keyboard)
+- [ ] Fix anything that breaks during rehearsal (last chance)
+- [ ] Afternoon: Max delivers first real demo (or team does together)
+- [ ] Team retro: what worked, what didn't, what did the audience react to
+
+**End of day**: The demo has been delivered at least once to a real audience. Phase 1 planning begins.
 
 ---
 
-## How Max Stays in the Loop
+## Day-by-Day: Likitha (Product, QA, Ops)
 
-Max wants visibility into the technical side — not just the product, but the engineering. Here's how:
-1. **Friday all-hands**: See the product evolve every week
-2. **Coding "listen-in" sessions**: Muhammad streams or shares screen 1-2x/week while building. Max can watch, ask questions, absorb context. No obligation to contribute — just soak it in. This builds Max's technical intuition for investor conversations ("let me tell you how this actually works under the hood").
-3. **Demo recordings**: Muhammad or Likitha screen-record key milestones and drop them in Slack
-4. **Architecture walkthrough**: Muhammad does a 20-min whiteboard session in Week 1 explaining the system diagram. Max doesn't need to remember it all — just enough to speak credibly.
-5. **Weekly bullet summary**: Likitha sends a 5-bullet "here's where we are" every Friday after sync
-6. **Pitch feedback loop**: Max brings back market signal, team adjusts priorities
+### Days 1-2
+- [ ] Set up project board (Linear/Notion) with these exact tasks
+- [ ] Write the demo script v1 — the *exact* questions to ask, the *exact* responses expected:
+  - Demo 1: "Who owns Q4 revenue forecast?" → routing → answer
+  - Demo 2: "Get me the focus group results from Karen's team" → approval → file shared
+- [ ] Coordinate with ETO: confirm sandbox access, get API docs, establish a direct Slack/WhatsApp line with their eng contact
+- [ ] Set up Fly.io account, configure environment variables, get domain ready
+- [ ] Refine agent personas — make Jordan and Karen feel like real people, not templates
+
+### Days 3-5
+- [ ] Start QA the moment the frontend is up (Day 3) — test in Chrome, Safari, on a projector-sized window
+- [ ] Log every bug, weird behavior, or confusing UX in the project board
+- [ ] Refine demo script v2 based on what actually works vs. what was planned
+- [ ] Test 10+ different questions for Demo 1 — find the ones that produce the most impressive responses
+- [ ] Create the "golden path" — the 3-4 specific inputs that make the demo sing every time
+- [ ] Draft the FAQ/objection doc for Max's conversations
+
+### Days 6-8
+- [ ] QA the ETO integration — verify messages are actually going through ETO, not the fallback
+- [ ] Stress test: run both demos 20+ times. Note every failure.
+- [ ] Time the demos — each scenario should complete in < 30 seconds
+- [ ] Write the "demo day" runbook: step-by-step instructions so Max can drive without Muhammad
+- [ ] Prepare the "how it works" explainer (2-3 slides for non-technical audiences)
+- [ ] Create backup plan: screen recording of both demos in case live demo fails
+
+### Days 9-10
+- [ ] Final QA on production URL — run the full demo on the live site, not localhost
+- [ ] Verify the reset button works for back-to-back demos
+- [ ] Be on standby during Max's first live demo to flag issues in real-time
+- [ ] Document every piece of audience feedback for Phase 1 planning
 
 ---
 
-## Definition of Done (Phase 0)
+## Day-by-Day: Max (CEO)
 
-The demo is ready when ALL of these are true:
-- [ ] Two agents with distinct personas visible in a split-screen web UI
-- [ ] Demo 1: Type a question → agent routes it → answer appears in < 5 seconds
-- [ ] Demo 2: Request a file → approval pop-up appears → one-click approve → file delivered
-- [ ] All inter-agent communication goes through ETO (not mocked)
-- [ ] Deployed to a public URL that works on any laptop/projector
-- [ ] Demo can be reset and re-run in < 10 seconds
-- [ ] Non-technical person (Max) can drive the demo without Muhammad present
+### Days 1-3
+- [ ] Lock in 3-5 demo meetings for Week 3 (March 30+) via Foundry network
+- [ ] First pass at pitch deck — the demo is the centerpiece, slides are context around it
+- [ ] 20-min architecture walkthrough with Muhammad (Day 1 or 2) — learn enough to explain the system credibly
+- [ ] Listen in on Muhammad's coding session (at least 1 hour) — absorb how the system works
+
+### Days 4-7
+- [ ] Review the live demo on Day 5. Give feedback: "what would impress an investor?"
+- [ ] Refine pitch deck based on the real demo (replace mockups with screenshots/recordings)
+- [ ] Get feedback on positioning from 2-3 Foundry contacts — share a 30-second screen recording
+- [ ] Confirm all demo meetings are scheduled
+
+### Days 8-10
+- [ ] Practice the full pitch 3 times with the live demo
+- [ ] Do a dress rehearsal on Day 9 where Max drives the entire demo
+- [ ] Deliver the first real demo on Day 10
+- [ ] Collect feedback: what excited them, what confused them, what would they pay for
 
 ---
 
-## What Comes After Phase 0
+## Daily Syncs
 
-Decisions to make based on demo feedback:
-- Which demo scenario resonated most? That's the Phase 1 entry wedge.
-- Did design partners care more about the personal assistant or the multi-agent layer?
-- What integrations did they ask about first? (Google, Slack, etc.)
-- Is the deployment motion bottoms-up (team of 10) or top-down (IT buy-in)?
+| What | When | Who | Format |
+|------|------|-----|--------|
+| Morning standup | 9:30am, 5 min | Muhammad + Likitha | Async Slack or quick call: what I'm building today, what I need |
+| End-of-day demo | 5:00pm, 10 min | Muhammad + Likitha | Screen recording or quick call: here's what works now |
+| Max check-in | Every other day | Max + Muhammad or Likitha | 15 min: pipeline update, any feedback from contacts |
+| Friday walkthrough | Friday 4pm | Everyone | 30 min: run the demo together, align on next week |
 
-Phase 1 planning starts Week 5 Friday retro.
+---
+
+## Risk Mitigations
+
+| Risk | Mitigation |
+|------|-----------|
+| ETO sandbox not ready | Build on Redis pub/sub fallback first. Swap ETO in on Day 6. Demo works either way. |
+| Claude API latency spikes | Cache common demo queries. Pre-warm the connection. Have a "demo mode" that uses cached responses as last resort. |
+| Fly.io cold starts | Keep min_machines_running=1 in production. Pre-warm before demos. |
+| Demo breaks live | Likitha has a screen recording backup. Max can narrate over the video. |
+| Muhammad gets sick/blocked | Everything is deployed daily. Whatever is live on Day N-1 is the demo. |
+| Audience asks about integrations | "Phase 1 — we're starting with [Google/Slack] based on design partner feedback." Likitha has the FAQ doc. |
+
+---
+
+## Scope: What's IN vs. OUT
+
+### IN (must ship)
+- Two agents with distinct, believable personas
+- Demo 1: Knowledge routing — ask a question, see it route, get an answer
+- Demo 2: File sharing — request a file, approval pop-up, one-click approve
+- Split-screen UI showing both agents
+- Inter-agent communication through ETO (or working fallback)
+- Live on a public URL
+- Reset button for back-to-back demos
+
+### OUT (not in these 2 weeks)
+- Real SaaS integrations (Google, Slack)
+- Multi-tenant / auth / IdP sync
+- Admin dashboard
+- Voice interface
+- Database persistence (in-memory is fine for demo)
+- Mobile app
+- More than 2 agents
+
+---
+
+## Definition of Done
+
+The demo ships when ALL of these are true:
+- [ ] Two agents visible in split-screen web UI with distinct personas
+- [ ] Demo 1: question → routing → answer, visible flow, < 5 seconds
+- [ ] Demo 2: file request → approval pop-up → approve → delivered, < 10 seconds
+- [ ] Inter-agent messages route through ETO (blockchain-verified)
+- [ ] Deployed to a public URL with SSL
+- [ ] Demo resets and re-runs cleanly in < 10 seconds
+- [ ] Max can drive the entire demo without Muhammad present
+- [ ] Likitha has run both demos 20+ times with zero failures
+
+---
+
+## What Happens on March 30
+
+Demo meetings begin. Based on feedback:
+- Which demo resonated more? That's the Phase 1 wedge.
+- What integrations did they ask for first?
+- Bottoms-up or top-down deployment?
+- Begin Phase 1 planning with real market signal.
