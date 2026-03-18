@@ -40,3 +40,26 @@ export async function submitApproval(approvalId: string, approved: boolean) {
   });
   return res.json();
 }
+
+export async function orchestrate(agentId: string, message: string) {
+  const res = await fetch(`${API_BASE}/api/orchestrate/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, agent_id: agentId }),
+  });
+  return res.json();
+}
+
+export async function completeDocRequest(approvalId: string) {
+  const res = await fetch(
+    `${API_BASE}/api/orchestrate/approval/${approvalId}/complete`
+  );
+  return res.json();
+}
+
+export async function resetDemo() {
+  const res = await fetch(`${API_BASE}/api/orchestrate/reset`, {
+    method: "POST",
+  });
+  return res.json();
+}

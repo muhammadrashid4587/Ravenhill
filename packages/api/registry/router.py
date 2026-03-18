@@ -15,16 +15,10 @@ from agents.models import Agent
 router = APIRouter()
 
 
-@router.get("/", response_model=list[Agent])
-async def list_registry():
-    """List all registered agents and their metadata."""
-    return list(DEMO_AGENTS.values())
-
-
-@router.get("/search")
-async def search_agents(query: str) -> list[Agent]:
+def search_agents_by_query(query: str) -> list[Agent]:
     """Find agents whose knowledge areas match a query.
 
+    Callable directly by the orchestrator — no HTTP needed.
     TODO: Replace keyword matching with semantic search (pgvector).
     """
     results = []
@@ -37,6 +31,18 @@ async def search_agents(query: str) -> list[Agent]:
             results.append(agent)
 
     return results
+
+
+@router.get("/", response_model=list[Agent])
+async def list_registry():
+    """List all registered agents and their metadata."""
+    return list(DEMO_AGENTS.values())
+
+
+@router.get("/search")
+async def search_agents(query: str) -> list[Agent]:
+    """HTTP endpoint wrapping search_agents_by_query."""
+    return search_agents_by_query(query)
 
 
 @router.get("/{agent_id}", response_model=Agent)

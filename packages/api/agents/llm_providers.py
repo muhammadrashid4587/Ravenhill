@@ -1,0 +1,186 @@
+"""
+LLM provider abstraction — tries Cerebras, Groq, Anthropic, Gemini, then mock.
+
+Single entry point: `call_llm()`.  Provider clients are lazily initialized
+so missing SDKs or empty keys never cause import-time errors.
+
+Cerebras is primary — ~2000 tok/s on wafer-scale chips, free tier, Llama 3.3 70B.
+"""
+
+import logging
+
+from config import settings
+
+log = logging.getLogger("llm")
+
+# Model mapping per provider and tier
+_MODELS = {
+    "cerebras": {"fast": "llama3.1-8b", "reasoning": "qwen-3-235b-a22b-instruct-2507"},
+    "groq": {"fast": "llama-3.3-70b-versatile", "reasoning": "llama-3.3-70b-versatile"},
+    "anthropic": {"fast": "claude-haiku-4-5-20251001", "reasoning": "claude-sonnet-4-5-20250514"},
+    "gemini": {"fast": "gemini-2.5-flash", "reasoning": "gemini-2.5-flash"},
+}
+
+# Provider order for "auto" mode — fastest free tiers first
+_AUTO_ORDER = ["cerebras", "groq", "anthropic", "gemini"]
+
+# Providers disabled at runtime (auth failure, missing key, etc.)
+_disabled: set[str] = set()
+
+# Lazy-initialized clients
+_clients: dict[str, object] = {}
+
+
+def _has_key(provider: str) -> bool:
+    key = {
+        "anthropic": settings.anthropic_api_key,
+        "groq": settings.groq_api_key,
+        "gemini": settings.gemini_api_key,
+        "cerebras": settings.cerebras_api_key,
+    }.get(provider, "")
+    return bool(key) and not key.startswith("your-")
+
+
+def get_active_provider() -> str:
+    """Return which provider will actually be used right now."""
+    prov = settings.llm_provider
+    if prov == "mock":
+        return "mock"
+    if prov != "auto":
+        if _has_key(prov) and prov not in _disabled:
+            return prov
+        return "mock"
+    for p in _AUTO_ORDER:
+        if _has_key(p) and p not in _disabled:
+            return p
+    return "mock"
+
+
+# ---- Cerebras ----
+
+async def _call_cerebras(
+    system: str, user_message: str, model: str, max_tokens: int, json_mode: bool
+) -> str:
+    if "cerebras" not in _clients:
+        from cerebras.cloud.sdk import AsyncCerebras
+        _clients["cerebras"] = AsyncCerebras(api_key=settings.cerebras_api_key)
+    client = _clients["cerebras"]
+    kwargs: dict = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_message},
+        ],
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    chat = await client.chat.completions.create(**kwargs)
+    return chat.choices[0].message.content
+
+
+# ---- Groq ----
+
+async def _call_groq(
+    system: str, user_message: str, model: str, max_tokens: int, json_mode: bool
+) -> str:
+    if "groq" not in _clients:
+        from groq import AsyncGroq
+        _clients["groq"] = AsyncGroq(api_key=settings.groq_api_key)
+    client = _clients["groq"]
+    kwargs: dict = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_message},
+        ],
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    chat = await client.chat.completions.create(**kwargs)
+    return chat.choices[0].message.content
+
+
+# ---- Anthropic ----
+
+async def _call_anthropic(
+    system: str, user_message: str, model: str, max_tokens: int, json_mode: bool
+) -> str:
+    if "anthropic" not in _clients:
+        import anthropic
+        _clients["anthropic"] = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    client = _clients["anthropic"]
+    response = await client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user_message}],
+    )
+    return response.content[0].text
+
+
+# ---- Gemini ----
+
+async def _call_gemini(
+    system: str, user_message: str, model: str, max_tokens: int, json_mode: bool
+) -> str:
+    if "gemini" not in _clients:
+        from google import genai
+        _clients["gemini"] = genai.Client(api_key=settings.gemini_api_key)
+    client = _clients["gemini"]
+    config: dict = {"system_instruction": system, "max_output_tokens": max_tokens}
+    if json_mode:
+        config["response_mime_type"] = "application/json"
+    response = await client.aio.models.generate_content(
+        model=model,
+        contents=user_message,
+        config=config,
+    )
+    return response.text
+
+
+# ---- Dispatcher ----
+
+_CALLERS = {
+    "cerebras": _call_cerebras,
+    "groq": _call_groq,
+    "anthropic": _call_anthropic,
+    "gemini": _call_gemini,
+}
+
+
+async def call_llm(
+    system: str,
+    user_message: str,
+    model_tier: str = "fast",
+    max_tokens: int = 1024,
+    json_mode: bool = False,
+) -> str | None:
+    """Call the best available LLM provider. Returns None when all fail (use mock)."""
+    prov = settings.llm_provider
+
+    if prov == "mock":
+        return None
+
+    providers = _AUTO_ORDER if prov == "auto" else [prov]
+
+    for p in providers:
+        if p in _disabled or not _has_key(p):
+            continue
+        model = _MODELS[p].get(model_tier, _MODELS[p]["fast"])
+        caller = _CALLERS[p]
+        try:
+            result = await caller(system, user_message, model, max_tokens, json_mode)
+            log.info(f"[llm] Using {p}/{model}")
+            return result
+        except Exception as e:
+            err = str(e).lower()
+            if any(kw in err for kw in ("auth", "invalid", "credit", "quota", "api_key", "403")):
+                _disabled.add(p)
+                log.warning(f"[llm] {p} disabled: {e}")
+            else:
+                log.warning(f"[llm] {p} error (will try next): {e}")
+
+    log.info("[llm] All providers exhausted, falling back to mock")
+    return None

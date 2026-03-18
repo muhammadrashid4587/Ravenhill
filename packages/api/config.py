@@ -1,3 +1,5 @@
+"""App-wide configuration — reads from environment variables and optional .env file."""
+
 from pydantic_settings import BaseSettings
 
 
@@ -5,6 +7,7 @@ class Settings(BaseSettings):
     # App
     app_env: str = "development"
     api_port: int = 8000
+    web_port: int = 3000
 
     # Claude API
     anthropic_api_key: str = ""
@@ -15,11 +18,24 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379"
 
+    # LLM provider: "cerebras" | "groq" | "gemini" | "anthropic" | "auto" | "mock"
+    llm_provider: str = "auto"
+    cerebras_api_key: str = ""
+    groq_api_key: str = ""
+    gemini_api_key: str = ""
+
     # ETO
     eto_api_key: str = ""
     eto_api_url: str = "https://api.eto.markets/v1"
 
-    model_config = {"env_file": "../../.env"}
+    # Frontend
+    next_public_api_url: str = "http://localhost:8000"
+
+    # env_file is a best-effort load: pydantic-settings v2 silently skips it
+    # when the file doesn't exist (e.g. on Fly.io where secrets are injected
+    # as real env vars).  The relative path works when running from repo root
+    # via `cd packages/api && uvicorn ...`.
+    model_config = {"env_file": "../../.env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

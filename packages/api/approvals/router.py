@@ -52,6 +52,15 @@ async def list_pending():
     return [r for r in _pending_approvals.values() if r.status == ApprovalStatus.PENDING]
 
 
+@router.get("/{approval_id}", response_model=ApprovalRequest)
+async def get_approval(approval_id: UUID):
+    """Get an approval request by ID (for polling status)."""
+    request = _pending_approvals.get(approval_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    return request
+
+
 @router.post("/{approval_id}/decide", response_model=ApprovalRequest)
 async def decide(approval_id: UUID, decision: ApprovalDecision):
     """Approve or deny a request."""

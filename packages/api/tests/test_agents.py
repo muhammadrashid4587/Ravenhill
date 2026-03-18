@@ -1,6 +1,5 @@
 """Basic agent tests."""
 
-from agents.models import Agent
 from agents.seed import DEMO_AGENTS, SALES_AGENT_ID, FINANCE_AGENT_ID
 
 
