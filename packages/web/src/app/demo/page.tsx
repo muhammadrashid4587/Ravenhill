@@ -244,16 +244,13 @@ export default function DemoPage() {
   const rightMessages = messages.filter((m) => m.side === "right");
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-white">
+    <div className="flex flex-col h-screen bg-gray-950 text-white -m-0">
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
-          <a href="/" className="text-gray-500 hover:text-white transition text-sm">
-            &larr;
-          </a>
           <div>
-            <h1 className="text-base font-semibold">e-agent</h1>
-            <p className="text-[11px] text-gray-500">Multi-agent orchestration demo</p>
+            <h1 className="text-base font-semibold">Chat Demo</h1>
+            <p className="text-[11px] text-gray-500">Multi-agent orchestration</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
