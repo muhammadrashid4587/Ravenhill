@@ -9,6 +9,7 @@ import {
   Activity,
   Settings,
   Zap,
+  ShieldAlert,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/agents", label: "Agents", icon: Users },
   { href: "/demo", label: "Chat Demo", icon: MessageSquare },
   { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/audit", label: "Audit Log", icon: ShieldAlert },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -31,8 +33,7 @@ export default function Sidebar() {
             <Zap className="w-4 h-4 text-white" />
           </div>
           <div>
-            <div className="text-sm font-semibold text-white">E-Agent</div>
-            <div className="text-[10px] text-gray-500">Ravenhill</div>
+            <div className="text-sm font-semibold text-white">Ravenhill</div>
           </div>
         </Link>
       </div>

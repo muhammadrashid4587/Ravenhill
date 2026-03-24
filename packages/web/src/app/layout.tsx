@@ -3,7 +3,7 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "E-Agent | Ravenhill",
+  title: "Ravenhill",
   description: "AI-powered productivity agent for organizations",
 };
 

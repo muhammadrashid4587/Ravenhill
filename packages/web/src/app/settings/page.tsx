@@ -20,7 +20,7 @@ export default function SettingsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold mb-1">Settings</h1>
         <p className="text-sm text-gray-500">
-          Configure your E-Agent instance
+          Configure your Ravenhill instance
         </p>
       </div>
 

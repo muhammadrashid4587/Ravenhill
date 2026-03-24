@@ -5,6 +5,7 @@ import {
   Users,
   MessageSquare,
   ShieldCheck,
+  ShieldAlert,
   Zap,
   ArrowRight,
   Activity,
@@ -146,6 +147,13 @@ export default function Dashboard() {
                 <Activity className="w-4 h-4 text-gray-400" />
                 <span className="text-gray-300">Activity Log</span>
               </Link>
+              <Link
+                href="/audit"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800/50 border border-gray-800 hover:border-gray-700 transition text-sm"
+              >
+                <ShieldAlert className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-300">Audit & Privacy</span>
+              </Link>
             </div>
           </div>
 
@@ -166,9 +174,9 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">ETO Messaging</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-800">
-                  Stubbed
+                <span className="text-xs text-gray-400">Hashmap Messaging</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-900/50 text-green-400 border border-green-800">
+                  Active
                 </span>
               </div>
             </div>

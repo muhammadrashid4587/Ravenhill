@@ -1,5 +1,5 @@
 /**
- * API client for the e-agent backend.
+ * API client for the Ravenhill backend.
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -61,5 +61,26 @@ export async function resetDemo() {
   const res = await fetch(`${API_BASE}/api/orchestrate/reset`, {
     method: "POST",
   });
+  return res.json();
+}
+
+export async function fetchAuditLog(params?: {
+  agent?: string;
+  action?: string;
+  classification?: string;
+  status?: string;
+}) {
+  const query = new URLSearchParams();
+  if (params?.agent) query.set("agent", params.agent);
+  if (params?.action) query.set("action", params.action);
+  if (params?.classification) query.set("classification", params.classification);
+  if (params?.status) query.set("status", params.status);
+  const qs = query.toString();
+  const res = await fetch(`${API_BASE}/api/audit${qs ? `?${qs}` : ""}`);
+  return res.json();
+}
+
+export async function fetchAccessRules() {
+  const res = await fetch(`${API_BASE}/api/audit/access-rules`);
   return res.json();
 }
