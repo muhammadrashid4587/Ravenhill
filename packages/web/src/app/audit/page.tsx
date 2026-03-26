@@ -264,6 +264,20 @@ const ACCESS_RULES: AccessRule[] = [
     resources: ["Employee Records", "Onboarding Docs", "Benefits"],
     restricted: ["Financial Data", "Sales Pipeline"],
   },
+  {
+    agent: "Alex Rivera",
+    department: "Marketing",
+    level: "write",
+    resources: ["Campaign Tracker", "Survey Results", "Brand Assets"],
+    restricted: ["Salary Data", "Financial Statements"],
+  },
+  {
+    agent: "Priya Sharma",
+    department: "Product",
+    level: "write",
+    resources: ["Product Roadmap", "API Specs", "User Research"],
+    restricted: ["HR Records", "Board Decks"],
+  },
 ];
 
 /* ── Page ────────────────────────────────────────────────────────── */
@@ -323,7 +337,51 @@ export default function AuditPage() {
             <ShieldAlert className="w-4 h-4 text-purple-500" />
           </div>
           <div className="text-2xl font-semibold text-purple-400">{sensitiveCount}</div>
-          <div className="text-[10px] text-gray-500 mt-1">Confidential + Restricted</div>
+          <div className="text-[10px] text-gray-500 mt-1 mb-2">Confidential + Restricted</div>
+          {/* Bar chart: allowed vs denied for sensitive access */}
+          {(() => {
+            const sensitive = AUDIT_DATA.filter(
+              (e) => e.classification === "restricted" || e.classification === "confidential"
+            );
+            const allowed = sensitive.filter((e) => e.status === "allowed").length;
+            const denied = sensitive.filter((e) => e.status === "denied").length;
+            const flagged = sensitive.filter((e) => e.status === "flagged").length;
+            const total = sensitive.length || 1;
+            return (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-gray-500 w-12">Allowed</span>
+                  <div className="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-green-500 rounded-full"
+                      style={{ width: `${(allowed / total) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-green-400 w-4 text-right">{allowed}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-gray-500 w-12">Denied</span>
+                  <div className="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-red-500 rounded-full"
+                      style={{ width: `${(denied / total) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-red-400 w-4 text-right">{denied}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-gray-500 w-12">Flagged</span>
+                  <div className="flex-1 bg-gray-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-yellow-500 rounded-full"
+                      style={{ width: `${(flagged / total) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-yellow-400 w-4 text-right">{flagged}</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
