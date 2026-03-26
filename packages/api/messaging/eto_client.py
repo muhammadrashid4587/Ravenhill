@@ -1,12 +1,7 @@
 """ETO integration client — handles agent-to-agent messaging via ETO infrastructure.
 
-ETO (eto.markets) is the inter-agent backbone:
-- Messages: all agent-to-agent communication routes through ETO
-- Files: transfers up to 80GB, blockchain-verified delivery
-- Payments: cross-chain settlement for agent transactions
-
-When ETO_API_KEY is set to a real key, messages are sent to the ETO API.
-Otherwise, messages are processed locally and logged to the ledger.
+Messages are always persisted to the database for observability.
+When ETO_API_KEY is set, messages are also sent to the ETO API.
 """
 
 import logging
@@ -18,14 +13,33 @@ from messaging.models import InterAgentMessage, MessageResponse
 
 log = logging.getLogger("eto")
 
-# In-memory ledger — tracks all inter-agent messages for observability.
-# Phase 1 moves this to Postgres.  The ledger is always written to,
-# regardless of whether ETO is live or stubbed.
-message_ledger: list[dict] = []
-
 
 def _eto_is_live() -> bool:
     return bool(settings.eto_api_key) and not settings.eto_api_key.startswith("your-")
+
+
+async def _persist_ledger_entry(entry: dict):
+    """Write a ledger entry to the database."""
+    import db
+    from db import MessageLedgerRow
+
+    async with db.async_session() as session:
+        row = MessageLedgerRow(
+            message_id=entry.get("message_id"),
+            trace_id=entry.get("trace_id"),
+            type=entry.get("type"),
+            from_agent=entry.get("from_agent"),
+            to_agent=entry.get("to_agent"),
+            intent=entry.get("intent"),
+            requires_approval=entry.get("requires_approval", False),
+            eto_tx_id=entry.get("eto_tx_id"),
+            status=entry.get("status", "pending"),
+            in_reply_to=entry.get("in_reply_to"),
+            content=entry.get("content"),
+            payload=entry.get("payload"),
+        )
+        session.add(row)
+        await session.commit()
 
 
 class ETOClient:
@@ -75,15 +89,15 @@ class ETOClient:
                 data = resp.json()
                 entry["eto_tx_id"] = data.get("tx_id")
                 entry["status"] = "delivered"
-                log.info(f"[eto] Message sent via ETO: {entry['message_id']} tx={entry['eto_tx_id']}")
+                log.info(f"[eto] Message sent via ETO: {entry['message_id']}")
             except Exception as e:
                 entry["status"] = "delivered_local"
                 log.warning(f"[eto] ETO send failed, delivered locally: {e}")
         else:
             entry["status"] = "delivered_local"
-            log.info(f"[eto] Message delivered locally: {entry['message_id']} ({message.type.value})")
+            log.info(f"[eto] Message delivered locally: {entry['message_id']}")
 
-        message_ledger.append(entry)
+        await _persist_ledger_entry(entry)
         return {
             "status": entry["status"],
             "message_id": entry["message_id"],
@@ -97,6 +111,8 @@ class ETOClient:
             "message_id": str(response.message_id),
             "in_reply_to": str(response.in_reply_to),
             "from_agent": str(response.from_agent),
+            "content": response.content,
+            "payload": response.payload,
             "status": "delivered_local",
             "eto_tx_id": None,
         }
@@ -118,7 +134,7 @@ class ETOClient:
             except Exception as e:
                 log.warning(f"[eto] ETO response failed, recorded locally: {e}")
 
-        message_ledger.append(entry)
+        await _persist_ledger_entry(entry)
         return entry
 
     async def request_file(self, from_agent: str, to_agent: str, file_description: str) -> dict:
@@ -127,7 +143,7 @@ class ETOClient:
             "type": "file_request",
             "from_agent": from_agent,
             "to_agent": to_agent,
-            "file_description": file_description,
+            "intent": file_description,
             "status": "pending_approval",
             "eto_tx_id": None,
         }
@@ -147,7 +163,7 @@ class ETOClient:
             except Exception as e:
                 log.warning(f"[eto] ETO file request failed, handled locally: {e}")
 
-        message_ledger.append(entry)
+        await _persist_ledger_entry(entry)
         return entry
 
     async def close(self):

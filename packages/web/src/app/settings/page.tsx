@@ -2,16 +2,31 @@
 
 import { useState } from "react";
 import { Save } from "lucide-react";
+import { fetchHealth } from "@/lib/api";
 
 export default function SettingsPage() {
   const [apiUrl, setApiUrl] = useState("http://localhost:8000");
   const [approvalRequired, setApprovalRequired] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [connStatus, setConnStatus] = useState<
+    "idle" | "testing" | "ok" | "fail"
+  >("idle");
 
   const handleSave = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const testConnection = async () => {
+    setConnStatus("testing");
+    try {
+      await fetchHealth();
+      setConnStatus("ok");
+    } catch {
+      setConnStatus("fail");
+    }
+    setTimeout(() => setConnStatus("idle"), 3000);
   };
 
   return (
@@ -20,7 +35,7 @@ export default function SettingsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold mb-1">Settings</h1>
         <p className="text-sm text-gray-500">
-          Configure your E-Agent instance
+          Configure your Ravenhill instance
         </p>
       </div>
 
@@ -42,6 +57,19 @@ export default function SettingsPage() {
               <p className="text-[10px] text-gray-600 mt-1">
                 The FastAPI backend URL. Default: http://localhost:8000
               </p>
+              <button
+                onClick={testConnection}
+                disabled={connStatus === "testing"}
+                className="mt-2 text-xs px-3 py-1.5 rounded-lg border border-gray-700 hover:border-gray-600 transition disabled:opacity-50"
+              >
+                {connStatus === "testing"
+                  ? "Testing..."
+                  : connStatus === "ok"
+                    ? "Connected!"
+                    : connStatus === "fail"
+                      ? "Connection failed"
+                      : "Test Connection"}
+              </button>
             </div>
           </div>
         </section>

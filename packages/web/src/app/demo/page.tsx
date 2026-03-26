@@ -249,8 +249,8 @@ export default function DemoPage() {
       <header className="border-b border-gray-800 px-6 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <div>
-            <h1 className="text-base font-semibold">Chat Demo</h1>
-            <p className="text-[11px] text-gray-500">Multi-agent orchestration</p>
+            <h1 className="text-base font-semibold">Ravenhill</h1>
+            <p className="text-[11px] text-gray-500">Multi-agent orchestration demo</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

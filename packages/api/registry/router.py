@@ -1,34 +1,51 @@
-"""Agent Registry — discovery service for finding the right agent to answer a query.
-
-The registry knows every agent's role, department, and knowledge areas.
-When Agent A asks a question, the registry narrows it down to the 1-5 agents
-most likely to have the answer (targeted routing, not broadcast).
-"""
+"""Agent Registry — discovery service for finding the right agent, backed by Postgres."""
 
 from uuid import UUID
 
 from fastapi import APIRouter
+from sqlalchemy import select
 
-from agents.seed import DEMO_AGENTS
 from agents.models import Agent
+import db
+from db import AgentRow
 
 router = APIRouter()
 
 
-def search_agents_by_query(query: str) -> list[Agent]:
+def _row_to_agent(row: AgentRow) -> Agent:
+    return Agent(
+        id=row.id,
+        name=row.name,
+        role=row.role,
+        department=row.department,
+        knowledge_areas=row.knowledge_areas or [],
+        knowledge_base=row.knowledge_base or "",
+        scopes=row.scopes or [],
+        is_active=row.is_active,
+        created_at=row.created_at,
+    )
+
+
+async def search_agents_by_query(query: str) -> list[Agent]:
     """Find agents whose knowledge areas match a query.
 
-    Callable directly by the orchestrator — no HTTP needed.
     TODO: Replace keyword matching with semantic search (pgvector).
     """
-    results = []
     query_lower = query.lower()
+    words = query_lower.split()
 
-    for agent in DEMO_AGENTS.values():
-        # Simple keyword match against knowledge areas and role
-        searchable = " ".join(agent.knowledge_areas + [agent.role, agent.department]).lower()
-        if any(word in searchable for word in query_lower.split()):
-            results.append(agent)
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.is_active.is_(True))
+        )
+        rows = result.scalars().all()
+
+    results = []
+    for row in rows:
+        areas = row.knowledge_areas or []
+        searchable = " ".join(areas + [row.role, row.department]).lower()
+        if any(word in searchable for word in words):
+            results.append(_row_to_agent(row))
 
     return results
 
@@ -36,16 +53,25 @@ def search_agents_by_query(query: str) -> list[Agent]:
 @router.get("/", response_model=list[Agent])
 async def list_registry():
     """List all registered agents and their metadata."""
-    return list(DEMO_AGENTS.values())
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.is_active.is_(True)).order_by(AgentRow.name)
+        )
+        rows = result.scalars().all()
+        return [_row_to_agent(r) for r in rows]
 
 
 @router.get("/search")
 async def search_agents(query: str) -> list[Agent]:
     """HTTP endpoint wrapping search_agents_by_query."""
-    return search_agents_by_query(query)
+    return await search_agents_by_query(query)
 
 
 @router.get("/{agent_id}", response_model=Agent)
 async def get_agent_metadata(agent_id: UUID):
     """Get an agent's registry entry."""
-    return DEMO_AGENTS.get(agent_id)
+    async with db.async_session() as session:
+        row = await session.get(AgentRow, agent_id)
+        if not row:
+            return None
+        return _row_to_agent(row)

@@ -1,8 +1,8 @@
-# CLAUDE.md — e-agent
+# CLAUDE.md — Ravenhill
 
 ## What This Is
 
-e-agent is a per-employee AI agent platform for enterprise. Every employee gets a personal agent; agents talk to each other to handle work that currently requires human chains (questions, file requests, status updates). ETO (eto.markets) is the inter-agent communication backbone for messaging, payments, and file transfer.
+Ravenhill (repo: `e-agent`) is a per-employee AI agent platform for enterprise. Every employee gets a personal agent; agents talk to each other to handle work that currently requires human chains (questions, file requests, status updates). ETO (eto.markets) is the inter-agent communication backbone for messaging, payments, and file transfer.
 
 **Stage**: Pre-seed, Phase 0 (demo build). Ship date: March 27, 2026.
 **Team**: Muhammad (CTO, sole engineer), Max (CEO), Likitha (COO/QA).

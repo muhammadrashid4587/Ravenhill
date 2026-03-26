@@ -1,21 +1,16 @@
-"""Orchestrator tests — validate the routing and approval logic."""
+"""Orchestrator tests — validate the routing and approval logic against the DB."""
 
+import json
 from uuid import UUID
 
 import pytest
 from unittest.mock import AsyncMock, patch
 
 from agents.seed import SALES_AGENT_ID, FINANCE_AGENT_ID
-from approvals.router import ApprovalRequest, ApprovalStatus, _pending_approvals
+from approvals.router import ApprovalStatus
+import db
+from db import ApprovalRow
 from orchestrator import orchestrate, complete_doc_request, reset_demo, OrchestrateRequest
-
-
-@pytest.fixture(autouse=True)
-def clear_approvals():
-    """Clear approval store before each test."""
-    _pending_approvals.clear()
-    yield
-    _pending_approvals.clear()
 
 
 @pytest.mark.asyncio
@@ -63,13 +58,13 @@ async def test_query_answers_directly_for_own_department():
         resp = await orchestrate(req)
 
         assert resp.intent == "QUERY"
-        assert resp.target_agent is None  # Answered directly, no routing
+        assert resp.target_agent is None
         assert resp.answer == "The Acme Corp deal is at $450K, closing next week."
 
 
 @pytest.mark.asyncio
 async def test_doc_request_creates_approval():
-    """Demo 2: A doc request should create a pending approval."""
+    """Demo 2: A doc request should create a pending approval in the DB."""
     with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify:
 
         mock_classify.return_value = {
@@ -90,13 +85,14 @@ async def test_doc_request_creates_approval():
         assert resp.answer is None
         assert resp.target_agent["name"] == "Karen Park"
 
-        # Verify approval was actually created in the store
-        assert resp.approval_id in _pending_approvals
-        approval = _pending_approvals[resp.approval_id]
-        assert approval.requesting_agent == SALES_AGENT_ID
-        assert approval.owning_agent == FINANCE_AGENT_ID
-        assert approval.action == "share_file"
-        assert approval.status.value == "pending"
+        # Verify approval was created in the database
+        async with db.async_session() as session:
+            row = await session.get(ApprovalRow, resp.approval_id)
+            assert row is not None
+            assert row.requesting_agent == SALES_AGENT_ID
+            assert row.owning_agent == FINANCE_AGENT_ID
+            assert row.action == "share_file"
+            assert row.status == "pending"
 
 
 @pytest.mark.asyncio
@@ -138,7 +134,7 @@ async def test_steps_are_populated():
 
 @pytest.mark.asyncio
 async def test_complete_doc_request_after_approval():
-    """Demo 2 end-to-end: doc request → approve → file delivered."""
+    """Demo 2 end-to-end: doc request -> approve -> file delivered."""
     with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify, \
          patch("orchestrator.process_message", new_callable=AsyncMock) as mock_process:
 
@@ -163,8 +159,11 @@ async def test_complete_doc_request_after_approval():
         assert pending_resp.answer is None
         assert pending_resp.steps[0].status == "pending"
 
-        # Step 3: Approve it
-        _pending_approvals[approval_id].status = ApprovalStatus.APPROVED
+        # Step 3: Approve it in the database
+        async with db.async_session() as session:
+            row = await session.get(ApprovalRow, approval_id)
+            row.status = "approved"
+            await session.commit()
 
         # Step 4: Complete — should now return the file/answer
         mock_process.return_value = (
@@ -179,6 +178,8 @@ async def test_complete_doc_request_after_approval():
 @pytest.mark.asyncio
 async def test_complete_denied_request():
     """A denied doc request should return a denial message."""
+    from approvals.router import ApprovalRequest, create_approval_in_db
+
     approval = ApprovalRequest(
         requesting_agent=SALES_AGENT_ID,
         owning_agent=FINANCE_AGENT_ID,
@@ -187,7 +188,7 @@ async def test_complete_denied_request():
         resource="test file",
         status=ApprovalStatus.DENIED,
     )
-    _pending_approvals[approval.id] = approval
+    await create_approval_in_db(approval)
 
     resp = await complete_doc_request(approval.id)
     assert "denied" in resp.answer.lower()
@@ -195,7 +196,9 @@ async def test_complete_denied_request():
 
 @pytest.mark.asyncio
 async def test_reset_demo():
-    """Reset should clear all approvals."""
+    """Reset should clear all approvals, activity, and messages from the DB."""
+    from approvals.router import ApprovalRequest, create_approval_in_db
+
     approval = ApprovalRequest(
         requesting_agent=SALES_AGENT_ID,
         owning_agent=FINANCE_AGENT_ID,
@@ -203,9 +206,97 @@ async def test_reset_demo():
         description="test",
         resource="test",
     )
-    _pending_approvals[approval.id] = approval
-    assert len(_pending_approvals) == 1
+    await create_approval_in_db(approval)
+
+    # Verify it's in the DB
+    async with db.async_session() as session:
+        row = await session.get(ApprovalRow, approval.id)
+        assert row is not None
 
     result = await reset_demo()
     assert result["status"] == "ok"
-    assert len(_pending_approvals) == 0
+
+    # Verify it's gone
+    async with db.async_session() as session:
+        row = await session.get(ApprovalRow, approval.id)
+        assert row is None
+
+
+# ---------------------------------------------------------------------------
+# Streaming endpoint tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stream_query_routes_to_finance():
+    """Streaming: A finance question from Jordan should stream steps + answer chunks."""
+    from httpx import ASGITransport, AsyncClient
+    from main import app
+
+    async def _mock_stream(agent, message):
+        yield "Streamed answer about revenue."
+
+    with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify, \
+         patch("orchestrator.stream_message", side_effect=_mock_stream):
+
+        mock_classify.return_value = {
+            "intent": "QUERY",
+            "department": "Finance",
+            "topic": "revenue forecast",
+            "summary": "Q4 revenue?",
+        }
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/orchestrate/stream",
+                json={
+                    "message": "Who owns Q4 revenue forecast?",
+                    "agent_id": str(SALES_AGENT_ID),
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+        events = _parse_sse(resp.text)
+        types = [e["type"] for e in events]
+
+        assert "step" in types
+        assert "chunk" in types
+        assert "done" in types
+
+        step_events = [e for e in events if e["type"] == "step"]
+        assert step_events[0]["step"]["label"] == "Classifying intent..."
+
+        chunks = [e for e in events if e["type"] == "chunk"]
+        assert any("revenue" in c["text"].lower() for c in chunks)
+
+
+@pytest.mark.asyncio
+async def test_stream_unknown_agent_returns_404():
+    """Streaming: Non-existent agent should return 404."""
+    from httpx import ASGITransport, AsyncClient
+    from main import app
+
+    fake_id = "99999999-9999-9999-9999-999999999999"
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/orchestrate/stream",
+            json={"message": "Hello", "agent_id": fake_id},
+        )
+    assert resp.status_code == 404
+
+
+def _parse_sse(text: str) -> list[dict]:
+    """Parse SSE text into a list of event dicts."""
+    events = []
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if line.startswith("data: "):
+            try:
+                events.append(json.loads(line[6:]))
+            except json.JSONDecodeError:
+                pass
+    return events
