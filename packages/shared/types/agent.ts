@@ -6,7 +6,7 @@ export interface Agent {
   id: string;
   name: string;
   role: string;
-  department: string;
+  departments: string[];
   knowledge_areas: string[];
   is_active: boolean;
 }
@@ -32,7 +32,7 @@ export interface InterAgentMessage {
   intent: string;
   permission_ctx: {
     role: string;
-    department: string;
+    departments: string[];
     scopes: string[];
   };
   requires_approval: boolean;

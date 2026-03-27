@@ -8,7 +8,7 @@ const AGENTS = [
   {
     name: "Jordan Chen",
     role: "Senior Sales Rep",
-    department: "Sales",
+    departments: ["Sales"],
     initials: "JC",
     color: "bg-blue-600",
     status: "online" as const,
@@ -17,7 +17,7 @@ const AGENTS = [
   {
     name: "Karen Park",
     role: "Finance Analyst",
-    department: "Finance",
+    departments: ["Finance"],
     initials: "KP",
     color: "bg-purple-600",
     status: "online" as const,
@@ -26,7 +26,7 @@ const AGENTS = [
   {
     name: "Alex Rivera",
     role: "Marketing Manager",
-    department: "Marketing",
+    departments: ["Marketing", "Sales"],
     initials: "AR",
     color: "bg-emerald-600",
     status: "idle" as const,
@@ -35,7 +35,7 @@ const AGENTS = [
   {
     name: "Sam Nakamura",
     role: "Engineering Lead",
-    department: "Engineering",
+    departments: ["Engineering"],
     initials: "SN",
     color: "bg-orange-600",
     status: "offline" as const,
@@ -44,7 +44,7 @@ const AGENTS = [
   {
     name: "Priya Sharma",
     role: "Product Manager",
-    department: "Product",
+    departments: ["Product", "Engineering"],
     initials: "PS",
     color: "bg-pink-600",
     status: "idle" as const,
@@ -53,7 +53,7 @@ const AGENTS = [
   {
     name: "David Kim",
     role: "HR Business Partner",
-    department: "HR",
+    departments: ["HR"],
     initials: "DK",
     color: "bg-cyan-600",
     status: "offline" as const,
@@ -67,7 +67,7 @@ export default function AgentsPage() {
   const filtered = AGENTS.filter(
     (a) =>
       a.name.toLowerCase().includes(search.toLowerCase()) ||
-      a.department.toLowerCase().includes(search.toLowerCase()) ||
+      a.departments.some((d) => d.toLowerCase().includes(search.toLowerCase())) ||
       a.role.toLowerCase().includes(search.toLowerCase())
   );
 

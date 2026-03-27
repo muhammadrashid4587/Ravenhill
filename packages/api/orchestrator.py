@@ -71,13 +71,13 @@ async def orchestrate(request: OrchestrateRequest):
     ))
 
     # Step 2: Determine if source agent can answer directly
-    source_dept = source.department.lower()
+    source_depts = [d.lower() for d in source.departments]
     target_dept = department.lower()
 
-    if source_dept == target_dept:
+    if target_dept in source_depts:
         steps.append(OrchestrateStep(
             label="Answering directly...",
-            detail=f"{source.name} ({source.department})",
+            detail=f"{source.name} ({', '.join(source.departments)})",
         ))
 
         answer = await process_message(source, request.message)
@@ -112,7 +112,7 @@ async def orchestrate(request: OrchestrateRequest):
     target = candidates[0]
     steps.append(OrchestrateStep(
         label="Finding the right agent...",
-        detail=f"{target.name} ({target.department})",
+        detail=f"{target.name} ({', '.join(target.departments)})",
     ))
 
     # Step 4: Handle based on intent
@@ -128,7 +128,7 @@ async def orchestrate(request: OrchestrateRequest):
         intent=request.message,
         permission_ctx=PermissionContext(
             role=source.role,
-            department=source.department,
+            departments=source.departments,
             scopes=source.scopes,
         ),
         trace_id=trace_id,
@@ -311,5 +311,5 @@ def _agent_summary(agent: Agent) -> dict:
         "id": str(agent.id),
         "name": agent.name,
         "role": agent.role,
-        "department": agent.department,
+        "departments": agent.departments,
     }

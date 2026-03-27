@@ -3,7 +3,7 @@ import { Circle } from "lucide-react";
 interface AgentCardProps {
   name: string;
   role: string;
-  department: string;
+  departments: string[];
   initials: string;
   color: string;
   status: "online" | "idle" | "offline";
@@ -19,7 +19,7 @@ const STATUS_STYLES = {
 export default function AgentCard({
   name,
   role,
-  department,
+  departments,
   initials,
   color,
   status,
@@ -47,10 +47,12 @@ export default function AgentCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">
-          {department}
-        </span>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {departments.map((dept) => (
+          <span key={dept} className="text-[10px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">
+            {dept}
+          </span>
+        ))}
       </div>
 
       {lastAction && (

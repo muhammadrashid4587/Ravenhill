@@ -12,7 +12,7 @@ sales_agent = Agent(
     id=SALES_AGENT_ID,
     name="Jordan Chen",
     role="Senior Sales Representative",
-    department="Sales",
+    departments=["Sales"],
     knowledge_areas=["pipeline", "accounts", "revenue targets", "client relationships"],
     knowledge_base="""
     - Manages enterprise accounts in the West region
@@ -29,7 +29,7 @@ finance_agent = Agent(
     id=FINANCE_AGENT_ID,
     name="Karen Park",
     role="Finance Analyst",
-    department="Finance",
+    departments=["Finance"],
     knowledge_areas=["financial reporting", "budgets", "forecasting", "revenue recognition"],
     knowledge_base="""
     - Owns Q4 revenue forecast and financial reporting

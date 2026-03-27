@@ -26,7 +26,7 @@ def search_agents_by_query(query: str) -> list[Agent]:
 
     for agent in DEMO_AGENTS.values():
         # Simple keyword match against knowledge areas and role
-        searchable = " ".join(agent.knowledge_areas + [agent.role, agent.department]).lower()
+        searchable = " ".join(agent.knowledge_areas + [agent.role] + agent.departments).lower()
         if any(word in searchable for word in query_lower.split()):
             results.append(agent)
 
