@@ -10,7 +10,7 @@ class Agent(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     name: str
     role: str
-    department: str
+    departments: list[str] = []
     knowledge_areas: list[str] = []
     knowledge_base: str = ""
     scopes: list[str] = []

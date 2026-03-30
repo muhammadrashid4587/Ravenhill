@@ -12,11 +12,11 @@ Groq, Gemini, and auto-fallback.  When all providers are unavailable, falls back
 to smart mock mode with realistic canned responses for the demo flows.
 """
 
-import json
 import re
+from collections.abc import AsyncGenerator
 
 from agents.models import Agent
-from agents.llm_providers import call_llm, get_active_provider
+from agents.llm_providers import call_llm, call_llm_structured, stream_llm, get_active_provider
 
 
 async def process_message(agent: Agent, message: str) -> str:
@@ -28,6 +28,23 @@ async def process_message(agent: Agent, message: str) -> str:
             return result
 
     return _mock_process_message(agent, message)
+
+
+async def stream_message(agent: Agent, message: str) -> AsyncGenerator[str, None]:
+    """Stream a response from the agent's LLM, yielding text chunks.
+
+    Falls back to the mock response as a single yield when streaming is unavailable.
+    """
+    if get_active_provider() != "mock":
+        system_prompt = _build_system_prompt(agent)
+        yielded = False
+        async for chunk in stream_llm(system=system_prompt, user_message=message):
+            yielded = True
+            yield chunk
+        if yielded:
+            return
+
+    yield _mock_process_message(agent, message)
 
 
 async def classify_intent(message: str) -> str:
@@ -64,35 +81,43 @@ Rules:
 
 Respond ONLY with valid JSON. No other text."""
 
+_CLASSIFY_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "intent": {
+            "type": "string",
+            "enum": ["QUERY", "DOC_REQUEST", "ACTION", "BROADCAST"],
+        },
+        "department": {"type": "string", "enum": ["Sales", "Finance"]},
+        "topic": {"type": "string", "description": "Short topic label"},
+        "summary": {"type": "string", "description": "One-sentence summary"},
+    },
+    "required": ["intent", "department", "topic", "summary"],
+    "additionalProperties": False,
+}
+
 
 async def classify_and_route(message: str) -> dict:
     """Use a fast model to classify intent AND extract routing info as structured JSON.
 
+    Prefers ``call_llm_structured`` for schema-validated output (Anthropic-native).
+    Falls back to mock mode if anything fails.
+
     Returns dict with keys: intent, department, topic, summary
     """
     if get_active_provider() != "mock":
-        raw = await call_llm(
-            system=_CLASSIFY_ROUTE_SYSTEM,
-            user_message=message,
-            model_tier="fast",
-            max_tokens=200,
-            json_mode=True,
-        )
-        if raw is not None:
-            raw = raw.strip()
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                start = raw.find("{")
-                end = raw.rfind("}") + 1
-                if start >= 0 and end > start:
-                    return json.loads(raw[start:end])
-                return {
-                    "intent": "QUERY",
-                    "department": "unknown",
-                    "topic": "unknown",
-                    "summary": message,
-                }
+        try:
+            result = await call_llm_structured(
+                system=_CLASSIFY_ROUTE_SYSTEM,
+                user_message=message,
+                json_schema=_CLASSIFY_SCHEMA,
+                model_tier="fast",
+                max_tokens=200,
+            )
+            if result is not None:
+                return result
+        except Exception:
+            pass  # Fall through to mock
 
     return _mock_classify_and_route(message)
 
@@ -240,14 +265,14 @@ def _mock_process_message(agent: Agent, message: str) -> str:
     """Return a realistic canned response based on agent persona and message content."""
     msg_lower = message.lower()
 
-    responses = _KAREN_RESPONSES if agent.department == "Finance" else _JORDAN_RESPONSES
+    responses = _KAREN_RESPONSES if "Finance" in agent.departments else _JORDAN_RESPONSES
 
     for keyword, response in responses.items():
         if keyword in msg_lower:
             return response
 
     # Generic fallback per agent
-    if agent.department == "Finance":
+    if "Finance" in agent.departments:
         return (
             f"As {agent.name}, Finance Analyst, I can help with financial reporting, "
             f"budgets, forecasting, and revenue recognition. Could you be more specific "
@@ -265,7 +290,7 @@ def _build_system_prompt(agent: Agent) -> str:
     return f"""You are an AI agent acting on behalf of {agent.name}.
 
 Role: {agent.role}
-Department: {agent.department}
+Departments: {', '.join(agent.departments)}
 Knowledge areas: {', '.join(agent.knowledge_areas)}
 
 You have access to the following information:

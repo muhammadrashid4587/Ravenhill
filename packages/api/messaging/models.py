@@ -16,7 +16,7 @@ class MessageType(str, Enum):
 
 class PermissionContext(BaseModel):
     role: str
-    department: str
+    departments: list[str] = []
     scopes: list[str] = []
 
 

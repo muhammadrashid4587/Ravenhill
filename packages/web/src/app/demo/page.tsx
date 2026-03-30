@@ -108,14 +108,14 @@ export default function DemoPage() {
       // 3. Remove thinking, show Jordan's classification
       removeMsg(thinkingId);
 
-      if (res.target_agent && res.target_agent.department !== res.source_agent.department) {
+      if (res.target_agent && res.target_agent.departments?.[0] !== res.source_agent.departments?.[0]) {
         // ---- ROUTED FLOW: Jordan → Karen ----
 
         // Jordan decides to route
         setActiveStep(`Routing to ${res.target_agent.name}...`);
         pushMsg(
           "Jordan Chen",
-          `This is a ${res.intent === "DOC_REQUEST" ? "document request" : "question"} about ${res.steps?.[0]?.detail?.split("—")?.[1]?.trim() || res.target_agent.department}. Let me connect you with ${res.target_agent.name} in ${res.target_agent.department}.`,
+          `This is a ${res.intent === "DOC_REQUEST" ? "document request" : "question"} about ${res.steps?.[0]?.detail?.split("—")?.[1]?.trim() || res.target_agent.departments?.[0]}. Let me connect you with ${res.target_agent.name} in ${res.target_agent.departments?.[0]}.`,
           "left",
           "agent"
         );
@@ -244,15 +244,12 @@ export default function DemoPage() {
   const rightMessages = messages.filter((m) => m.side === "right");
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-white">
+    <div className="flex flex-col h-screen bg-gray-950 text-white -m-0">
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
-          <a href="/" className="text-gray-500 hover:text-white transition text-sm">
-            &larr;
-          </a>
           <div>
-            <h1 className="text-base font-semibold">e-agent</h1>
+            <h1 className="text-base font-semibold">Ravenhill</h1>
             <p className="text-[11px] text-gray-500">Multi-agent orchestration demo</p>
           </div>
         </div>
