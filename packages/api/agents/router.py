@@ -17,7 +17,7 @@ router = APIRouter()
 class CreateAgentRequest(BaseModel):
     name: str
     role: str
-    department: str
+    departments: list[str] = []
     knowledge_areas: list[str] = []
     knowledge_base: str = ""
     scopes: list[str] = []
@@ -26,7 +26,7 @@ class CreateAgentRequest(BaseModel):
 class UpdateAgentRequest(BaseModel):
     name: str | None = None
     role: str | None = None
-    department: str | None = None
+    departments: list[str] | None = None
     knowledge_areas: list[str] | None = None
     knowledge_base: str | None = None
     scopes: list[str] | None = None
@@ -38,7 +38,7 @@ def _row_to_agent(row: AgentRow) -> Agent:
         id=row.id,
         name=row.name,
         role=row.role,
-        department=row.department,
+        departments=row.departments or [],
         knowledge_areas=row.knowledge_areas or [],
         knowledge_base=row.knowledge_base or "",
         scopes=row.scopes or [],
@@ -73,7 +73,7 @@ async def create_agent(req: CreateAgentRequest):
         row = AgentRow(
             name=req.name,
             role=req.role,
-            department=req.department,
+            departments=req.departments,
             knowledge_areas=req.knowledge_areas,
             knowledge_base=req.knowledge_base,
             scopes=req.scopes,

@@ -9,10 +9,16 @@ export async function fetchAgents() {
   return res.json();
 }
 
+export async function fetchAgent(agentId: string) {
+  const res = await fetch(`${API_BASE}/api/agents/${agentId}`);
+  if (!res.ok) throw new Error(`Fetch agent failed: ${res.status}`);
+  return res.json();
+}
+
 export interface CreateAgentPayload {
   name: string;
   role: string;
-  department: string;
+  departments: string[];
   knowledge_areas: string[];
   knowledge_base: string;
   scopes: string[];

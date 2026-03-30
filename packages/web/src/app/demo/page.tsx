@@ -108,14 +108,14 @@ export default function DemoPage() {
       // 3. Remove thinking, show Jordan's classification
       removeMsg(thinkingId);
 
-      if (res.target_agent && res.target_agent.department !== res.source_agent.department) {
+      if (res.target_agent && res.target_agent.departments?.[0] !== res.source_agent.departments?.[0]) {
         // ---- ROUTED FLOW: Jordan → Karen ----
 
         // Jordan decides to route
         setActiveStep(`Routing to ${res.target_agent.name}...`);
         pushMsg(
           "Jordan Chen",
-          `This is a ${res.intent === "DOC_REQUEST" ? "document request" : "question"} about ${res.steps?.[0]?.detail?.split("—")?.[1]?.trim() || res.target_agent.department}. Let me connect you with ${res.target_agent.name} in ${res.target_agent.department}.`,
+          `This is a ${res.intent === "DOC_REQUEST" ? "document request" : "question"} about ${res.steps?.[0]?.detail?.split("—")?.[1]?.trim() || res.target_agent.departments?.[0]}. Let me connect you with ${res.target_agent.name} in ${res.target_agent.departments?.[0]}.`,
           "left",
           "agent"
         );

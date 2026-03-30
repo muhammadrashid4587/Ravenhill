@@ -265,14 +265,14 @@ def _mock_process_message(agent: Agent, message: str) -> str:
     """Return a realistic canned response based on agent persona and message content."""
     msg_lower = message.lower()
 
-    responses = _KAREN_RESPONSES if agent.department == "Finance" else _JORDAN_RESPONSES
+    responses = _KAREN_RESPONSES if "Finance" in agent.departments else _JORDAN_RESPONSES
 
     for keyword, response in responses.items():
         if keyword in msg_lower:
             return response
 
     # Generic fallback per agent
-    if agent.department == "Finance":
+    if "Finance" in agent.departments:
         return (
             f"As {agent.name}, Finance Analyst, I can help with financial reporting, "
             f"budgets, forecasting, and revenue recognition. Could you be more specific "
@@ -290,7 +290,7 @@ def _build_system_prompt(agent: Agent) -> str:
     return f"""You are an AI agent acting on behalf of {agent.name}.
 
 Role: {agent.role}
-Department: {agent.department}
+Departments: {', '.join(agent.departments)}
 Knowledge areas: {', '.join(agent.knowledge_areas)}
 
 You have access to the following information:

@@ -14,13 +14,13 @@ def test_seed_data_exists():
 
 def test_sales_agent_seed():
     sales = next(a for a in SEED_AGENTS if a["id"] == SALES_AGENT_ID)
-    assert sales["department"] == "Sales"
+    assert sales["departments"] == ["Sales"]
     assert "pipeline" in sales["knowledge_areas"]
 
 
 def test_finance_agent_seed():
     finance = next(a for a in SEED_AGENTS if a["id"] == FINANCE_AGENT_ID)
-    assert finance["department"] == "Finance"
+    assert finance["departments"] == ["Finance"]
     assert "financial reporting" in finance["knowledge_areas"]
 
 
@@ -49,7 +49,7 @@ async def test_agent_crud():
             id=agent_id,
             name="Test Agent",
             role="QA Engineer",
-            department="Engineering",
+            departments=["Engineering"],
             knowledge_areas=["testing", "automation"],
             scopes=["read:public"],
         )
@@ -60,7 +60,7 @@ async def test_agent_crud():
         fetched = await session.get(AgentRow, agent_id)
         assert fetched is not None
         assert fetched.name == "Test Agent"
-        assert fetched.department == "Engineering"
+        assert fetched.departments == ["Engineering"]
 
         # Update
         fetched.name = "Updated Agent"

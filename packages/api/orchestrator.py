@@ -54,7 +54,7 @@ def _row_to_agent(row: AgentRow) -> Agent:
         id=row.id,
         name=row.name,
         role=row.role,
-        department=row.department,
+        departments=row.departments or [],
         knowledge_areas=row.knowledge_areas or [],
         knowledge_base=row.knowledge_base or "",
         scopes=row.scopes or [],
@@ -94,13 +94,13 @@ async def orchestrate(request: OrchestrateRequest):
     ))
 
     # Step 2: Determine if source agent can answer directly
-    source_dept = source.department.lower()
+    source_depts = [d.lower() for d in source.departments]
     target_dept = department.lower()
 
-    if source_dept == target_dept:
+    if target_dept in source_depts:
         steps.append(OrchestrateStep(
             label="Answering directly...",
-            detail=f"{source.name} ({source.department})",
+            detail=f"{source.name} ({', '.join(source.departments)})",
         ))
 
         answer = await process_message(source, request.message)
@@ -141,7 +141,7 @@ async def orchestrate(request: OrchestrateRequest):
     target = candidates[0]
     steps.append(OrchestrateStep(
         label="Finding the right agent...",
-        detail=f"{target.name} ({target.department})",
+        detail=f"{target.name} ({', '.join(target.departments)})",
     ))
 
     # Step 4: Handle based on intent
@@ -157,7 +157,7 @@ async def orchestrate(request: OrchestrateRequest):
         intent=request.message,
         permission_ctx=PermissionContext(
             role=source.role,
-            department=source.department,
+            departments=source.departments,
             scopes=source.scopes,
         ),
         trace_id=trace_id,
@@ -189,7 +189,7 @@ async def orchestrate(request: OrchestrateRequest):
         type="route",
         from_agent=source.name,
         to_agent=target.name,
-        description=f"Routed {topic} query to {target.department}",
+        description=f"Routed {topic} query to {', '.join(target.departments)}",
     ))
     await log_activity(ActivityEntry(
         type="answer",
@@ -217,7 +217,7 @@ async def _handle_doc_request(
     """Handle a document request — send via ETO, create approval, return pending."""
     perm_ctx = PermissionContext(
         role=source.role,
-        department=source.department,
+        departments=source.departments,
         scopes=source.scopes,
     )
 
@@ -379,14 +379,14 @@ async def orchestrate_stream(request: OrchestrateRequest):
         }})
 
         # Step 2: Determine routing
-        source_dept = source.department.lower()
+        source_depts = [d.lower() for d in source.departments]
         target_dept = department.lower()
 
-        if source_dept == target_dept:
+        if target_dept in source_depts:
             yield _sse({"type": "step", "step": {
                 "label": "Answering directly...",
                 "status": "done",
-                "detail": f"{source.name} ({source.department})",
+                "detail": f"{source.name} ({', '.join(source.departments)})",
             }})
             async for chunk in stream_message(source, request.message):
                 yield _sse({"type": "chunk", "text": chunk})
@@ -413,7 +413,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
         yield _sse({"type": "step", "step": {
             "label": "Finding the right agent...",
             "status": "done",
-            "detail": f"{target.name} ({target.department})",
+            "detail": f"{target.name} ({', '.join(target.departments)})",
         }})
 
         # Step 4: Handle based on intent
@@ -446,7 +446,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
             intent=request.message,
             permission_ctx=PermissionContext(
                 role=source.role,
-                department=source.department,
+                departments=source.departments,
                 scopes=source.scopes,
             ),
             trace_id=trace_id,
@@ -506,5 +506,5 @@ def _agent_summary(agent: Agent) -> dict:
         "id": str(agent.id),
         "name": agent.name,
         "role": agent.role,
-        "department": agent.department,
+        "departments": agent.departments,
     }

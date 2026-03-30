@@ -26,7 +26,7 @@ async def test_db():
                 id=agent_data["id"],
                 name=agent_data["name"],
                 role=agent_data["role"],
-                department=agent_data["department"],
+                departments=agent_data["departments"],
                 knowledge_areas=agent_data["knowledge_areas"],
                 knowledge_base=agent_data["knowledge_base"],
                 scopes=agent_data["scopes"],

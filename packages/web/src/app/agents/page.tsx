@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Search, Plus, X, Pencil, Trash2, Circle } from "lucide-react";
 import {
   fetchAgents,
@@ -9,6 +10,9 @@ import {
   deleteAgent,
   CreateAgentPayload,
 } from "@/lib/api";
+import AgentPicker from "@/components/AgentPicker";
+import { useAgent } from "@/lib/AgentContext";
+import type { Agent } from "@/lib/AgentContext";
 
 const DEPT_COLORS: Record<string, string> = {
   Sales: "bg-blue-600",
@@ -27,34 +31,54 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-interface Agent {
-  id: string;
-  name: string;
-  role: string;
-  department: string;
-  knowledge_areas: string[];
-  knowledge_base: string;
-  scopes: string[];
-  is_active: boolean;
-}
-
 const EMPTY_FORM: CreateAgentPayload = {
   name: "",
   role: "",
-  department: "",
+  departments: [],
   knowledge_areas: [],
   knowledge_base: "",
   scopes: ["read:public"],
 };
 
 export default function AgentsPage() {
+  return (
+    <Suspense>
+      <AgentsPageInner />
+    </Suspense>
+  );
+}
+
+function AgentsPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { setMyAgent } = useAgent();
+
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CreateAgentPayload>(EMPTY_FORM);
   const [areasInput, setAreasInput] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Open picker modal when navigated here with ?pick=true
+  useEffect(() => {
+    if (searchParams.get("pick") === "true") {
+      setShowPicker(true);
+    }
+  }, [searchParams]);
+
+  const handlePickAgent = (agent: Agent) => {
+    setMyAgent(agent);
+    setShowPicker(false);
+    router.replace("/agents");
+  };
+
+  const handleClosePicker = () => {
+    setShowPicker(false);
+    router.replace("/agents");
+  };
 
   const loadAgents = useCallback(() => {
     fetchAgents()
@@ -69,7 +93,7 @@ export default function AgentsPage() {
   const filtered = agents.filter(
     (a) =>
       a.name.toLowerCase().includes(search.toLowerCase()) ||
-      a.department.toLowerCase().includes(search.toLowerCase()) ||
+      (a.departments?.[0] ?? "").toLowerCase().includes(search.toLowerCase()) ||
       a.role.toLowerCase().includes(search.toLowerCase()),
   );
 
@@ -87,7 +111,7 @@ export default function AgentsPage() {
     setForm({
       name: agent.name,
       role: agent.role,
-      department: agent.department,
+      departments: agent.departments,
       knowledge_areas: agent.knowledge_areas,
       knowledge_base: agent.knowledge_base,
       scopes: agent.scopes,
@@ -181,7 +205,7 @@ export default function AgentsPage() {
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div
-                  className={`w-10 h-10 rounded-full ${DEPT_COLORS[agent.department] ?? "bg-gray-600"} flex items-center justify-center text-xs font-bold text-white`}
+                  className={`w-10 h-10 rounded-full ${DEPT_COLORS[agent.departments?.[0]] ?? "bg-gray-600"} flex items-center justify-center text-xs font-bold text-white`}
                 >
                   {getInitials(agent.name)}
                 </div>
@@ -210,7 +234,7 @@ export default function AgentsPage() {
 
             <div className="flex items-center gap-2 mb-3">
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700">
-                {agent.department}
+                {agent.departments?.[0]}
               </span>
               {agent.knowledge_areas.slice(0, 2).map((area) => (
                 <span
@@ -285,9 +309,9 @@ export default function AgentsPage() {
                   </label>
                   <input
                     type="text"
-                    value={form.department}
+                    value={form.departments?.[0] ?? ""}
                     onChange={(e) =>
-                      setForm({ ...form, department: e.target.value })
+                      setForm({ ...form, departments: e.target.value ? [e.target.value] : [] })
                     }
                     placeholder="e.g. Sales"
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
@@ -344,7 +368,7 @@ export default function AgentsPage() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving || !form.name || !form.role || !form.department}
+                disabled={saving || !form.name || !form.role || !form.departments?.length}
                 className="text-sm bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-600 px-5 py-2 rounded-lg font-medium transition"
               >
                 {saving
@@ -357,6 +381,13 @@ export default function AgentsPage() {
           </div>
         </div>
       )}
+
+      {/* Agent Picker Modal */}
+      <AgentPicker
+        open={showPicker}
+        onSelect={handlePickAgent}
+        onClose={handleClosePicker}
+      />
     </div>
   );
 }

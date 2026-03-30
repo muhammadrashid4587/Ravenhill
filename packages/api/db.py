@@ -35,7 +35,7 @@ class AgentRow(Base):
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=False)
     role = Column(String(200), nullable=False)
-    department = Column(String(100), nullable=False)
+    departments = Column(JSON, default=list)
     knowledge_areas = Column(JSON, default=list)
     knowledge_base = Column(Text, default="")
     scopes = Column(JSON, default=list)
@@ -107,7 +107,7 @@ async def seed_demo_agents():
                 id=agent_data["id"],
                 name=agent_data["name"],
                 role=agent_data["role"],
-                department=agent_data["department"],
+                departments=agent_data["departments"],
                 knowledge_areas=agent_data["knowledge_areas"],
                 knowledge_base=agent_data["knowledge_base"],
                 scopes=agent_data["scopes"],
