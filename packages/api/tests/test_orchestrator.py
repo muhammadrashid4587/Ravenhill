@@ -1,98 +1,93 @@
-"""Orchestrator tests — validate the routing and approval logic against the DB."""
+"""Orchestrator tests — validate the new multi-agent routing, synthesis, and approval logic."""
 
 import json
 from uuid import UUID
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
-from agents.seed import SALES_AGENT_ID, FINANCE_AGENT_ID
+from agents.seed import COO_ID, OPS_MANAGER_ID
 from approvals.router import ApprovalStatus
 import db
 from db import ApprovalRow
-from orchestrator import orchestrate, complete_doc_request, reset_demo, OrchestrateRequest
+from orchestrator import (
+    orchestrate,
+    complete_doc_request,
+    reset_demo,
+    OrchestrateRequest,
+    _conversation_sessions,
+)
+
+
+@pytest.fixture(autouse=True)
+def clear_sessions():
+    """Clear conversation sessions before each test."""
+    _conversation_sessions.clear()
+    yield
+    _conversation_sessions.clear()
 
 
 @pytest.mark.asyncio
-async def test_query_routes_to_finance():
-    """Demo 1: A finance question from Jordan should route to Karen."""
-    with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify, \
-         patch("orchestrator.process_message", new_callable=AsyncMock) as mock_process:
+async def test_marketplace_redesign_routes_to_product_and_engineering():
+    """Moment 1: COO asks about marketplace redesign -> Product + Engineering consulted.
 
-        mock_classify.return_value = {
-            "intent": "QUERY",
-            "department": "Finance",
-            "topic": "revenue forecast",
-            "summary": "Who owns Q4 revenue forecast?",
-        }
-        mock_process.return_value = "Karen Park owns the Q4 revenue forecast."
+    After FIX 2, references_agent is scoped to relevant topics — a general
+    marketplace redesign question no longer triggers a second-hop from the
+    api_dependencies entry. Second-hop only fires when asking specifically
+    about the API blocker.
+    """
+    req = OrchestrateRequest(
+        message="Are we on track for the marketplace redesign?",
+        agent_id=COO_ID,
+    )
+    resp = await orchestrate(req)
 
-        req = OrchestrateRequest(message="Who owns Q4 revenue forecast?", agent_id=SALES_AGENT_ID)
-        resp = await orchestrate(req)
-
-        assert resp.intent == "QUERY"
-        assert resp.target_agent is not None
-        assert resp.target_agent["name"] == "Karen Park"
-        assert resp.answer == "Karen Park owns the Q4 revenue forecast."
-        assert resp.approval_id is None
-        assert len(resp.steps) >= 2
+    assert resp.intent in ("information_query", "follow_up")
+    assert resp.answer is not None
+    assert len(resp.answer) > 0
+    # Sources are now "Name (Role)" format
+    assert any("Product" in s for s in resp.sources) or any("Engineering" in s for s in resp.sources)
+    assert resp.approval_id is None
 
 
 @pytest.mark.asyncio
-async def test_query_answers_directly_for_own_department():
-    """A sales question from Jordan should be answered directly by Jordan."""
-    with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify, \
-         patch("orchestrator.process_message", new_callable=AsyncMock) as mock_process:
+async def test_api_dependency_routes_to_engineering():
+    """Moment 2 start: COO asks about API dependency -> Engineering consulted."""
+    req = OrchestrateRequest(
+        message="What's blocking the API dependency?",
+        agent_id=COO_ID,
+    )
+    resp = await orchestrate(req)
 
-        mock_classify.return_value = {
-            "intent": "QUERY",
-            "department": "Sales",
-            "topic": "deal status",
-            "summary": "What's the Acme Corp deal status?",
-        }
-        mock_process.return_value = "The Acme Corp deal is at $450K, closing next week."
-
-        req = OrchestrateRequest(
-            message="What's the Acme Corp deal status?", agent_id=SALES_AGENT_ID
-        )
-        resp = await orchestrate(req)
-
-        assert resp.intent == "QUERY"
-        assert resp.target_agent is None
-        assert resp.answer == "The Acme Corp deal is at $450K, closing next week."
+    assert resp.intent in ("information_query", "follow_up")
+    assert resp.answer is not None
+    assert any("Engineering" in s for s in resp.sources)
+    # Engineering's api_dependencies entry references OPS_MANAGER_ID
+    assert resp.second_hop_available is True
+    assert resp.second_hop_agent_id == str(OPS_MANAGER_ID)
 
 
 @pytest.mark.asyncio
-async def test_doc_request_creates_approval():
-    """Demo 2: A doc request should create a pending approval in the DB."""
-    with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify:
+async def test_vendor_contract_request_creates_approval():
+    """Moment 3: COO asks for vendor contract -> approval created for Operations."""
+    req = OrchestrateRequest(
+        message="Ask ops to share the vendor contract",
+        agent_id=COO_ID,
+    )
+    resp = await orchestrate(req)
 
-        mock_classify.return_value = {
-            "intent": "DOC_REQUEST",
-            "department": "Finance",
-            "topic": "focus group results",
-            "summary": "Get focus group results from Karen's team",
-        }
+    assert resp.intent == "action_request"
+    assert resp.approval_id is not None
+    assert resp.answer is None  # Waiting for approval
+    assert resp.target_agent is not None
+    assert resp.target_agent["name"] == "Alex Kumar"
 
-        req = OrchestrateRequest(
-            message="Get me the focus group results from Karen's team",
-            agent_id=SALES_AGENT_ID,
-        )
-        resp = await orchestrate(req)
-
-        assert resp.intent == "DOC_REQUEST"
-        assert resp.approval_id is not None
-        assert resp.answer is None
-        assert resp.target_agent["name"] == "Karen Park"
-
-        # Verify approval was created in the database
-        async with db.async_session() as session:
-            row = await session.get(ApprovalRow, resp.approval_id)
-            assert row is not None
-            assert row.requesting_agent == SALES_AGENT_ID
-            assert row.owning_agent == FINANCE_AGENT_ID
-            assert row.action == "share_file"
-            assert row.status == "pending"
+    # Verify approval was created in the database
+    async with db.async_session() as session:
+        row = await session.get(ApprovalRow, resp.approval_id)
+        assert row is not None
+        assert row.requesting_agent == COO_ID
+        assert row.owning_agent == OPS_MANAGER_ID
+        assert row.status == "pending"
 
 
 @pytest.mark.asyncio
@@ -110,69 +105,61 @@ async def test_unknown_agent_returns_404():
 
 @pytest.mark.asyncio
 async def test_steps_are_populated():
-    """Every orchestration should produce at least a classification step."""
-    with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify, \
-         patch("orchestrator.process_message", new_callable=AsyncMock) as mock_process:
+    """Every orchestration should produce steps with status done."""
+    req = OrchestrateRequest(
+        message="Are we on track for the marketplace redesign?",
+        agent_id=COO_ID,
+    )
+    resp = await orchestrate(req)
 
-        mock_classify.return_value = {
-            "intent": "QUERY",
-            "department": "Finance",
-            "topic": "budget",
-            "summary": "What are the Q4 budget numbers?",
-        }
-        mock_process.return_value = "The Q4 budget is $5M."
+    assert len(resp.steps) >= 2
+    assert resp.steps[0].label == "Understanding your question..."
+    assert all(step.status == "done" for step in resp.steps)
 
-        req = OrchestrateRequest(
-            message="What are the Q4 budget numbers?", agent_id=SALES_AGENT_ID
-        )
-        resp = await orchestrate(req)
 
-        assert len(resp.steps) >= 1
-        assert resp.steps[0].label == "Classifying intent..."
-        assert all(step.status == "done" for step in resp.steps)
+@pytest.mark.asyncio
+async def test_sources_populated_for_multi_agent():
+    """Multi-agent queries should list all consulted agent roles as sources."""
+    req = OrchestrateRequest(
+        message="Are we on track for the marketplace redesign?",
+        agent_id=COO_ID,
+    )
+    resp = await orchestrate(req)
+
+    assert len(resp.sources) >= 1
+    # Sources are "Name (Role)" format
+    assert any("Product" in s for s in resp.sources) or any(
+        "Engineering" in s for s in resp.sources
+    )
 
 
 @pytest.mark.asyncio
 async def test_complete_doc_request_after_approval():
-    """Demo 2 end-to-end: doc request -> approve -> file delivered."""
-    with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify, \
-         patch("orchestrator.process_message", new_callable=AsyncMock) as mock_process:
+    """End-to-end: doc request -> approve -> document shared."""
+    # Step 1: Create doc request
+    req = OrchestrateRequest(
+        message="Ask ops to share the vendor contract",
+        agent_id=COO_ID,
+    )
+    resp = await orchestrate(req)
+    approval_id = resp.approval_id
+    assert approval_id is not None
+    assert resp.answer is None
 
-        # Step 1: Create doc request
-        mock_classify.return_value = {
-            "intent": "DOC_REQUEST",
-            "department": "Finance",
-            "topic": "focus group results",
-            "summary": "Get focus group results",
-        }
+    # Step 2: Check status while still pending
+    pending_resp = await complete_doc_request(approval_id)
+    assert pending_resp.answer is None
 
-        req = OrchestrateRequest(
-            message="Get me the focus group results", agent_id=SALES_AGENT_ID
-        )
-        resp = await orchestrate(req)
-        approval_id = resp.approval_id
-        assert approval_id is not None
-        assert resp.answer is None
+    # Step 3: Approve it in the database
+    async with db.async_session() as session:
+        row = await session.get(ApprovalRow, approval_id)
+        row.status = "approved"
+        await session.commit()
 
-        # Step 2: Check status while still pending
-        pending_resp = await complete_doc_request(approval_id)
-        assert pending_resp.answer is None
-        assert pending_resp.steps[0].status == "pending"
-
-        # Step 3: Approve it in the database
-        async with db.async_session() as session:
-            row = await session.get(ApprovalRow, approval_id)
-            row.status = "approved"
-            await session.commit()
-
-        # Step 4: Complete — should now return the file/answer
-        mock_process.return_value = (
-            "Focus group results: 82% want AI-assisted workflows."
-        )
-        completed = await complete_doc_request(approval_id)
-        assert completed.answer is not None
-        assert "82%" in completed.answer
-        assert completed.approval_id == approval_id
+    # Step 4: Complete — should return confirmation
+    completed = await complete_doc_request(approval_id)
+    assert completed.answer is not None
+    assert "approved" in completed.answer.lower() or "shared" in completed.answer.lower()
 
 
 @pytest.mark.asyncio
@@ -181,8 +168,8 @@ async def test_complete_denied_request():
     from approvals.router import ApprovalRequest, create_approval_in_db
 
     approval = ApprovalRequest(
-        requesting_agent=SALES_AGENT_ID,
-        owning_agent=FINANCE_AGENT_ID,
+        requesting_agent=COO_ID,
+        owning_agent=OPS_MANAGER_ID,
         action="share_file",
         description="test",
         resource="test file",
@@ -191,22 +178,28 @@ async def test_complete_denied_request():
     await create_approval_in_db(approval)
 
     resp = await complete_doc_request(approval.id)
-    assert "denied" in resp.answer.lower()
+    assert "declined" in resp.answer.lower() or "denied" in resp.answer.lower()
 
 
 @pytest.mark.asyncio
 async def test_reset_demo():
-    """Reset should clear all approvals, activity, and messages from the DB."""
+    """Reset should clear all approvals, activity, messages, and sessions."""
     from approvals.router import ApprovalRequest, create_approval_in_db
 
     approval = ApprovalRequest(
-        requesting_agent=SALES_AGENT_ID,
-        owning_agent=FINANCE_AGENT_ID,
+        requesting_agent=COO_ID,
+        owning_agent=OPS_MANAGER_ID,
         action="share_file",
         description="test",
         resource="test",
     )
     await create_approval_in_db(approval)
+
+    # Add a conversation session
+    _conversation_sessions["test-session"] = [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi there"},
+    ]
 
     # Verify it's in the DB
     async with db.async_session() as session:
@@ -216,10 +209,101 @@ async def test_reset_demo():
     result = await reset_demo()
     assert result["status"] == "ok"
 
-    # Verify it's gone
+    # Verify approval is gone
     async with db.async_session() as session:
         row = await session.get(ApprovalRow, approval.id)
         assert row is None
+
+    # Verify conversation sessions cleared
+    assert len(_conversation_sessions) == 0
+
+
+# ---------------------------------------------------------------------------
+# Session-based conversation history tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_id_returned_in_response():
+    """Orchestration should return a session_id (generated if not provided)."""
+    req = OrchestrateRequest(
+        message="Are we on track for the marketplace redesign?",
+        agent_id=COO_ID,
+    )
+    resp = await orchestrate(req)
+    assert resp.session_id is not None
+    assert len(resp.session_id) > 0
+
+
+@pytest.mark.asyncio
+async def test_session_id_preserved_across_calls():
+    """When a session_id is provided, it should be preserved across calls."""
+    session_id = "test-session-123"
+
+    req1 = OrchestrateRequest(
+        message="Are we on track for the marketplace redesign?",
+        agent_id=COO_ID,
+        session_id=session_id,
+    )
+    resp1 = await orchestrate(req1)
+    assert resp1.session_id == session_id
+
+    req2 = OrchestrateRequest(
+        message="Tell me more about the blocker",
+        agent_id=COO_ID,
+        session_id=session_id,
+    )
+    resp2 = await orchestrate(req2)
+    assert resp2.session_id == session_id
+
+
+@pytest.mark.asyncio
+async def test_session_history_populated():
+    """After orchestration, both user message and assistant response should be in session."""
+    session_id = "test-session-history"
+
+    req = OrchestrateRequest(
+        message="What's blocking the API dependency?",
+        agent_id=COO_ID,
+        session_id=session_id,
+    )
+    await orchestrate(req)
+
+    # Session should have both user and assistant messages
+    history = _conversation_sessions.get(session_id, [])
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[0]["content"] == "What's blocking the API dependency?"
+    assert history[1]["role"] == "assistant"
+    assert len(history[1]["content"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_session_history_accumulates():
+    """Multiple calls with same session_id should accumulate history."""
+    session_id = "test-session-accumulate"
+
+    req1 = OrchestrateRequest(
+        message="Are we on track for the marketplace redesign?",
+        agent_id=COO_ID,
+        session_id=session_id,
+    )
+    await orchestrate(req1)
+
+    req2 = OrchestrateRequest(
+        message="What's blocking the API dependency?",
+        agent_id=COO_ID,
+        session_id=session_id,
+    )
+    await orchestrate(req2)
+
+    history = _conversation_sessions.get(session_id, [])
+    # 2 user messages + 2 assistant messages = 4
+    assert len(history) == 4
+    assert history[0]["role"] == "user"
+    assert history[1]["role"] == "assistant"
+    assert history[2]["role"] == "user"
+    assert history[3]["role"] == "assistant"
 
 
 # ---------------------------------------------------------------------------
@@ -228,49 +312,78 @@ async def test_reset_demo():
 
 
 @pytest.mark.asyncio
-async def test_stream_query_routes_to_finance():
-    """Streaming: A finance question from Jordan should stream steps + answer chunks."""
+async def test_stream_marketplace_redesign():
+    """Streaming: marketplace redesign query should stream steps, chunks, sources."""
     from httpx import ASGITransport, AsyncClient
     from main import app
 
-    async def _mock_stream(agent, message):
-        yield "Streamed answer about revenue."
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/orchestrate/stream",
+            json={
+                "message": "Are we on track for the marketplace redesign?",
+                "agent_id": str(COO_ID),
+            },
+        )
 
-    with patch("orchestrator.classify_and_route", new_callable=AsyncMock) as mock_classify, \
-         patch("orchestrator.stream_message", side_effect=_mock_stream):
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "text/event-stream; charset=utf-8"
 
-        mock_classify.return_value = {
-            "intent": "QUERY",
-            "department": "Finance",
-            "topic": "revenue forecast",
-            "summary": "Q4 revenue?",
-        }
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
 
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post(
-                "/api/orchestrate/stream",
-                json={
-                    "message": "Who owns Q4 revenue forecast?",
-                    "agent_id": str(SALES_AGENT_ID),
-                },
-            )
+    assert "session" in types  # session_id emitted first
+    assert "step" in types
+    assert "chunk" in types
+    assert "sources" in types
+    assert "done" in types
 
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == "text/event-stream; charset=utf-8"
 
-        events = _parse_sse(resp.text)
-        types = [e["type"] for e in events]
+@pytest.mark.asyncio
+async def test_stream_returns_session_id():
+    """Streaming: should emit a session event with session_id."""
+    from httpx import ASGITransport, AsyncClient
+    from main import app
 
-        assert "step" in types
-        assert "chunk" in types
-        assert "done" in types
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/orchestrate/stream",
+            json={
+                "message": "Are we on track for the marketplace redesign?",
+                "agent_id": str(COO_ID),
+            },
+        )
 
-        step_events = [e for e in events if e["type"] == "step"]
-        assert step_events[0]["step"]["label"] == "Classifying intent..."
+    events = _parse_sse(resp.text)
+    session_events = [e for e in events if e["type"] == "session"]
+    assert len(session_events) == 1
+    assert "session_id" in session_events[0]
+    assert len(session_events[0]["session_id"]) > 0
 
-        chunks = [e for e in events if e["type"] == "chunk"]
-        assert any("revenue" in c["text"].lower() for c in chunks)
+
+@pytest.mark.asyncio
+async def test_stream_preserves_provided_session_id():
+    """Streaming: when session_id is provided, it should be echoed back."""
+    from httpx import ASGITransport, AsyncClient
+    from main import app
+
+    my_session = "my-custom-session-456"
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/orchestrate/stream",
+            json={
+                "message": "Are we on track for the marketplace redesign?",
+                "agent_id": str(COO_ID),
+                "session_id": my_session,
+            },
+        )
+
+    events = _parse_sse(resp.text)
+    session_events = [e for e in events if e["type"] == "session"]
+    assert session_events[0]["session_id"] == my_session
 
 
 @pytest.mark.asyncio

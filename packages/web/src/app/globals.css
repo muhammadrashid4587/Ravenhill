@@ -2,20 +2,475 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar */
+/* ============================================================
+   RAVENHILL DESIGN SYSTEM
+   Dark space with living light — atmospheric depth + neon energy
+   ============================================================ */
+
+:root {
+  /* Backgrounds */
+  --bg-void: #030308;
+  --bg-surface: #08081a;
+  --bg-elevated: #0e0e2a;
+  --bg-interactive: #141430;
+
+  /* Borders */
+  --border-subtle: rgba(168, 85, 247, 0.06);
+  --border-glow: rgba(236, 72, 153, 0.20);
+
+  /* Text */
+  --text-primary: #ededf0;
+  --text-secondary: #7a7a8e;
+  --text-tertiary: #4a4a60;
+
+  /* Accent */
+  --accent-pink: #ec4899;
+  --accent-purple: #a855f7;
+  --accent-indigo: #6366f1;
+  --accent-cyan: #22d3ee;
+
+  /* Gradients */
+  --gradient-hot: linear-gradient(135deg, #a855f7, #ec4899);
+  --gradient-cool: linear-gradient(135deg, #6366f1, #22d3ee);
+  --gradient-full: linear-gradient(135deg, #a855f7, #ec4899, #6366f1);
+
+  /* Glows */
+  --glow-pink: rgba(236, 72, 153, 0.15);
+  --glow-purple: rgba(168, 85, 247, 0.12);
+  --glow-cyan: rgba(34, 211, 238, 0.10);
+
+  /* Glass */
+  --surface-glass: rgba(14, 14, 42, 0.55);
+  --surface-glass-hover: rgba(20, 20, 48, 0.70);
+
+  /* Status */
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+}
+
+@layer base {
+  body {
+    background: var(--bg-void);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ============================================================
+   AMBIENT BACKGROUND — "Living Darkness"
+   ============================================================ */
+
+/* Gradient orbs — fixed positioned, drift slowly */
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  will-change: transform;
+}
+
+.ambient-orb--purple {
+  top: -15%;
+  left: -10%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, var(--accent-purple) 0%, transparent 70%);
+  opacity: 0.08;
+  animation: orb-drift-1 65s ease-in-out infinite;
+}
+
+.ambient-orb--pink {
+  bottom: -20%;
+  right: -10%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, var(--accent-pink) 0%, transparent 70%);
+  opacity: 0.06;
+  animation: orb-drift-2 70s ease-in-out infinite;
+}
+
+.ambient-orb--indigo {
+  bottom: -10%;
+  left: 30%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, var(--accent-indigo) 0%, transparent 70%);
+  opacity: 0.05;
+  animation: orb-drift-3 60s ease-in-out infinite;
+}
+
+/* Cyan variant for approval page */
+.ambient-orb--cyan {
+  top: 10%;
+  right: 20%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, var(--accent-cyan) 0%, transparent 70%);
+  opacity: 0.06;
+  animation: orb-drift-2 75s ease-in-out infinite reverse;
+}
+
+/* Noise texture overlay */
+.ambient-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 128px 128px;
+  opacity: 0.03;
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+
+/* Vignette */
+.ambient-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(3, 3, 8, 0.4) 100%);
+  z-index: 2;
+}
+
+/* Orb drift animations — slow figure-8 patterns */
+@keyframes orb-drift-1 {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(25px, -15px); }
+  50% { transform: translate(-10px, -30px); }
+  75% { transform: translate(-20px, 10px); }
+}
+
+@keyframes orb-drift-2 {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-20px, 20px); }
+  50% { transform: translate(15px, 25px); }
+  75% { transform: translate(25px, -15px); }
+}
+
+@keyframes orb-drift-3 {
+  0%, 100% { transform: translate(0, 0); }
+  33% { transform: translate(20px, -20px); }
+  66% { transform: translate(-15px, 15px); }
+}
+
+/* ============================================================
+   GLASSMORPHISM
+   ============================================================ */
+
+.glass-card {
+  background: var(--surface-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.glass-card:hover {
+  background: var(--surface-glass-hover);
+}
+
+/* Gradient border pseudo-element technique */
+.gradient-border {
+  position: relative;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--gradient-full);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.2;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+
+.gradient-border:hover::before {
+  opacity: 0.4;
+}
+
+/* Cool variant for approval page */
+.gradient-border-cool::before {
+  background: var(--gradient-cool);
+}
+
+/* ============================================================
+   GRADIENT TEXT
+   ============================================================ */
+
+.gradient-text {
+  background: var(--gradient-hot);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ============================================================
+   KEYFRAMES — All animations
+   ============================================================ */
+
+/* 1. Login → Chat dissolve transition */
+@keyframes dissolve-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+    filter: blur(6px);
+  }
+}
+
+@keyframes materialize-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* 2. Message animations */
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 3. Streaming chunk fade */
+@keyframes chunk-fade {
+  from {
+    opacity: 0;
+    filter: blur(1px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+/* 4. Source pill entrance */
+@keyframes pill-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 6. Approval card entrance (cinematic) */
+@keyframes approval-enter {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.96);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* Approval exit */
+@keyframes approval-exit {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(-16px);
+  }
+}
+
+/* Glow flash on approval arrival */
+@keyframes glow-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Ambient breathe for idle indicators */
+@keyframes ambient-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* 7. Typing indicator shimmer wave */
+@keyframes shimmer-wave {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    box-shadow: 0 0 0 transparent;
+  }
+  40% {
+    opacity: 1;
+    box-shadow: 0 0 6px var(--glow-pink);
+  }
+}
+
+/* 8. Status text crossfade */
+@keyframes crossfade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes crossfade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================================
+   ANIMATION UTILITY CLASSES
+   ============================================================ */
+
+.animate-dissolve-out {
+  animation: dissolve-out 450ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-materialize-in {
+  animation: materialize-in 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-up {
+  animation: fade-up 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-chunk-fade {
+  animation: chunk-fade 150ms ease-out both;
+}
+
+.animate-pill-enter {
+  animation: pill-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-approval-enter {
+  animation: approval-enter 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-approval-exit {
+  animation: approval-exit 350ms ease-in forwards;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 600ms ease-out forwards;
+}
+
+.animate-ambient-breathe {
+  animation: ambient-breathe 2.5s ease-in-out infinite;
+}
+
+.animate-crossfade-in {
+  animation: crossfade-in 250ms ease-out 100ms both;
+}
+
+.animate-crossfade-out {
+  animation: crossfade-out 200ms ease-in forwards;
+}
+
+/* Shimmer wave dots */
+.shimmer-dot-1 {
+  animation: shimmer-wave 1.4s ease-in-out infinite;
+}
+.shimmer-dot-2 {
+  animation: shimmer-wave 1.4s ease-in-out 0.2s infinite;
+}
+.shimmer-dot-3 {
+  animation: shimmer-wave 1.4s ease-in-out 0.4s infinite;
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+
 ::-webkit-scrollbar {
   width: 6px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: #374151;
+  background: rgba(168, 85, 247, 0.15);
   border-radius: 3px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: rgba(168, 85, 247, 0.3);
+}
+
+/* ============================================================
+   ACCESSIBILITY — respect reduced motion
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .ambient-orb {
+    animation: none !important;
+  }
 }

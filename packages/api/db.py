@@ -6,7 +6,7 @@ All tables are created on startup. Demo agents are seeded if the agents table is
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, String, Text, Uuid
+from sqlalchemy import Boolean, Column, DateTime, String, Text, Uuid, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.types import JSON
@@ -35,9 +35,14 @@ class AgentRow(Base):
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=False)
     role = Column(String(200), nullable=False)
+    role_description = Column(Text, default="")
     departments = Column(JSON, default=list)
     knowledge_areas = Column(JSON, default=list)
     knowledge_base = Column(Text, default="")
+    topic_keys = Column(JSON, default=list)
+    knowledge_entries = Column(JSON, default=list)
+    documents = Column(JSON, default=list)
+    trust_level = Column(String(20), default="auto")
     scopes = Column(JSON, default=list)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -92,29 +97,32 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
 
 
+async def alter_table_if_needed():
+    """Add new columns to existing tables if they don't exist."""
+    async with engine.begin() as conn:
+        for col_def in [
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS topic_keys JSON",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS knowledge_entries JSON",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS documents JSON",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS trust_level VARCHAR(20) DEFAULT 'auto'",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS role_description TEXT DEFAULT ''",
+        ]:
+            try:
+                await conn.execute(text(col_def))
+            except Exception:
+                pass  # Column might already exist
+
+
 async def seed_demo_agents():
-    """Insert demo agents if the agents table is empty."""
+    """Delete all existing agents and re-insert fresh seed data."""
     from agents.seed import SEED_AGENTS
-    from sqlalchemy import select, func
 
     async with async_session() as session:
-        count = await session.scalar(select(func.count()).select_from(AgentRow))
-        if count and count > 0:
-            return
-
+        # Always delete and reseed for demo consistency
+        await session.execute(AgentRow.__table__.delete())
         for agent_data in SEED_AGENTS:
-            row = AgentRow(
-                id=agent_data["id"],
-                name=agent_data["name"],
-                role=agent_data["role"],
-                departments=agent_data["departments"],
-                knowledge_areas=agent_data["knowledge_areas"],
-                knowledge_base=agent_data["knowledge_base"],
-                scopes=agent_data["scopes"],
-                is_active=True,
-            )
+            row = AgentRow(**agent_data)
             session.add(row)
-
         await session.commit()
         print(f"Seeded {len(SEED_AGENTS)} demo agents.")
 

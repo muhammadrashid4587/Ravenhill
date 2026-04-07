@@ -19,16 +19,21 @@ async def test_db():
     async with test_engine.begin() as conn:
         await conn.run_sync(db.Base.metadata.create_all)
 
-    # Seed demo agents
+    # Seed demo agents with all new fields
     async with test_session_factory() as session:
         for agent_data in SEED_AGENTS:
             row = db.AgentRow(
                 id=agent_data["id"],
                 name=agent_data["name"],
                 role=agent_data["role"],
+                role_description=agent_data.get("role_description", ""),
                 departments=agent_data["departments"],
                 knowledge_areas=agent_data["knowledge_areas"],
-                knowledge_base=agent_data["knowledge_base"],
+                knowledge_base=agent_data.get("knowledge_base", ""),
+                topic_keys=agent_data.get("topic_keys", []),
+                knowledge_entries=agent_data.get("knowledge_entries", []),
+                documents=agent_data.get("documents", []),
+                trust_level=agent_data.get("trust_level", "auto"),
                 scopes=agent_data["scopes"],
                 is_active=True,
             )

@@ -17,9 +17,14 @@ def _row_to_agent(row: AgentRow) -> Agent:
         id=row.id,
         name=row.name,
         role=row.role,
+        role_description=row.role_description or "",
         departments=row.departments or [],
         knowledge_areas=row.knowledge_areas or [],
         knowledge_base=row.knowledge_base or "",
+        knowledge_entries=row.knowledge_entries or [],
+        topic_keys=row.topic_keys or [],
+        documents=row.documents or [],
+        trust_level=row.trust_level or "auto",
         scopes=row.scopes or [],
         is_active=row.is_active,
         created_at=row.created_at,
@@ -43,7 +48,10 @@ async def search_agents_by_query(query: str) -> list[Agent]:
     results = []
     for row in rows:
         areas = row.knowledge_areas or []
-        searchable = " ".join(areas + [row.role] + (row.departments or [])).lower()
+        topic_keys = row.topic_keys or []
+        searchable = " ".join(
+            areas + topic_keys + [row.role] + (row.departments or [])
+        ).lower()
         if any(word in searchable for word in words):
             results.append(_row_to_agent(row))
 

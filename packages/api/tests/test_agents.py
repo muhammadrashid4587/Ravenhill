@@ -3,25 +3,47 @@
 import pytest
 from sqlalchemy import select
 
-from agents.seed import SALES_AGENT_ID, FINANCE_AGENT_ID, SEED_AGENTS
+from agents.seed import COO_ID, PRODUCT_LEAD_ID, ENG_LEAD_ID, OPS_MANAGER_ID, SEED_AGENTS
 import db
 from db import AgentRow
 
 
 def test_seed_data_exists():
-    assert len(SEED_AGENTS) == 2
+    assert len(SEED_AGENTS) == 4
 
 
-def test_sales_agent_seed():
-    sales = next(a for a in SEED_AGENTS if a["id"] == SALES_AGENT_ID)
-    assert sales["departments"] == ["Sales"]
-    assert "pipeline" in sales["knowledge_areas"]
+def test_coo_agent_seed():
+    coo = next(a for a in SEED_AGENTS if a["id"] == COO_ID)
+    assert coo["departments"] == ["Executive"]
+    assert coo["name"] == "Riley Chen"
+    assert "strategy" in coo["knowledge_areas"]
 
 
-def test_finance_agent_seed():
-    finance = next(a for a in SEED_AGENTS if a["id"] == FINANCE_AGENT_ID)
-    assert finance["departments"] == ["Finance"]
-    assert "financial reporting" in finance["knowledge_areas"]
+def test_product_lead_seed():
+    product = next(a for a in SEED_AGENTS if a["id"] == PRODUCT_LEAD_ID)
+    assert product["departments"] == ["Product"]
+    assert "marketplace_redesign" in product["topic_keys"]
+
+
+def test_eng_lead_seed():
+    eng = next(a for a in SEED_AGENTS if a["id"] == ENG_LEAD_ID)
+    assert eng["departments"] == ["Engineering"]
+    # Critical: Engineering's api_dependencies entry must reference OPS_MANAGER_ID
+    refs = [
+        e.get("references_agent") for e in eng["knowledge_entries"]
+        if e.get("references_agent")
+    ]
+    assert str(OPS_MANAGER_ID) in refs
+
+
+def test_ops_manager_seed():
+    ops = next(a for a in SEED_AGENTS if a["id"] == OPS_MANAGER_ID)
+    assert ops["departments"] == ["Operations"]
+    assert ops["trust_level"] == "approve"
+    # Must have the MSA document that requires approval
+    docs = ops["documents"]
+    msa_docs = [d for d in docs if d["requires_approval"]]
+    assert len(msa_docs) >= 1
 
 
 @pytest.mark.asyncio
@@ -30,11 +52,13 @@ async def test_agents_seeded_in_db():
     async with db.async_session() as session:
         result = await session.execute(select(AgentRow))
         rows = result.scalars().all()
-        assert len(rows) == 2
+        assert len(rows) == 4
 
         ids = {row.id for row in rows}
-        assert SALES_AGENT_ID in ids
-        assert FINANCE_AGENT_ID in ids
+        assert COO_ID in ids
+        assert PRODUCT_LEAD_ID in ids
+        assert ENG_LEAD_ID in ids
+        assert OPS_MANAGER_ID in ids
 
 
 @pytest.mark.asyncio
@@ -51,6 +75,10 @@ async def test_agent_crud():
             role="QA Engineer",
             departments=["Engineering"],
             knowledge_areas=["testing", "automation"],
+            topic_keys=["testing", "qa"],
+            knowledge_entries=[],
+            documents=[],
+            trust_level="auto",
             scopes=["read:public"],
         )
         session.add(row)

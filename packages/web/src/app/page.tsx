@@ -1,219 +1,124 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import {
-  Users,
-  MessageSquare,
-  ShieldCheck,
-  Zap,
-  ArrowRight,
-  Activity,
-} from "lucide-react";
-import StatCard from "@/components/StatCard";
-import ActivityItem, { ActivityType } from "@/components/ActivityItem";
-import { fetchStats, fetchActivity, fetchHealth } from "@/lib/api";
-import { timeAgo } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
-interface Stats {
-  active_agents: number;
-  messages_today: number;
-  pending_approvals: number;
-  auto_resolved: number;
-}
-
-interface HealthStatus {
-  status: string;
-  llm_provider: string;
-}
-
-interface ActivityEntry {
-  type: ActivityType;
-  from_agent: string;
-  to_agent?: string;
-  description: string;
-  created_at: string;
-}
-
-export default function Dashboard() {
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [apiDown, setApiDown] = useState(false);
+export default function LandingPage() {
+  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      fetchStats().catch(() => null),
-      fetchActivity(undefined, 5).catch(() => null),
-      fetchHealth().catch(() => null),
-    ]).then(([s, a, h]) => {
-      if (s) setStats(s);
-      if (a) setActivity(a.items ?? []);
-      if (h) setHealth(h);
-      if (!s && !a && !h) setApiDown(true);
-    });
+    setMounted(true);
   }, []);
 
-  const llmLabel =
-    health?.llm_provider === "mock"
-      ? "Mock Mode"
-      : health?.llm_provider
-        ? health.llm_provider.charAt(0).toUpperCase() +
-          health.llm_provider.slice(1)
-        : "Unknown";
-  const llmIsLive = health?.llm_provider && health.llm_provider !== "mock";
+  if (!mounted) return null;
 
   return (
-    <div className="p-8 max-w-6xl">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold mb-1">Dashboard</h1>
-        <p className="text-sm text-gray-500">
-          Overview of your agent network and recent activity
+    <div
+      className="flex flex-col h-screen relative overflow-hidden"
+      style={{ background: "var(--bg-void)", color: "var(--text-primary)" }}
+    >
+      {/* Ambient background */}
+      <div className="ambient-bg">
+        <div className="ambient-orb ambient-orb--purple" />
+        <div className="ambient-orb ambient-orb--pink" />
+        <div className="ambient-orb ambient-orb--indigo" />
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-6">
+        {/* Logo */}
+        <div className="flex items-center gap-3 mb-6 animate-fade-up">
+          <svg className="w-10 h-10" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M13 3L4 14h7v7l9-11h-7V3z"
+              fill="url(#bolt-landing)"
+            />
+            <defs>
+              <linearGradient
+                id="bolt-landing"
+                x1="4"
+                y1="3"
+                x2="20"
+                y2="21"
+                gradientUnits="userSpaceOnUse"
+              >
+                <stop stopColor="#a855f7" />
+                <stop offset="1" stopColor="#ec4899" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <h1
+            className="text-3xl font-semibold tracking-tight"
+            style={{ letterSpacing: "-0.03em" }}
+          >
+            RavenHill
+          </h1>
+        </div>
+
+        {/* Tagline */}
+        <p
+          className="text-lg mb-2 animate-fade-up text-center max-w-md"
+          style={{
+            color: "var(--text-secondary)",
+            animationDelay: "100ms",
+          }}
+        >
+          Every employee gets an AI agent.
+          <br />
+          The agents talk to each other.
         </p>
-      </div>
 
-      {apiDown && (
-        <div className="mb-6 p-4 bg-red-900/20 border border-red-800 rounded-xl text-sm text-red-400">
-          Cannot connect to API server. Is the backend running on localhost:8000?
-        </div>
-      )}
+        <p
+          className="text-sm mb-12 animate-fade-up"
+          style={{
+            color: "var(--text-tertiary)",
+            animationDelay: "200ms",
+          }}
+        >
+          No meetings. No Slack threads. No ask chains.
+        </p>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        <StatCard
-          label="Active Agents"
-          value={String(stats?.active_agents ?? 0)}
-          change={stats ? `${stats.active_agents} online` : "Loading..."}
-          changeType="up"
-          icon={Users}
-        />
-        <StatCard
-          label="Messages Today"
-          value={String(stats?.messages_today ?? 0)}
-          changeType="up"
-          icon={MessageSquare}
-        />
-        <StatCard
-          label="Approvals Pending"
-          value={String(stats?.pending_approvals ?? 0)}
-          changeType="neutral"
-          icon={ShieldCheck}
-        />
-        <StatCard
-          label="Auto-Resolved"
-          value={String(stats?.auto_resolved ?? 0)}
-          changeType="up"
-          icon={Zap}
-        />
-      </div>
+        {/* CTA buttons */}
+        <div
+          className="flex gap-4 animate-fade-up"
+          style={{ animationDelay: "350ms" }}
+        >
+          <button
+            onClick={() => router.push("/demo")}
+            className="px-8 py-3.5 rounded-xl font-medium text-sm text-white transition-all duration-200 active:scale-[0.96] min-w-[180px]"
+            style={{
+              background: "var(--gradient-hot)",
+              boxShadow:
+                "0 0 24px var(--glow-pink), 0 0 48px var(--glow-purple)",
+            }}
+          >
+            Start Demo
+          </button>
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Activity Feed */}
-        <div className="col-span-2 bg-gray-900 border border-gray-800 rounded-xl">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-gray-500" />
-              <h2 className="text-sm font-medium">Recent Activity</h2>
-            </div>
-            <Link
-              href="/activity"
-              className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-            >
-              View all <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-          <div className="px-5 py-2">
-            {activity.length > 0 ? (
-              activity.map((item, i) => (
-                <ActivityItem
-                  key={i}
-                  type={item.type}
-                  from={item.from_agent}
-                  to={item.to_agent}
-                  description={item.description}
-                  timestamp={timeAgo(item.created_at)}
-                />
-              ))
-            ) : (
-              <div className="py-8 text-center text-sm text-gray-600">
-                No activity yet.{" "}
-                <Link href="/demo" className="text-blue-400 hover:text-blue-300">
-                  Try the Chat Demo
-                </Link>{" "}
-                to generate some.
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => router.push("/approval")}
+            className="px-8 py-3.5 rounded-xl font-medium text-sm transition-all duration-200 active:scale-[0.96] min-w-[180px]"
+            style={{
+              background: "transparent",
+              border: "1px solid var(--border-glow)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Open Approval Screen
+          </button>
         </div>
 
-        {/* Quick Actions */}
-        <div className="space-y-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium mb-4">Quick Actions</h2>
-            <div className="space-y-2">
-              <Link
-                href="/demo"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-600/10 border border-blue-800/30 hover:border-blue-700 transition text-sm"
-              >
-                <MessageSquare className="w-4 h-4 text-blue-400" />
-                <span className="text-blue-300">Open Chat Demo</span>
-              </Link>
-              <Link
-                href="/agents"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800/50 border border-gray-800 hover:border-gray-700 transition text-sm"
-              >
-                <Users className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-300">View Agents</span>
-              </Link>
-              <Link
-                href="/activity"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-800/50 border border-gray-800 hover:border-gray-700 transition text-sm"
-              >
-                <Activity className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-300">Activity Log</span>
-              </Link>
-            </div>
-          </div>
-
-          {/* System Status */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h2 className="text-sm font-medium mb-4">System Status</h2>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">API Server</span>
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                    health
-                      ? "bg-green-900/50 text-green-400 border-green-800"
-                      : "bg-red-900/50 text-red-400 border-red-800"
-                  }`}
-                >
-                  {health ? "Healthy" : "Offline"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">LLM Provider</span>
-                <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                    llmIsLive
-                      ? "bg-green-900/50 text-green-400 border-green-800"
-                      : "bg-yellow-900/50 text-yellow-400 border-yellow-800"
-                  }`}
-                >
-                  {llmLabel}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">ETO Messaging</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400 border border-yellow-800">
-                  Stubbed
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Subtle hint */}
+        <p
+          className="text-[11px] mt-16 animate-fade-up"
+          style={{
+            color: "var(--text-tertiary)",
+            animationDelay: "500ms",
+          }}
+        >
+          Demo runs two screens: the COO chat + the approval card
+        </p>
       </div>
     </div>
   );

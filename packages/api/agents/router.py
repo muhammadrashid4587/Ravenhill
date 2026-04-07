@@ -17,18 +17,28 @@ router = APIRouter()
 class CreateAgentRequest(BaseModel):
     name: str
     role: str
+    role_description: str = ""
     departments: list[str] = []
     knowledge_areas: list[str] = []
     knowledge_base: str = ""
+    topic_keys: list[str] = []
+    knowledge_entries: list[dict] = []
+    documents: list[dict] = []
+    trust_level: str = "auto"
     scopes: list[str] = []
 
 
 class UpdateAgentRequest(BaseModel):
     name: str | None = None
     role: str | None = None
+    role_description: str | None = None
     departments: list[str] | None = None
     knowledge_areas: list[str] | None = None
     knowledge_base: str | None = None
+    topic_keys: list[str] | None = None
+    knowledge_entries: list[dict] | None = None
+    documents: list[dict] | None = None
+    trust_level: str | None = None
     scopes: list[str] | None = None
     is_active: bool | None = None
 
@@ -38,9 +48,14 @@ def _row_to_agent(row: AgentRow) -> Agent:
         id=row.id,
         name=row.name,
         role=row.role,
+        role_description=row.role_description or "",
         departments=row.departments or [],
         knowledge_areas=row.knowledge_areas or [],
         knowledge_base=row.knowledge_base or "",
+        knowledge_entries=row.knowledge_entries or [],
+        topic_keys=row.topic_keys or [],
+        documents=row.documents or [],
+        trust_level=row.trust_level or "auto",
         scopes=row.scopes or [],
         is_active=row.is_active,
         created_at=row.created_at,
@@ -73,9 +88,14 @@ async def create_agent(req: CreateAgentRequest):
         row = AgentRow(
             name=req.name,
             role=req.role,
+            role_description=req.role_description,
             departments=req.departments,
             knowledge_areas=req.knowledge_areas,
             knowledge_base=req.knowledge_base,
+            topic_keys=req.topic_keys,
+            knowledge_entries=req.knowledge_entries,
+            documents=req.documents,
+            trust_level=req.trust_level,
             scopes=req.scopes,
         )
         session.add(row)

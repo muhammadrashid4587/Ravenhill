@@ -13,10 +13,11 @@ from orchestrator import router as orchestrator_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from db import init_db, seed_demo_agents, close_db
+    from db import init_db, alter_table_if_needed, seed_demo_agents, close_db
 
     print("Starting Ravenhill API...")
     await init_db()
+    await alter_table_if_needed()
     await seed_demo_agents()
     yield
     await close_db()
@@ -34,6 +35,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
         "https://e-agent-demo.fly.dev",
     ],
     allow_credentials=True,

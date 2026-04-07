@@ -12,11 +12,15 @@ cause import-time errors.
 Cerebras is primary — ~2000 tok/s on wafer-scale chips, free tier, Llama 3.3 70B.
 """
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
 
 from config import settings
+
+# Maximum time (seconds) to wait for a single LLM call before falling back
+LLM_TIMEOUT = 15
 
 log = logging.getLogger("llm")
 
@@ -178,9 +182,14 @@ async def call_llm(
         model = _MODELS[p].get(model_tier, _MODELS[p]["fast"])
         caller = _CALLERS[p]
         try:
-            result = await caller(system, user_message, model, max_tokens, json_mode)
+            result = await asyncio.wait_for(
+                caller(system, user_message, model, max_tokens, json_mode),
+                timeout=LLM_TIMEOUT,
+            )
             log.info(f"[llm] Using {p}/{model}")
             return result
+        except asyncio.TimeoutError:
+            log.warning(f"[llm] {p}/{model} timed out after {LLM_TIMEOUT}s, trying next")
         except Exception as e:
             err = str(e).lower()
             if any(kw in err for kw in ("auth", "invalid", "credit", "quota", "api_key", "403")):

@@ -1,406 +1,852 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import ChatMessage from "@/components/ChatMessage";
-import ApprovalPopup from "@/components/ApprovalPopup";
-import {
-  orchestrate,
-  submitApproval,
-  completeDocRequest,
-  resetDemo,
-} from "@/lib/api";
+import { orchestrateStream, resetDemo, secondHopStream, completeDocRequest } from "@/lib/api";
 
-const JORDAN_ID = "00000000-0000-0000-0000-000000000001";
+const COO_AGENT_ID = "00000000-0000-0000-0000-000000000001";
+const DEMO_USER_KEY = "ravenhill_demo_user";
+
+interface DemoUser {
+  name: string;
+  company: string;
+}
 
 interface Message {
   id: string;
-  sender: string;
+  role: "user" | "agent";
   content: string;
-  isAgent: boolean;
-  timestamp: string;
-  side: "left" | "right";
-  type?: "user" | "agent" | "system" | "thinking";
+  chunks?: string[];
+  sources?: string[];
+  secondHopAvailable?: boolean;
+  secondHopHint?: string;
+  secondHopAgentId?: string;
+  streaming?: boolean;
+  approvalId?: string;
+  approvalTarget?: string;
+  error?: boolean;
 }
 
-interface PendingApproval {
-  approvalId: string;
-  requesterName: string;
-  targetName: string;
-  resource: string;
-}
-
-const DEMO_PROMPTS = [
-  { label: "Who owns Q4 revenue forecast?", desc: "Knowledge routing" },
-  { label: "Get me the focus group results", desc: "File sharing + approval" },
-  { label: "What's the Acme Corp deal status?", desc: "Direct answer" },
-  { label: "What's our Q4 pipeline looking like?", desc: "Direct answer" },
+const SUGGESTIONS = [
+  {
+    text: "Are we on track for the marketplace redesign?",
+    label: "Project Status",
+  },
+  {
+    text: "What's blocking the API dependency?",
+    label: "Blocker Deep Dive",
+  },
+  {
+    text: "Ask ops to share the vendor contract with engineering",
+    label: "Document Request",
+  },
 ];
 
-// Small delay helper to make the flow feel real
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/* ============================================================
+   Ambient Background — reusable across login + chat
+   ============================================================ */
+function AmbientBackground() {
+  return (
+    <div className="ambient-bg">
+      <div className="ambient-orb ambient-orb--purple" />
+      <div className="ambient-orb ambient-orb--pink" />
+      <div className="ambient-orb ambient-orb--indigo" />
+    </div>
+  );
+}
 
+/* ============================================================
+   Login Gate — dissolves out on submit
+   ============================================================ */
+function LoginGate({ onLogin }: { onLogin: (user: DemoUser) => void }) {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [dissolving, setDissolving] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const user = { name: name.trim(), company: company.trim() || "Acme Co" };
+    localStorage.setItem(DEMO_USER_KEY, JSON.stringify(user));
+    setDissolving(true);
+    setTimeout(() => onLogin(user), 450);
+  };
+
+  return (
+    <div className={`flex flex-col h-screen items-center justify-center relative z-10 ${
+      dissolving ? "animate-dissolve-out" : ""
+    }`}>
+      <div className="w-full max-w-sm px-6">
+        <div className="flex items-center gap-2.5 mb-10 justify-center">
+          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
+            <path d="M13 3L4 14h7v7l9-11h-7V3z" fill="url(#bolt-grad)" />
+            <defs>
+              <linearGradient id="bolt-grad" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#a855f7" />
+                <stop offset="1" stopColor="#ec4899" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <span className="text-lg font-semibold tracking-tight" style={{ color: "var(--text-primary)" }}>
+            RavenHill
+          </span>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-[0.7rem] font-medium uppercase tracking-[0.06em] block mb-1.5"
+                   style={{ color: "var(--text-secondary)" }}>
+              Your Name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Riley Chen"
+              autoFocus
+              className="w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition placeholder:opacity-50"
+              style={{
+                background: "var(--bg-interactive)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "rgba(236, 72, 153, 0.3)";
+                e.currentTarget.style.boxShadow = "0 0 0 3px var(--glow-pink), 0 0 20px var(--glow-purple)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "var(--border-subtle)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            />
+          </div>
+          <div>
+            <label className="text-[0.7rem] font-medium uppercase tracking-[0.06em] block mb-1.5"
+                   style={{ color: "var(--text-secondary)" }}>
+              Company
+            </label>
+            <input
+              type="text"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Acme Co"
+              className="w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition placeholder:opacity-50"
+              style={{
+                background: "var(--bg-interactive)",
+                border: "1px solid var(--border-subtle)",
+                color: "var(--text-primary)",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "rgba(236, 72, 153, 0.3)";
+                e.currentTarget.style.boxShadow = "0 0 0 3px var(--glow-pink), 0 0 20px var(--glow-purple)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "var(--border-subtle)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!name.trim()}
+            className="w-full py-3 rounded-xl font-medium text-sm text-white transition-all active:scale-[0.96] disabled:opacity-30 disabled:cursor-not-allowed mt-2"
+            style={{
+              background: name.trim() ? "var(--gradient-hot)" : "var(--bg-interactive)",
+              boxShadow: name.trim() ? "0 0 24px var(--glow-pink)" : "none",
+            }}
+          >
+            Start Demo
+          </button>
+        </form>
+
+        <p className="text-[11px] text-center mt-6" style={{ color: "var(--text-tertiary)" }}>
+          This is a live demo. No data is stored.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   Main Demo Page
+   ============================================================ */
 export default function DemoPage() {
+  const [demoUser, setDemoUser] = useState<DemoUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [approval, setApproval] = useState<PendingApproval | null>(null);
-  const [activeStep, setActiveStep] = useState("");
-  const leftEndRef = useRef<HTMLDivElement>(null);
-  const rightEndRef = useRef<HTMLDivElement>(null);
+  const [statusText, setStatusText] = useState("");
+  const [prevStatusText, setPrevStatusText] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isNearBottomRef = useRef(true);
 
-  const scrollLeft = useCallback(() => {
-    setTimeout(() => leftEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  // Check localStorage for existing demo user
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(DEMO_USER_KEY);
+      if (stored) setDemoUser(JSON.parse(stored));
+    } catch { /* ignore */ }
+    setAuthChecked(true);
   }, []);
-  const scrollRight = useCallback(() => {
-    setTimeout(() => rightEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
+  // Smooth auto-scroll with RAF — only if user is near bottom
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      if (isNearBottomRef.current && scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({
+          top: scrollContainerRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+      }
+    });
   }, []);
 
-  const now = () =>
-    new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // Track scroll position
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const threshold = 150;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+  }, []);
 
-  const pushMsg = useCallback(
-    (
-      sender: string,
-      content: string,
-      side: "left" | "right",
-      type: Message["type"] = "agent"
-    ) => {
-      const msg: Message = {
-        id: crypto.randomUUID(),
-        sender,
-        content,
-        isAgent: type !== "user",
-        timestamp: now(),
-        side,
-        type,
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, scrollToBottom]);
+
+  // WebSocket: listen for approval resolutions
+  useEffect(() => {
+    if (!demoUser) return;
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host =
+      process.env.NEXT_PUBLIC_API_URL?.replace(/^https?:\/\//, "") ||
+      "localhost:8000";
+    const url = `${protocol}//${host}/api/approvals/ws/${COO_AGENT_ID}`;
+
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function connect() {
+      ws = new WebSocket(url);
+
+      ws.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "context_request") {
+            const fromAgent = data.from_agent || "The approver";
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                role: "agent" as const,
+                content: `${fromAgent} wants a bit more context before approving — why do you need this document? You can reply and I'll pass it along.`,
+              },
+            ]);
+          }
+          if (data.type === "approval_resolved" && data.approval_id) {
+            const approved = data.status === "approved";
+            try {
+              const result = await completeDocRequest(data.approval_id);
+              const completionText =
+                result.answer ||
+                (approved
+                  ? "Document has been approved and shared."
+                  : "The document request was denied.");
+
+              setMessages((prev) => {
+                const hasApproval = prev.some(
+                  (m) => m.approvalId === data.approval_id
+                );
+                if (!hasApproval) return prev;
+
+                return [
+                  ...prev,
+                  {
+                    id: crypto.randomUUID(),
+                    role: "agent" as const,
+                    content: completionText,
+                    sources: result.sources || [],
+                  },
+                ];
+              });
+            } catch {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: crypto.randomUUID(),
+                  role: "agent" as const,
+                  content: approved
+                    ? "Good news — the document has been approved and shared with you."
+                    : "The request was declined. Want me to follow up with them for context on why?",
+                },
+              ]);
+            }
+          }
+        } catch {
+          /* ignore malformed messages */
+        }
       };
-      setMessages((prev) => [...prev, msg]);
-      if (side === "left") scrollLeft();
-      else scrollRight();
-      return msg.id;
-    },
-    [scrollLeft, scrollRight]
-  );
 
-  const removeMsg = useCallback((id: string) => {
-    setMessages((prev) => prev.filter((m) => m.id !== id));
+      ws.onclose = () => {
+        reconnectTimer = setTimeout(connect, 5000);
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+
+      const pingInterval = setInterval(() => {
+        if (ws?.readyState === WebSocket.OPEN) ws.send("ping");
+      }, 30000);
+
+      ws.addEventListener("close", () => clearInterval(pingInterval));
+    }
+
+    connect();
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [demoUser]);
+
+  const showStatus = useCallback((text: string) => {
+    setPrevStatusText(statusText);
+    setStatusText(text);
+    if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+    statusTimeoutRef.current = setTimeout(() => {
+      setPrevStatusText("");
+      setStatusText("");
+    }, 4000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Main orchestration flow with visible agent-to-agent comms ----
   const handleSend = async (text?: string) => {
     const message = text || input.trim();
     if (!message || loading) return;
     setInput("");
     setLoading(true);
 
-    // 1. User sends to Jordan
-    pushMsg("You", message, "left", "user");
-    await wait(400);
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: message,
+    };
+    setMessages((prev) => [...prev, userMsg]);
 
-    // 2. Jordan is thinking...
-    setActiveStep("Jordan's agent is analyzing your request...");
-    const thinkingId = pushMsg("Jordan Chen", "Thinking...", "left", "thinking");
-    await wait(300);
+    const agentMsgId = crypto.randomUUID();
+    const agentMsg: Message = {
+      id: agentMsgId,
+      role: "agent",
+      content: "",
+      chunks: [],
+      streaming: true,
+    };
+    setMessages((prev) => [...prev, agentMsg]);
 
     try {
-      const res = await orchestrate(JORDAN_ID, message);
+      await orchestrateStream(COO_AGENT_ID, message, sessionId, (event) => {
+        const type = event.type as string;
 
-      // 3. Remove thinking, show Jordan's classification
-      removeMsg(thinkingId);
+        if (type === "session") {
+          const sid = event.session_id as string;
+          setSessionId(sid);
+        }
 
-      if (res.target_agent && res.target_agent.departments?.[0] !== res.source_agent.departments?.[0]) {
-        // ---- ROUTED FLOW: Jordan → Karen ----
+        if (type === "step") {
+          const step = event.step as { label: string; detail?: string };
+          showStatus(step.label);
+        }
 
-        // Jordan decides to route
-        setActiveStep(`Routing to ${res.target_agent.name}...`);
-        pushMsg(
-          "Jordan Chen",
-          `This is a ${res.intent === "DOC_REQUEST" ? "document request" : "question"} about ${res.steps?.[0]?.detail?.split("—")?.[1]?.trim() || res.target_agent.departments?.[0]}. Let me connect you with ${res.target_agent.name} in ${res.target_agent.departments?.[0]}.`,
-          "left",
-          "agent"
-        );
-        await wait(600);
-
-        // Show the inter-agent message on Karen's side
-        setActiveStep(`${res.target_agent.name}'s agent is receiving the request...`);
-        pushMsg(
-          `Jordan → ${res.target_agent.name}`,
-          `"${message}"`,
-          "right",
-          "system"
-        );
-        await wait(400);
-
-        if (res.approval_id && !res.answer) {
-          // ---- DOC_REQUEST: needs approval ----
-          setActiveStep("Approval required — waiting for human decision");
-          pushMsg(
-            res.target_agent.name,
-            `This request requires my approval before I can share any documents.`,
-            "right",
-            "agent"
-          );
-
-          setApproval({
-            approvalId: res.approval_id,
-            requesterName: res.source_agent.name,
-            targetName: res.target_agent.name,
-            resource: message,
-          });
-        } else if (res.answer) {
-          // ---- QUERY: Karen answers ----
-          const karenThinkId = pushMsg(res.target_agent.name, "Thinking...", "right", "thinking");
-          await wait(500);
-          removeMsg(karenThinkId);
-
-          setActiveStep("Response received");
-          pushMsg(res.target_agent.name, res.answer, "right", "agent");
-          await wait(400);
-
-          // Jordan relays back
-          pushMsg(
-            "Jordan Chen",
-            `Got the answer from ${res.target_agent.name}. See their response on the right.`,
-            "left",
-            "agent"
+        if (type === "chunk") {
+          const chunkText = event.text as string;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === agentMsgId
+                ? {
+                    ...m,
+                    content: m.content + chunkText,
+                    chunks: [...(m.chunks || []), chunkText],
+                  }
+                : m
+            )
           );
         }
-      } else {
-        // ---- DIRECT ANSWER: Jordan handles it ----
-        setActiveStep("Answering directly");
-        if (res.answer) {
-          pushMsg("Jordan Chen", res.answer, "left", "agent");
+
+        if (type === "sources") {
+          const sources = event.sources as string[];
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === agentMsgId ? { ...m, sources } : m
+            )
+          );
         }
-      }
+
+        if (type === "second_hop") {
+          const hint = event.hint as string;
+          const agentId = event.agent_id as string;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === agentMsgId
+                ? {
+                    ...m,
+                    secondHopAvailable: true,
+                    secondHopHint: hint,
+                    secondHopAgentId: agentId,
+                  }
+                : m
+            )
+          );
+        }
+
+        if (type === "approval") {
+          const approvalId = event.approval_id as string;
+          const targetName = event.target_name as string;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === agentMsgId
+                ? {
+                    ...m,
+                    content:
+                      m.content ||
+                      `I've reached out to ${targetName || "the team"} to get that document for you. They'll need to approve the share — I'll let you know as soon as they respond.`,
+                    approvalId,
+                    approvalTarget: targetName,
+                  }
+                : m
+            )
+          );
+        }
+
+        if (type === "error") {
+          const errorMsg = event.message as string;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === agentMsgId
+                ? { ...m, content: errorMsg, error: true, streaming: false }
+                : m
+            )
+          );
+        }
+
+        if (type === "done") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === agentMsgId ? { ...m, streaming: false } : m
+            )
+          );
+        }
+      });
     } catch {
-      removeMsg(thinkingId);
-      pushMsg(
-        "System",
-        "Could not reach the backend. Is the API server running on localhost:8000?",
-        "left",
-        "system"
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === agentMsgId
+            ? {
+                ...m,
+                content:
+                  "Unable to connect to the server. Please check your connection and try again.",
+                streaming: false,
+                error: true,
+              }
+            : m
+        )
       );
     } finally {
       setLoading(false);
-      await wait(1500);
-      setActiveStep("");
     }
   };
 
-  // ---- Approval handler ----
-  const handleApproval = async (approved: boolean) => {
-    if (!approval) return;
+  const handleSecondHop = async (referencedAgentId: string, hint: string) => {
+    if (loading) return;
     setLoading(true);
-    setApproval(null);
 
-    await submitApproval(approval.approvalId, approved);
+    const followUp = hint.replace(/^Want me to /, "Yes, ").replace(/\?$/, ".");
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    const originalQuestion = lastUserMsg?.content ?? followUp;
 
-    if (approved) {
-      setActiveStep(`${approval.targetName} approved — retrieving document...`);
-      pushMsg(approval.targetName, "Approved. Let me pull that together for you.", "right", "agent");
-      await wait(400);
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: followUp,
+    };
+    setMessages((prev) => [...prev, userMsg]);
 
-      const thinkId = pushMsg(approval.targetName, "Thinking...", "right", "thinking");
-      const res = await completeDocRequest(approval.approvalId);
-      removeMsg(thinkId);
+    const agentMsgId = crypto.randomUUID();
+    setMessages((prev) => [
+      ...prev,
+      { id: agentMsgId, role: "agent", content: "", chunks: [], streaming: true },
+    ]);
 
-      if (res.answer) {
-        pushMsg(approval.targetName, res.answer, "right", "agent");
-        await wait(400);
-        pushMsg(
-          "Jordan Chen",
-          `${approval.targetName} shared the document. See their response on the right.`,
-          "left",
-          "agent"
-        );
-      }
-      setActiveStep("Document delivered");
-    } else {
-      setActiveStep("Request denied");
-      pushMsg(approval.targetName, "I've denied this request.", "right", "agent");
-      await wait(300);
-      pushMsg(
-        "Jordan Chen",
-        `${approval.targetName} denied the document request.`,
-        "left",
-        "agent"
+    try {
+      await secondHopStream(
+        COO_AGENT_ID,
+        referencedAgentId,
+        originalQuestion,
+        followUp,
+        sessionId,
+        (event) => {
+          const type = event.type as string;
+
+          if (type === "session") {
+            const sid = event.session_id as string;
+            setSessionId(sid);
+          }
+
+          if (type === "step") {
+            const step = event.step as { label: string };
+            showStatus(step.label);
+          }
+          if (type === "chunk") {
+            const chunkText = event.text as string;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === agentMsgId
+                  ? {
+                      ...m,
+                      content: m.content + chunkText,
+                      chunks: [...(m.chunks || []), chunkText],
+                    }
+                  : m
+              )
+            );
+          }
+          if (type === "sources") {
+            const sources = event.sources as string[];
+            setMessages((prev) =>
+              prev.map((m) => (m.id === agentMsgId ? { ...m, sources } : m))
+            );
+          }
+          if (type === "done") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === agentMsgId ? { ...m, streaming: false } : m
+              )
+            );
+          }
+        }
       );
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === agentMsgId
+            ? {
+                ...m,
+                content: "Unable to reach that team member right now. Please try again.",
+                streaming: false,
+                error: true,
+              }
+            : m
+        )
+      );
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
-    await wait(1500);
-    setActiveStep("");
   };
 
-  // ---- Reset ----
   const handleReset = async () => {
     await resetDemo();
     setMessages([]);
-    setApproval(null);
-    setActiveStep("");
+    setSessionId(null);
+    setStatusText("");
+    setPrevStatusText("");
+    setLoading(false);
   };
 
-  const leftMessages = messages.filter((m) => m.side === "left");
-  const rightMessages = messages.filter((m) => m.side === "right");
+  const handleLogout = () => {
+    localStorage.removeItem(DEMO_USER_KEY);
+    setDemoUser(null);
+    setMessages([]);
+    setSessionId(null);
+  };
+
+  const showSuggestions = messages.length === 0 && !loading;
+
+  // Show nothing until auth check completes (prevents flash)
+  if (!authChecked) return null;
+
+  // Show login gate if no demo user
+  if (!demoUser) {
+    return (
+      <div style={{ background: "var(--bg-void)" }} className="h-screen">
+        <AmbientBackground />
+        <LoginGate onLogin={setDemoUser} />
+      </div>
+    );
+  }
+
+  const firstName = demoUser.name.split(" ")[0];
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-white -m-0">
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-base font-semibold">Ravenhill</h1>
-            <p className="text-[11px] text-gray-500">Multi-agent orchestration demo</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {activeStep && (
-            <div className="flex items-center gap-2 text-xs text-blue-400 animate-pulse">
-              <span className="inline-block w-2 h-2 bg-blue-400 rounded-full" />
-              {activeStep}
-            </div>
-          )}
-          <button
-            onClick={handleReset}
-            className="text-xs text-gray-500 hover:text-white border border-gray-800 hover:border-gray-600 px-3 py-1.5 rounded-lg transition"
-          >
-            Reset
-          </button>
-        </div>
-      </header>
+    <div className="flex flex-col h-screen relative" style={{ background: "var(--bg-void)", color: "var(--text-primary)" }}>
+      <AmbientBackground />
 
-      {/* Split-screen */}
-      <div className="flex flex-1 min-h-0">
-        {/* Jordan's panel */}
-        <div className="flex-1 flex flex-col border-r border-gray-800">
-          <div className="px-4 py-3 border-b border-gray-800 shrink-0 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold">
-                JC
-              </div>
-              <div>
-                <div className="text-sm font-medium">Jordan Chen</div>
-                <div className="text-[11px] text-gray-500">Sales Rep &middot; West Region</div>
-              </div>
-            </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-400 border border-blue-800">
-              Your agent
+      {/* Main content — above ambient background */}
+      <div className="flex flex-col h-screen relative z-10 animate-materialize-in">
+        {/* Header */}
+        <header className="px-6 py-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2.5">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none">
+              <path d="M13 3L4 14h7v7l9-11h-7V3z" fill="url(#bolt-hdr)" />
+              <defs>
+                <linearGradient id="bolt-hdr" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#a855f7" />
+                  <stop offset="1" stopColor="#ec4899" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <span className="text-sm font-semibold tracking-tight" style={{ color: "var(--text-secondary)" }}>
+              RavenHill
             </span>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-1">
-            {leftMessages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-gray-600 text-sm gap-2">
-                <div className="text-2xl">&#x1f4ac;</div>
-                <p>Send a message to start</p>
-              </div>
-            )}
-            {leftMessages.map((msg) => (
-              <div key={msg.id} className={msg.type === "thinking" ? "animate-pulse" : ""}>
-                <ChatMessage
-                  sender={msg.sender}
-                  content={msg.type === "thinking" ? "..." : msg.content}
-                  isAgent={msg.isAgent}
-                  timestamp={msg.type === "thinking" ? undefined : msg.timestamp}
-                />
-              </div>
-            ))}
-            <div ref={leftEndRef} />
-          </div>
-        </div>
-
-        {/* Karen's panel */}
-        <div className="flex-1 flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-800 shrink-0 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-purple-600 flex items-center justify-center text-xs font-bold">
-                KP
-              </div>
-              <div>
-                <div className="text-sm font-medium">Karen Park</div>
-                <div className="text-[11px] text-gray-500">Finance Analyst</div>
-              </div>
+          <div className="flex items-center gap-4">
+            {/* Status text with crossfade */}
+            <div className="relative h-4 flex items-center">
+              {prevStatusText && (
+                <span className="absolute right-0 text-[11px] animate-crossfade-out whitespace-nowrap"
+                      style={{ color: "var(--text-tertiary)" }}>
+                  {prevStatusText}
+                </span>
+              )}
+              {statusText && (
+                <span key={statusText} className="text-[11px] animate-crossfade-in whitespace-nowrap"
+                      style={{ color: "var(--text-tertiary)" }}>
+                  {statusText}
+                </span>
+              )}
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-400 border border-purple-800">
-              Peer agent
+            <span className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
+              {demoUser.name}
             </span>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-1">
-            {rightMessages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-gray-600 text-sm gap-2">
-                <div className="text-2xl">&#x1f6e1;</div>
-                <p>Inter-agent messages will appear here</p>
-              </div>
-            )}
-            {rightMessages.map((msg) => (
-              <div key={msg.id} className={msg.type === "thinking" ? "animate-pulse" : ""}>
-                <ChatMessage
-                  sender={msg.sender}
-                  content={msg.type === "thinking" ? "..." : msg.content}
-                  isAgent={msg.isAgent}
-                  timestamp={msg.type === "thinking" ? undefined : msg.timestamp}
-                />
-              </div>
-            ))}
-            <div ref={rightEndRef} />
-          </div>
-        </div>
-      </div>
-
-      {/* Input */}
-      <div className="border-t border-gray-800 p-4 shrink-0">
-        <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-          {DEMO_PROMPTS.map((prompt) => (
             <button
-              key={prompt.label}
-              onClick={() => handleSend(prompt.label)}
-              disabled={loading}
-              className="flex flex-col items-start text-left bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-gray-700 px-3 py-2 rounded-xl whitespace-nowrap transition disabled:opacity-40 min-w-0"
+              onClick={handleReset}
+              className="text-xs transition-colors hover:text-[var(--accent-pink)]"
+              style={{ color: "var(--text-tertiary)" }}
             >
-              <span className="text-xs text-white">{prompt.label}</span>
-              <span className="text-[10px] text-gray-500">{prompt.desc}</span>
+              Reset
             </button>
-          ))}
-        </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          className="flex gap-3"
-        >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask Jordan's agent something..."
-            disabled={loading}
-            className="flex-1 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 transition disabled:opacity-50 placeholder:text-gray-600"
-          />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-600 px-5 py-3 rounded-xl font-medium text-sm transition"
-          >
-            {loading ? (
-              <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              "Send"
-            )}
-          </button>
-        </form>
-      </div>
+            <button
+              onClick={handleLogout}
+              className="text-xs transition-colors hover:text-[var(--accent-pink)]"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              Exit
+            </button>
+          </div>
+        </header>
 
-      {/* Approval popup */}
-      {approval && (
-        <ApprovalPopup
-          requesterName={approval.requesterName}
-          action="share a document"
-          resource={approval.resource}
-          description={`${approval.requesterName}'s agent is requesting files from ${approval.targetName}. This requires human approval before any data is shared.`}
-          onApprove={() => handleApproval(true)}
-          onDeny={() => handleApproval(false)}
-        />
-      )}
+        {/* Messages */}
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-4 md:px-0"
+        >
+          <div className="max-w-2xl mx-auto py-6 space-y-5">
+            {/* Empty state with greeting + suggestions */}
+            {showSuggestions && (
+              <div className="flex flex-col items-center justify-center pt-28 animate-fade-up">
+                <p className="text-2xl font-semibold tracking-tight mb-1 gradient-text">
+                  Hi {firstName}
+                </p>
+                <p className="text-sm mb-10" style={{ color: "var(--text-secondary)" }}>
+                  Ask your agent anything about the company
+                </p>
+                <div className="grid gap-3 w-full max-w-md">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s.text}
+                      onClick={() => handleSend(s.text)}
+                      className="text-left glass-card gradient-border rounded-xl px-4 py-3.5 transition-all duration-200 group hover:-translate-y-[3px]"
+                      style={{ cursor: "pointer" }}
+                    >
+                      <span className="text-sm transition-colors group-hover:text-white"
+                            style={{ color: "var(--text-primary)" }}>
+                        {s.text}
+                      </span>
+                      <span className="block text-[0.7rem] font-medium uppercase tracking-[0.06em] mt-1"
+                            style={{ color: "var(--text-tertiary)" }}>
+                        {s.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Messages */}
+            {messages.map((msg) => {
+              const isUser = msg.role === "user";
+
+              return (
+                <div key={msg.id} className={isUser ? "animate-slide-in-right" : "animate-fade-up"}>
+                  {isUser ? (
+                    /* User message — right-aligned, gradient glow */
+                    <div className="flex justify-end">
+                      <div
+                        className="rounded-2xl rounded-br-md px-4 py-2.5 max-w-[80%]"
+                        style={{
+                          background: "var(--gradient-hot)",
+                          boxShadow: "4px 0 24px var(--glow-pink)",
+                        }}
+                      >
+                        <p className="text-sm leading-relaxed text-white">{msg.content}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Agent message — left-aligned */
+                    <div className="flex justify-start">
+                      <div className="max-w-[85%]">
+                        {/* Typing indicator — shimmer wave */}
+                        {msg.streaming && !msg.content ? (
+                          <div className="flex items-center gap-3 py-2">
+                            <div className="flex gap-1.5">
+                              <span className="w-[5px] h-[5px] rounded-full shimmer-dot-1"
+                                    style={{ backgroundColor: "var(--accent-pink)" }} />
+                              <span className="w-[5px] h-[5px] rounded-full shimmer-dot-2"
+                                    style={{ backgroundColor: "var(--accent-pink)" }} />
+                              <span className="w-[5px] h-[5px] rounded-full shimmer-dot-3"
+                                    style={{ backgroundColor: "var(--accent-pink)" }} />
+                            </div>
+                            {statusText && (
+                              <span className="text-[11px] animate-crossfade-in"
+                                    style={{ color: "var(--text-tertiary)" }}>
+                                {statusText}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          /* Streaming chunks with per-chunk fade, or static content */
+                          <p className={`text-sm leading-[1.65] whitespace-pre-wrap ${
+                            msg.error ? "" : ""
+                          }`} style={{ color: msg.error ? "var(--danger)" : "var(--text-primary)" }}>
+                            {msg.streaming && msg.chunks && msg.chunks.length > 0
+                              ? msg.chunks.map((chunk, i) => (
+                                  <span key={i} className={i === msg.chunks!.length - 1 ? "animate-chunk-fade" : ""}>
+                                    {chunk}
+                                  </span>
+                                ))
+                              : msg.content
+                            }
+                          </p>
+                        )}
+
+                        {/* Source attribution pills — staggered entrance */}
+                        {msg.sources && msg.sources.length > 0 && !msg.streaming && (
+                          <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                            <span className="text-[0.65rem] font-medium uppercase tracking-[0.06em]"
+                                  style={{ color: "var(--text-tertiary)" }}>
+                              Sources
+                            </span>
+                            {msg.sources.map((source, i) => (
+                              <span
+                                key={i}
+                                className="glass-card gradient-border text-[11px] px-2.5 py-0.5 rounded-full animate-pill-enter transition-all hover:-translate-y-px"
+                                style={{
+                                  color: "var(--text-secondary)",
+                                  animationDelay: `${i * 80}ms`,
+                                }}
+                              >
+                                {source}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Approval toast */}
+                        {msg.approvalId && !msg.streaming && (
+                          <div className="mt-2.5 text-[11px] flex items-center gap-1.5 animate-fade-up"
+                               style={{ color: "var(--warning)", opacity: 0.8 }}>
+                            <span className="w-1.5 h-1.5 rounded-full animate-ambient-breathe"
+                                  style={{ backgroundColor: "var(--warning)" }} />
+                            Approval request sent to {msg.approvalTarget || "Operations"}
+                          </div>
+                        )}
+
+                        {/* Second-hop suggestion — gradient card */}
+                        {msg.secondHopAvailable &&
+                          msg.secondHopHint &&
+                          !msg.streaming && (
+                            <button
+                              onClick={() =>
+                                handleSecondHop(
+                                  msg.secondHopAgentId || "",
+                                  msg.secondHopHint || ""
+                                )
+                              }
+                              disabled={loading}
+                              className="mt-3 glass-card gradient-border rounded-xl px-4 py-2.5 text-sm transition-all duration-200 flex items-center gap-2 disabled:opacity-30 hover:-translate-y-[2px] animate-fade-up"
+                              style={{
+                                animationDelay: `${((msg.sources?.length || 0) * 80) + 400}ms`,
+                                color: "var(--text-primary)",
+                              }}
+                            >
+                              <span className="animate-ambient-breathe" style={{ color: "var(--accent-pink)" }}>→</span>
+                              {msg.secondHopHint}
+                            </button>
+                          )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* Input bar */}
+        <div className="shrink-0" style={{ borderTop: "1px solid var(--border-subtle)" }}>
+          <div className="max-w-2xl mx-auto px-4 py-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSend();
+              }}
+              className="flex gap-3"
+            >
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask your agent anything about the company..."
+                disabled={loading}
+                className="flex-1 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all duration-200 disabled:opacity-40"
+                style={{
+                  background: "var(--bg-interactive)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-primary)",
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(236, 72, 153, 0.3)";
+                  e.currentTarget.style.boxShadow = "0 0 0 3px var(--glow-pink), 0 0 20px var(--glow-purple)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "var(--border-subtle)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="px-5 py-3 rounded-xl font-medium text-sm text-white transition-all duration-200 active:scale-[0.96] disabled:opacity-20 disabled:cursor-not-allowed"
+                style={{
+                  background: (!loading && input.trim()) ? "var(--gradient-hot)" : "var(--bg-interactive)",
+                  boxShadow: (!loading && input.trim()) ? "0 0 20px var(--glow-pink)" : "none",
+                }}
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

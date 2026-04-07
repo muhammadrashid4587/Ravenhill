@@ -1,11 +1,30 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
-import { AgentProvider } from "@/lib/AgentContext";
+import ClientLayout from "@/components/ClientLayout";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Ravenhill",
-  description: "Per-employee autonomous agents for enterprise",
+  title: {
+    default: "RavenHill",
+    template: "%s | RavenHill",
+  },
+  description: "Every employee gets an AI agent. The agents talk to each other.",
+  openGraph: {
+    title: "RavenHill",
+    description: "Per-employee autonomous agents for enterprise",
+    type: "website",
+  },
+  icons: {
+    icon: "/favicon.svg",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#09090b",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -14,14 +33,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-950 text-white antialiased">
-        <AgentProvider>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar />
-            <main className="flex-1 overflow-y-auto">{children}</main>
-          </div>
-        </AgentProvider>
+    <html lang="en" className={inter.variable}>
+      <body className="bg-[#030308] text-[#ededf0] antialiased font-sans">
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );

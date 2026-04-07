@@ -1,11 +1,16 @@
 """Activity endpoints — log and stats for the dashboard, backed by Postgres."""
 
+import asyncio
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
+from starlette.requests import Request
 
 import db
+from activity.models import subscribe, unsubscribe
 from db import ActivityRow, AgentRow, ApprovalRow
 
 router = APIRouter()
@@ -76,3 +81,32 @@ async def get_stats():
             "pending_approvals": pending_approvals or 0,
             "auto_resolved": auto_resolved or 0,
         }
+
+
+@router.get("/stream")
+async def stream_activity(request: Request):
+    """SSE endpoint — streams new activity events in real-time."""
+    queue = await subscribe()
+
+    async def generator():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    entry = await asyncio.wait_for(queue.get(), timeout=25)
+                    yield f"data: {json.dumps(entry)}\n\n"
+                except asyncio.TimeoutError:
+                    # keepalive ping
+                    yield 'data: {"type": "ping"}\n\n'
+        finally:
+            unsubscribe(queue)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

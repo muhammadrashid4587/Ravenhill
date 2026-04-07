@@ -1,36 +1,90 @@
 """Orchestrator — the brain that connects classify -> route -> answer.
 
-Every agent-to-agent interaction creates a real InterAgentMessage routed
-through the ETO client.  When ETO is live, messages are blockchain-verified.
-When stubbed, they're tracked in the local ledger for observability.
+New pipeline:
+1. Load agents + build topic map (hash map, instant)
+2. Classify intent + extract topic keys in one LLM call
+3. If action_request -> handle notification or document sharing
+4. Otherwise -> rank agents -> parallel query -> synthesize
+5. Detect references_agent for second-hop chaining
 """
 
+import asyncio
 import json
+import logging
+import re
+import time
 from collections.abc import AsyncGenerator
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from activity.models import ActivityEntry, log_activity
+from agents.discovery import build_topic_map, rank_agents
 from agents.models import Agent
-from agents.runtime import classify_and_route, process_message, stream_message
-from approvals.router import ApprovalRequest, create_approval_in_db
+from agents.runtime import (
+    classify_and_extract,
+    query_agent_with_entries,
+    stream_synthesis,
+    synthesize_multi_agent_response,
+)
+from approvals.router import ApprovalRequest, create_approval_in_db, ws_manager
 import db
 from db import AgentRow, ApprovalRow, ActivityRow, MessageLedgerRow
-from messaging.models import InterAgentMessage, MessageResponse, MessageType, PermissionContext
-from messaging.eto_client import eto_client
-from permissions.engine import requires_approval
-from registry.router import search_agents_by_query
+
+log = logging.getLogger("orchestrator")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Session-based conversation history (in-memory, demo only)
+# ---------------------------------------------------------------------------
+# Key: session_id (str) -> list of {"role": "user"|"assistant", "content": str}
+# Kept to last MAX_SESSION_MESSAGES per session. Cleared on demo reset.
+_conversation_sessions: dict[str, list[dict[str, str]]] = {}
+
+MAX_SESSION_MESSAGES = 10
+
+
+def _get_session_history(session_id: str | None) -> list[dict[str, str]]:
+    """Return the conversation history for a session, or empty list."""
+    if not session_id:
+        return []
+    return _conversation_sessions.get(session_id, [])
+
+
+def _append_to_session(session_id: str | None, role: str, content: str) -> None:
+    """Append a message to the session, keeping last MAX_SESSION_MESSAGES."""
+    if not session_id or not content:
+        return
+    if session_id not in _conversation_sessions:
+        _conversation_sessions[session_id] = []
+    _conversation_sessions[session_id].append({"role": role, "content": content})
+    _conversation_sessions[session_id] = _conversation_sessions[session_id][
+        -MAX_SESSION_MESSAGES:
+    ]
+
+
+def _history_as_strings(
+    history: list[dict[str, str]], last_n: int | None = None,
+) -> list[str]:
+    """Convert session history to flat strings for LLM context.
+
+    Format: "user: ..." or "assistant: ..."
+    """
+    items = history[-last_n:] if last_n else history
+    return [f"{m['role']}: {m['content']}" for m in items]
 
 
 class OrchestrateRequest(BaseModel):
     """Request body for the orchestrate endpoint."""
     message: str
     agent_id: UUID
+    session_id: str | None = None
+    conversation_history: list[str] = []
 
 
 class OrchestrateStep(BaseModel):
@@ -40,13 +94,26 @@ class OrchestrateStep(BaseModel):
 
 
 class OrchestrateResponse(BaseModel):
-    source_agent: dict
-    target_agent: dict | None = None
     intent: str
-    steps: list[OrchestrateStep] = []
     answer: str | None = None
+    sources: list[str] = []
+    second_hop_available: bool = False
+    second_hop_agent_id: str | None = None
+    second_hop_hint: str | None = None
+    steps: list[OrchestrateStep] = []
     approval_id: UUID | None = None
     trace_id: str | None = None
+    session_id: str | None = None
+    source_agent: dict = {}
+    target_agent: dict | None = None
+
+
+class SecondHopRequest(BaseModel):
+    agent_id: UUID
+    referenced_agent_id: UUID
+    original_question: str
+    follow_up: str
+    session_id: str | None = None
 
 
 def _row_to_agent(row: AgentRow) -> Agent:
@@ -54,9 +121,14 @@ def _row_to_agent(row: AgentRow) -> Agent:
         id=row.id,
         name=row.name,
         role=row.role,
+        role_description=row.role_description or "",
         departments=row.departments or [],
         knowledge_areas=row.knowledge_areas or [],
         knowledge_base=row.knowledge_base or "",
+        knowledge_entries=row.knowledge_entries or [],
+        topic_keys=row.topic_keys or [],
+        documents=row.documents or [],
+        trust_level=row.trust_level or "auto",
         scopes=row.scopes or [],
         is_active=row.is_active,
         created_at=row.created_at,
@@ -72,228 +144,996 @@ async def _get_agent(agent_id: UUID) -> Agent | None:
         return _row_to_agent(row)
 
 
+async def _get_all_agents() -> list[Agent]:
+    """Fetch all active agents from the database."""
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.is_active.is_(True))
+        )
+        rows = result.scalars().all()
+        return [_row_to_agent(r) for r in rows]
+
+
+_NOTIFICATION_KW = re.compile(
+    r"(notify|let\s+.+?\s+know|tell\s+.+?\s+(about|that)|update\s+.+?\s+about|inform|heads\s+up|give\s+.+?\s+(a\s+)?heads\s+up)",
+    re.IGNORECASE,
+)
+_DISMISS_WORDS = {
+    "ok", "okay", "got", "it", "thanks", "thank", "you", "cool", "great",
+    "sounds", "good", "perfect", "nice", "all", "no", "worries", "noted",
+    "understood", "right", "that", "works", "appreciate", "ty", "thx",
+    "yep", "yup", "sure", "alright", "cheers", "bye", "later",
+}
+
+_DOC_REQUEST_KW = re.compile(
+    r"(share|send\s+me|get\s+me|document|contract|file|pdf)",
+    re.IGNORECASE,
+)
+
+
+def _is_notification(message: str) -> bool:
+    """Check if the message is a notification rather than a doc request."""
+    has_notify = bool(_NOTIFICATION_KW.search(message))
+    has_doc = bool(_DOC_REQUEST_KW.search(message))
+    # If it has doc keywords, treat as doc request, not notification
+    return has_notify and not has_doc
+
+
+def _find_notification_target(
+    agents: list[Agent], message: str
+) -> Agent | None:
+    """Scan agent names, roles, and departments in the message to find who's being notified."""
+    msg_lower = message.lower()
+    best_agent = None
+    best_score = 0
+
+    for agent in agents:
+        score = 0
+        # Check name (first name, last name, full name)
+        name_parts = agent.name.lower().split()
+        if agent.name.lower() in msg_lower:
+            score += 100
+        for part in name_parts:
+            if part in msg_lower:
+                score += 40
+
+        # Check role keywords
+        role_words = agent.role.lower().split()
+        for word in role_words:
+            if len(word) > 3 and word in msg_lower:
+                score += 30
+
+        # Check department
+        for dept in (agent.departments or []):
+            dept_lower = dept.lower()
+            if dept_lower in msg_lower:
+                score += 50
+            # Also check common abbreviations
+            if dept_lower == "operations" and "ops" in msg_lower:
+                score += 50
+            if dept_lower == "engineering" and "eng" in msg_lower:
+                score += 50
+
+        if score > best_score:
+            best_score = score
+            best_agent = agent
+
+    return best_agent if best_score > 0 else None
+
+
+def _extract_notification_topic(message: str) -> str:
+    """Extract the topic from a notification message."""
+    msg_lower = message.lower()
+    # Try "about X" or "that X"
+    match = re.search(r"(?:about|that)\s+(.+?)(?:\.|$)", msg_lower)
+    if match:
+        return match.group(1).strip()
+    # Try "know X" (e.g., "let them know the timeline is pushed")
+    match = re.search(r"know\s+(.+?)(?:\.|$)", msg_lower)
+    if match:
+        return match.group(1).strip()
+    # Fallback
+    return "the update"
+
+
+def _find_document_match(
+    agents: list[Agent], message: str,
+) -> tuple[Agent | None, dict | None]:
+    """Find which agent owns a document matching the request.
+
+    Uses a scoring approach: exact name match > keyword overlap > broad match.
+    Returns the highest-scoring (agent, doc) pair.
+    """
+    msg_lower = message.lower()
+    msg_words = set(msg_lower.split())
+
+    best_agent = None
+    best_doc = None
+    best_score = 0
+
+    for agent in agents:
+        for doc in (agent.documents or []):
+            doc_name = doc.get("name", "") if isinstance(doc, dict) else doc.name
+            doc_desc = doc.get("description", "") if isinstance(doc, dict) else doc.description
+            score = 0
+
+            # Exact document name match
+            if doc_name.lower() in msg_lower:
+                score += 100
+
+            # Check if message mentions the agent's department
+            for dept in (agent.departments or []):
+                if dept.lower() in msg_lower:
+                    score += 20
+
+            # Keyword overlap between message and document name
+            name_words = set(doc_name.lower().replace("_", " ").replace(".", " ").split())
+            name_overlap = msg_words & {w for w in name_words if len(w) > 3}
+            score += len(name_overlap) * 10
+
+            # Keyword-specific boosts
+            if "contract" in msg_lower and (
+                "msa" in doc_name.lower() or "agreement" in doc_desc.lower()
+            ):
+                score += 50
+            if "vendor" in msg_lower and (
+                "msa" in doc_name.lower() or "vendor" in doc_desc.lower()
+            ):
+                score += 50
+            if "onboarding" in msg_lower and "onboarding" in doc_name.lower():
+                score += 50
+
+            # "ops" or "operations" in message boosts operations agent
+            if any(w in msg_lower for w in ("ops", "operations")):
+                if any(d.lower() == "operations" for d in (agent.departments or [])):
+                    score += 30
+
+            if score > best_score:
+                best_score = score
+                best_agent = agent
+                best_doc = doc
+
+    if best_score > 0:
+        return best_agent, best_doc
+    return None, None
+
+
+def _resolve_session_id(request_session_id: str | None) -> str:
+    """Return the provided session_id or generate a new one."""
+    return request_session_id or str(uuid4())
+
+
+def _build_conversation_context(
+    session_id: str | None, fallback_history: list[str],
+) -> tuple[list[str], list[str]]:
+    """Build conversation context from session history (preferred) or fallback.
+
+    Returns (classify_history, synthesis_history):
+      - classify_history: last 3 messages for intent classification
+      - synthesis_history: last 10 messages for synthesis context
+    """
+    session_history = _get_session_history(session_id)
+    if session_history:
+        classify = _history_as_strings(session_history, last_n=3)
+        synthesis = _history_as_strings(session_history, last_n=10)
+        return classify, synthesis
+
+    # Fallback to client-provided history (backwards compat)
+    if fallback_history:
+        return fallback_history[-3:], fallback_history[-10:]
+    return [], []
+
+
+async def _conversational_fallback(
+    agent: Agent,
+    message: str,
+    conversation_history: list[str],
+) -> str:
+    """When no agents match a query, let the COO's agent respond directly.
+
+    Uses the LLM with the agent's persona + conversation history for natural
+    conversation — greetings, casual messages, off-topic questions, etc.
+    Falls back to a friendly generic response if LLM is unavailable.
+    """
+    from agents.llm_providers import call_llm, get_active_provider
+
+    if get_active_provider() != "mock":
+        history_block = ""
+        if conversation_history:
+            history_block = (
+                "\n\nRecent conversation:\n"
+                + "\n".join(conversation_history[-6:])
+            )
+
+        system = (
+            f"You are an AI agent for {agent.name}, {agent.role}. "
+            f"You searched across the organization and found NO relevant data "
+            f"for this message.\n\n"
+            f"STRICT RULES — follow these exactly:\n"
+            f"- If the message is a greeting (hi, hello, hey), greet back warmly "
+            f"and ask how you can help. 1 sentence.\n"
+            f"- If the message is a thank you or acknowledgment, say you're welcome. "
+            f"1 sentence.\n"
+            f"- For ANY other message: say you don't have information on that topic "
+            f"and list what you CAN help with: project status, sprint updates, "
+            f"blockers, team metrics, vendor relationships, or document sharing.\n"
+            f"- NEVER invent facts, people, numbers, percentages, project names, "
+            f"or status updates. If you don't have the data, say so.\n"
+            f"- Keep response to 1-2 sentences maximum.{history_block}"
+        )
+        result = await call_llm(
+            system=system,
+            user_message=message,
+            model_tier="fast",
+            max_tokens=200,
+        )
+        if result:
+            return result
+
+    # Mock fallback — handle common patterns
+    msg_lower = message.lower().strip()
+    if any(g in msg_lower for g in ("hello", "hi", "hey", "good morning", "good afternoon")):
+        return (
+            "Hey! I'm your AI agent — here to help you stay on top of everything "
+            "happening across the team. Ask me about project status, blockers, "
+            "metrics, or I can share documents between teams. What would you like to know?"
+        )
+    if any(g in msg_lower for g in ("thank", "thanks", "appreciate")):
+        return "You're welcome! Let me know if there's anything else you'd like to check on."
+    if any(g in msg_lower for g in ("bye", "goodbye", "see you", "that's all")):
+        return "Talk soon! I'm always here when you need an update."
+
+    return (
+        "I'm not sure I have specific org data on that, but I can help with things like "
+        "project status, team blockers, sprint updates, KPIs, or document sharing. "
+        "What would you like to know?"
+    )
+
+
 @router.post("/", response_model=OrchestrateResponse)
 async def orchestrate(request: OrchestrateRequest):
-    """Full orchestration flow — classify, route, and answer (or request approval)."""
+    """Full orchestration flow — classify, route via topic map, query agents, synthesize."""
+    t_start = time.monotonic()
+    trace_id = uuid4()
+    session_id = _resolve_session_id(request.session_id)
+    log.info(f"[{trace_id}] orchestrate start: {request.message[:80]!r} session={session_id[:8]}")
+
     source = await _get_agent(request.agent_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source agent not found")
 
+    # Record the user message in the session
+    _append_to_session(session_id, "user", request.message)
+
+    # Build conversation context from session
+    classify_history, synthesis_history = _build_conversation_context(
+        session_id, request.conversation_history,
+    )
+
     steps: list[OrchestrateStep] = []
-    trace_id = uuid4()
 
-    # Step 1: Classify intent and extract routing info
-    classification = await classify_and_route(request.message)
-    intent = classification.get("intent", "QUERY")
-    department = classification.get("department", "unknown")
-    topic = classification.get("topic", "unknown")
-
-    steps.append(OrchestrateStep(
-        label="Classifying intent...",
-        detail=f"{intent} about {department} — {topic}",
-    ))
-
-    # Step 2: Determine if source agent can answer directly
-    source_depts = [d.lower() for d in source.departments]
-    target_dept = department.lower()
-
-    if target_dept in source_depts:
-        steps.append(OrchestrateStep(
-            label="Answering directly...",
-            detail=f"{source.name} ({', '.join(source.departments)})",
-        ))
-
-        answer = await process_message(source, request.message)
-
-        await log_activity(ActivityEntry(
-            type="answer",
-            from_agent=source.name,
-            description=f"Answered directly: {topic}",
-        ))
-
+    # Early exit for dismissive/acknowledgment messages — no need for LLM classify
+    _clean = re.sub(r"[^\w\s]", " ", request.message.lower().strip()).split()
+    if _clean and all(w in _DISMISS_WORDS for w in _clean):
+        answer = await _conversational_fallback(source, request.message, [])
+        _append_to_session(session_id, "assistant", answer)
+        steps.append(OrchestrateStep(label="Acknowledged", detail="casual"))
         return OrchestrateResponse(
-            source_agent=_agent_summary(source),
-            intent=intent,
-            steps=steps,
+            intent="clarification",
             answer=answer,
+            sources=[],
+            steps=steps,
             trace_id=str(trace_id),
+            session_id=session_id,
+            source_agent=_agent_summary(source),
         )
 
-    # Step 3: Find target agent via registry
-    search_query = f"{department} {topic}"
-    candidates = await search_agents_by_query(search_query)
-    candidates = [a for a in candidates if a.id != source.id]
+    # Step 1: Load all agents and build topic map
+    all_agents = await _get_all_agents()
+    topic_map = build_topic_map(all_agents)
+    available_keys = list(topic_map.keys())
 
-    if not candidates:
-        steps.append(OrchestrateStep(
-            label="No specialist found",
-            detail=f"No agent found for {department}",
-        ))
-        answer = await process_message(source, request.message)
+    # Step 2: Combined classify + extract (single LLM call)
+    t_classify = time.monotonic()
+    result = await classify_and_extract(
+        request.message, available_keys, classify_history
+    )
+    intent = result.get("intent", "information_query")
+    topic = result.get("topic", "unknown")
+    selected_keys = result.get("selected_keys", [])
+    log.info(
+        f"[{trace_id}] classify: {intent} topic={topic!r} "
+        f"keys={selected_keys} ({time.monotonic() - t_classify:.2f}s)"
+    )
+
+    steps.append(OrchestrateStep(
+        label="Understanding your question...",
+        detail=f"{intent}: {topic}",
+    ))
+
+    # Step 3a: Handle acknowledgments ("thanks", "all good", "got it")
+    if intent == "clarification" and result.get("_dismissive"):
+        answer = (
+            "You're welcome! Let me know if there's anything else you'd like "
+            "to know about what's happening across the team."
+        )
+        _append_to_session(session_id, "assistant", answer)
         return OrchestrateResponse(
-            source_agent=_agent_summary(source),
-            intent=intent,
-            steps=steps,
+            intent="clarification",
             answer=answer,
+            sources=[],
+            steps=steps,
             trace_id=str(trace_id),
+            session_id=session_id,
+            source_agent=_agent_summary(source),
         )
 
-    target = candidates[0]
+    # Step 3b: Handle action_request (notification or doc sharing)
+    if intent == "action_request":
+        resp = await _handle_action_request(
+            source, request.message, steps, trace_id
+        )
+        if resp is not None:
+            # Record the assistant response in the session
+            if resp.answer:
+                _append_to_session(session_id, "assistant", resp.answer)
+            resp.session_id = session_id
+            return resp
+        # _handle_action_request returned None — LLM misclassified, fall through
+        # to information_query routing
+        intent = "information_query"
+        log.info(f"[{trace_id}] action_request found no match, falling through to info query")
+
     steps.append(OrchestrateStep(
-        label="Finding the right agent...",
-        detail=f"{target.name} ({', '.join(target.departments)})",
+        label="Identifying who knows about this...",
+        detail=f"Topics: {', '.join(selected_keys) if selected_keys else 'none found'}",
     ))
 
-    # Step 4: Handle based on intent
-    if intent == "DOC_REQUEST":
-        return await _handle_doc_request(source, target, request.message, steps, trace_id)
+    # Step 4: Rank agents (exclude source)
+    ranked_ids = rank_agents(topic_map, selected_keys)
+    ranked_ids = [aid for aid in ranked_ids if aid != str(source.id)]
 
-    # QUERY flow — send InterAgentMessage via ETO, then get answer
-    msg_type = MessageType(intent) if intent in MessageType.__members__ else MessageType.QUERY
-    inter_msg = InterAgentMessage(
-        type=msg_type,
-        from_agent=source.id,
-        to_agent=target.id,
-        intent=request.message,
-        permission_ctx=PermissionContext(
-            role=source.role,
-            departments=source.departments,
-            scopes=source.scopes,
-        ),
-        trace_id=trace_id,
+    if not ranked_ids:
+        log.info(f"[{trace_id}] no agents found for keys={selected_keys}")
+        # Instead of a dead-end error, let the COO's agent respond directly
+        # using the LLM with the agent's persona and knowledge base
+        fallback_answer = await _conversational_fallback(
+            source, request.message, synthesis_history
+        )
+        steps.append(OrchestrateStep(
+            label="Responding directly",
+            detail="No specialist routing needed",
+        ))
+        _append_to_session(session_id, "assistant", fallback_answer)
+        return OrchestrateResponse(
+            intent=intent,
+            answer=fallback_answer,
+            sources=[],
+            steps=steps,
+            trace_id=str(trace_id),
+            session_id=session_id,
+            source_agent=_agent_summary(source),
+        )
+
+    # Step 5: Fetch target agents
+    target_agents = []
+    for aid in ranked_ids[:3]:
+        agent = await _get_agent(UUID(aid))
+        if agent:
+            target_agents.append(agent)
+
+    agent_names = [a.name for a in target_agents]
+    steps.append(OrchestrateStep(
+        label=f"Consulting {', '.join(agent_names)}...",
+        detail=f"{len(target_agents)} agent(s) queried in parallel",
+    ))
+
+    # Step 6: Query agents in parallel
+    t_query = time.monotonic()
+    query_tasks = [
+        query_agent_with_entries(
+            agent, request.message, source.role, relevant_topics=selected_keys
+        )
+        for agent in target_agents
+    ]
+    results = await asyncio.gather(*query_tasks, return_exceptions=True)
+    agent_responses = [r for r in results if isinstance(r, dict)]
+    failed = [r for r in results if isinstance(r, Exception)]
+    if failed:
+        log.warning(f"[{trace_id}] {len(failed)} agent query failures: {failed}")
+    log.info(
+        f"[{trace_id}] queried {len(agent_responses)} agents "
+        f"({time.monotonic() - t_query:.2f}s)"
     )
 
-    # Route through ETO
-    eto_result = await eto_client.send_message(inter_msg)
-    steps.append(OrchestrateStep(
-        label=f"Message sent to {target.name}'s agent",
-        detail=f"via ETO — {eto_result['status']}",
-    ))
-
-    # Target agent processes and responds
-    answer = await process_message(target, request.message)
-
-    # Record the response through ETO
-    response_msg = MessageResponse(
-        in_reply_to=inter_msg.message_id,
-        from_agent=target.id,
-        content=answer,
+    # Step 7: Synthesize
+    t_synth = time.monotonic()
+    synthesized, source_roles, references = await synthesize_multi_agent_response(
+        request.message, agent_responses, synthesis_history
     )
-    await eto_client.record_response(response_msg)
+    log.info(f"[{trace_id}] synthesis done ({time.monotonic() - t_synth:.2f}s)")
+
+    # Record the assistant response in the session
+    _append_to_session(session_id, "assistant", synthesized)
+
+    # Build rich source labels: "Name (Role)"
+    source_labels = [
+        f"{r['agent_name']} ({r['agent_role']})" for r in agent_responses
+    ]
 
     steps.append(OrchestrateStep(
-        label=f"{target.name}'s agent responded",
+        label="Response ready",
+        detail=f"Synthesized from {', '.join(source_labels)}",
     ))
 
+    # Step 8: Check for second-hop references
+    second_hop_available = False
+    second_hop_agent_id = None
+    second_hop_hint = None
+    if references:
+        queried_ids = {str(a.id) for a in target_agents}
+        new_refs = [r for r in references if r != str(source.id) and r not in queried_ids]
+        if new_refs:
+            ref_agent = await _get_agent(UUID(new_refs[0]))
+            if ref_agent:
+                second_hop_available = True
+                second_hop_agent_id = new_refs[0]
+                second_hop_hint = _build_second_hop_hint(
+                    ref_agent, topic, agent_responses
+                )
+
+    # Log activity
     await log_activity(ActivityEntry(
         type="route",
         from_agent=source.name,
-        to_agent=target.name,
-        description=f"Routed {topic} query to {', '.join(target.departments)}",
-    ))
-    await log_activity(ActivityEntry(
-        type="answer",
-        from_agent=target.name,
-        description=f"Answered: {topic}",
+        to_agent=", ".join(agent_names),
+        description=f"Queried {len(target_agents)} agents about: {topic}",
     ))
 
+    elapsed = time.monotonic() - t_start
+    log.info(f"[{trace_id}] orchestrate complete ({elapsed:.2f}s total)")
+
     return OrchestrateResponse(
-        source_agent=_agent_summary(source),
-        target_agent=_agent_summary(target),
         intent=intent,
+        answer=synthesized,
+        sources=source_labels,
+        second_hop_available=second_hop_available,
+        second_hop_agent_id=second_hop_agent_id,
+        second_hop_hint=second_hop_hint,
         steps=steps,
-        answer=answer,
         trace_id=str(trace_id),
+        session_id=session_id,
+        source_agent=_agent_summary(source),
+        target_agent=_agent_summary(target_agents[0]) if target_agents else None,
     )
 
 
-async def _handle_doc_request(
+async def _handle_action_request(
     source: Agent,
-    target: Agent,
     message: str,
     steps: list[OrchestrateStep],
     trace_id: UUID,
 ) -> OrchestrateResponse:
-    """Handle a document request — send via ETO, create approval, return pending."""
-    perm_ctx = PermissionContext(
-        role=source.role,
-        departments=source.departments,
-        scopes=source.scopes,
-    )
+    """Handle an action request — notification or document sharing with approval."""
+    all_agents = await _get_all_agents()
 
-    # Send the doc request through ETO
-    inter_msg = InterAgentMessage(
-        type=MessageType.DOC_REQUEST,
-        from_agent=source.id,
-        to_agent=target.id,
-        intent=message,
-        permission_ctx=perm_ctx,
-        requires_approval=True,
-        trace_id=trace_id,
-    )
-    eto_result = await eto_client.send_message(inter_msg)
+    # FIX 1: Check for notification intent before document matching
+    if _is_notification(message):
+        target = _find_notification_target(
+            [a for a in all_agents if a.id != source.id], message
+        )
+        if target:
+            topic = _extract_notification_topic(message)
+            steps.append(OrchestrateStep(
+                label=f"Notifying {target.name}...",
+                detail=f"{target.role} in {', '.join(target.departments)}",
+            ))
 
-    # Also request the file through ETO
-    await eto_client.request_file(
-        from_agent=str(source.id),
-        to_agent=str(target.id),
-        file_description=message,
+            await log_activity(ActivityEntry(
+                type="notification",
+                from_agent=source.name,
+                to_agent=target.name,
+                description=f"Notification about {topic}",
+            ))
+
+            return OrchestrateResponse(
+                intent="action_request",
+                answer=(
+                    f"Done — I've let {target.name} know about {topic}. "
+                    f"They'll see it right away."
+                ),
+                sources=[target.role],
+                steps=steps,
+                trace_id=str(trace_id),
+                source_agent=_agent_summary(source),
+                target_agent=_agent_summary(target),
+            )
+
+    target_agent, doc = _find_document_match(all_agents, message)
+
+    if not target_agent or not doc:
+        # If the message doesn't contain explicit doc keywords, the LLM probably
+        # misclassified — return None to let the caller fall through to info query
+        if not _DOC_REQUEST_KW.search(message):
+            return None
+
+        # Genuinely asking for a doc but can't find it
+        steps.append(OrchestrateStep(
+            label="Looking for the requested document...",
+            detail="Could not identify the exact document",
+        ))
+        return OrchestrateResponse(
+            intent="action_request",
+            answer=(
+                "I couldn't pin down which document you mean — can you be a bit "
+                "more specific? For example, the contract name or which team owns it."
+            ),
+            sources=[],
+            steps=steps,
+            trace_id=str(trace_id),
+            source_agent=_agent_summary(source),
+        )
+
+    doc_name = doc.get("name", "") if isinstance(doc, dict) else doc.name
+    doc_desc = doc.get("description", "") if isinstance(doc, dict) else doc.description
+    requires_approval = (
+        doc.get("requires_approval", True) if isinstance(doc, dict)
+        else doc.requires_approval
     )
 
     steps.append(OrchestrateStep(
-        label=f"Document request sent to {target.name}",
-        detail=f"via ETO — {eto_result['status']}",
+        label=f"Found document with {target_agent.name}...",
+        detail=f"{doc_name}",
     ))
 
-    needs_approval = requires_approval(perm_ctx, "share_file")
-
-    if needs_approval:
+    if requires_approval or target_agent.trust_level == "approve":
         approval = ApprovalRequest(
             requesting_agent=source.id,
-            owning_agent=target.id,
+            owning_agent=target_agent.id,
             action="share_file",
-            description=f"{source.name} is requesting a document from {target.name}",
-            resource=message,
+            description=(
+                f"{source.name} ({source.role}) is requesting: {doc_name}"
+            ),
+            resource=doc_name,
         )
-        await create_approval_in_db(approval)
+        created = await create_approval_in_db(approval)
+
+        # Notify via WebSocket
+        await ws_manager.broadcast_to_agent(
+            str(target_agent.id),
+            {
+                "type": "approval_request",
+                "approval_id": str(created.id),
+                "requester_name": source.name,
+                "requester_role": source.role,
+                "document_name": doc_name,
+                "document_description": doc_desc,
+            },
+        )
 
         steps.append(OrchestrateStep(
-            label="Approval required",
-            detail=f"Waiting for {target.name} to approve",
+            label=f"Approval request sent to {target_agent.name}",
+            detail="Waiting for human approval",
         ))
 
         await log_activity(ActivityEntry(
             type="doc_request",
             from_agent=source.name,
-            to_agent=target.name,
-            description=f"Requested document: {message}",
+            to_agent=target_agent.name,
+            description=f"Requested document: {doc_name}",
         ))
 
         return OrchestrateResponse(
-            source_agent=_agent_summary(source),
-            target_agent=_agent_summary(target),
-            intent="DOC_REQUEST",
-            steps=steps,
+            intent="action_request",
             answer=None,
-            approval_id=approval.id,
+            sources=[target_agent.role],
+            steps=steps,
+            approval_id=created.id,
             trace_id=str(trace_id),
+            source_agent=_agent_summary(source),
+            target_agent=_agent_summary(target_agent),
         )
 
-    # No approval needed
-    answer = await process_message(target, message)
+    # No approval needed — just confirm
+    steps.append(OrchestrateStep(
+        label="Document shared",
+        detail=f"{doc_name} from {target_agent.name}",
+    ))
     return OrchestrateResponse(
-        source_agent=_agent_summary(source),
-        target_agent=_agent_summary(target),
-        intent="DOC_REQUEST",
+        intent="action_request",
+        answer=f"{target_agent.name} has shared {doc_name}: {doc_desc}",
+        sources=[target_agent.role],
         steps=steps,
-        answer=answer,
         trace_id=str(trace_id),
+        source_agent=_agent_summary(source),
+        target_agent=_agent_summary(target_agent),
     )
+
+
+@router.post("/second-hop", response_model=OrchestrateResponse)
+async def second_hop(request: SecondHopRequest):
+    """Query a referenced agent directly (second-hop chaining)."""
+    source = await _get_agent(request.agent_id)
+    ref_agent = await _get_agent(request.referenced_agent_id)
+    if not source or not ref_agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    session_id = _resolve_session_id(request.session_id)
+    steps: list[OrchestrateStep] = []
+    trace_id = uuid4()
+
+    question = request.follow_up or request.original_question
+
+    # Record user follow-up in session
+    _append_to_session(session_id, "user", question)
+
+    # Use session history for synthesis context
+    _, synthesis_history = _build_conversation_context(session_id, [request.original_question])
+
+    steps.append(OrchestrateStep(
+        label=f"Following up with {ref_agent.name}...",
+        detail=f"{ref_agent.role} in {', '.join(ref_agent.departments)}",
+    ))
+
+    # Query the referenced agent
+    response = await query_agent_with_entries(ref_agent, question, source.role)
+
+    # Synthesize with conversation context
+    synthesized, source_roles, refs = await synthesize_multi_agent_response(
+        question, [response], conversation_history=synthesis_history
+    )
+
+    # Record assistant response in session
+    _append_to_session(session_id, "assistant", synthesized)
+
+    steps.append(OrchestrateStep(
+        label="Response ready",
+        detail=f"From {ref_agent.name}",
+    ))
+
+    await log_activity(ActivityEntry(
+        type="route",
+        from_agent=source.name,
+        to_agent=ref_agent.name,
+        description=f"Second-hop query to {ref_agent.role}",
+    ))
+
+    return OrchestrateResponse(
+        intent="follow_up",
+        answer=synthesized,
+        sources=source_roles,
+        steps=steps,
+        trace_id=str(trace_id),
+        session_id=session_id,
+        source_agent=_agent_summary(source),
+        target_agent=_agent_summary(ref_agent),
+    )
+
+
+@router.post("/stream")
+async def orchestrate_stream(request: OrchestrateRequest):
+    """Streaming orchestration — SSE stream with steps, chunks, sources, second_hop."""
+    source = await _get_agent(request.agent_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source agent not found")
+
+    session_id = _resolve_session_id(request.session_id)
+
+    # Record the user message in the session
+    _append_to_session(session_id, "user", request.message)
+
+    # Build conversation context from session
+    classify_history, synthesis_history = _build_conversation_context(
+        session_id, request.conversation_history,
+    )
+
+    async def _generate() -> AsyncGenerator[str, None]:
+        trace_id = uuid4()
+        t_start = time.monotonic()
+        log.info(
+            f"[{trace_id}] stream start: {request.message[:80]!r} "
+            f"session={session_id[:8]}"
+        )
+
+        # Emit the session_id so the frontend can track it
+        yield _sse({"type": "session", "session_id": session_id})
+
+        try:
+            # Early exit for dismissive messages
+            _clean_s = re.sub(r"[^\w\s]", " ", request.message.lower().strip()).split()
+            if _clean_s and all(w in _DISMISS_WORDS for w in _clean_s):
+                answer = await _conversational_fallback(source, request.message, [])
+                yield _sse({"type": "chunk", "text": answer})
+                _append_to_session(session_id, "assistant", answer)
+                yield _sse({"type": "done", "trace_id": str(trace_id)})
+                return
+
+            # Step 1: Load agents + build topic map
+            all_agents = await _get_all_agents()
+            topic_map = build_topic_map(all_agents)
+            available_keys = list(topic_map.keys())
+
+            # Step 2: Combined classify + extract (single LLM call)
+            t_classify = time.monotonic()
+            result = await classify_and_extract(
+                request.message, available_keys, classify_history
+            )
+            intent = result.get("intent", "information_query")
+            topic = result.get("topic", "unknown")
+            selected_keys = result.get("selected_keys", [])
+            log.info(
+                f"[{trace_id}] classify: {intent} topic={topic!r} "
+                f"keys={selected_keys} ({time.monotonic() - t_classify:.2f}s)"
+            )
+
+            yield _sse({"type": "step", "step": {
+                "label": "Understanding your question...",
+                "status": "done",
+                "detail": f"{intent}: {topic}",
+            }})
+
+            # Handle acknowledgments ("thanks", "all good")
+            if intent == "clarification" and result.get("_dismissive"):
+                answer = (
+                    "You're welcome! Let me know if there's anything else you'd "
+                    "like to know about what's happening across the team."
+                )
+                yield _sse({"type": "chunk", "text": answer})
+                _append_to_session(session_id, "assistant", answer)
+                yield _sse({"type": "done", "trace_id": str(trace_id)})
+                return
+
+            # Handle action_request
+            if intent == "action_request":
+                resp = await _handle_action_request(
+                    source, request.message, [], trace_id
+                )
+                if resp is not None:
+                    for step in resp.steps:
+                        yield _sse({"type": "step", "step": step.model_dump()})
+                    if resp.answer:
+                        yield _sse({"type": "chunk", "text": resp.answer})
+                        _append_to_session(session_id, "assistant", resp.answer)
+                    if resp.approval_id:
+                        yield _sse({
+                            "type": "approval",
+                            "approval_id": str(resp.approval_id),
+                            "target_name": (
+                                resp.target_agent.get("name", "") if resp.target_agent else ""
+                            ),
+                            "target_role": (
+                                resp.target_agent.get("role", "") if resp.target_agent else ""
+                            ),
+                        })
+                    yield _sse({"type": "done", "trace_id": str(trace_id)})
+                    return
+                # Misclassified — fall through to info query
+                intent = "information_query"
+
+            yield _sse({"type": "step", "step": {
+                "label": "Searching across your organization...",
+                "status": "done",
+                "detail": (
+                    f"Topics: {', '.join(selected_keys)}" if selected_keys
+                    else "Scanning all teams"
+                ),
+            }})
+
+            # Step 3: Rank agents
+            ranked_ids = rank_agents(topic_map, selected_keys)
+            ranked_ids = [aid for aid in ranked_ids if aid != str(source.id)]
+
+            if not ranked_ids:
+                # Let the agent respond conversationally instead of dead-ending
+                fallback = await _conversational_fallback(
+                    source, request.message, synthesis_history
+                )
+                yield _sse({"type": "chunk", "text": fallback})
+                _append_to_session(session_id, "assistant", fallback)
+                yield _sse({"type": "done", "trace_id": str(trace_id)})
+                return
+
+            # Step 4: Fetch and query agents
+            target_agents = []
+            for aid in ranked_ids[:3]:
+                agent = await _get_agent(UUID(aid))
+                if agent:
+                    target_agents.append(agent)
+
+            agent_names = [a.name for a in target_agents]
+            yield _sse({"type": "step", "step": {
+                "label": f"Consulting {', '.join(agent_names)}...",
+                "status": "done",
+                "detail": (
+                    f"Querying {len(target_agents)} "
+                    f"team member{'s' if len(target_agents) > 1 else ''}"
+                ),
+            }})
+
+            # Query in parallel
+            t_query = time.monotonic()
+            query_tasks = [
+                query_agent_with_entries(
+                    agent, request.message, source.role, relevant_topics=selected_keys
+                )
+                for agent in target_agents
+            ]
+            results = await asyncio.gather(*query_tasks, return_exceptions=True)
+            agent_responses = [r for r in results if isinstance(r, dict)]
+            failed = [r for r in results if isinstance(r, Exception)]
+            if failed:
+                log.warning(f"[{trace_id}] {len(failed)} agent query failures: {failed}")
+            log.info(
+                f"[{trace_id}] queried {len(agent_responses)} agents "
+                f"({time.monotonic() - t_query:.2f}s)"
+            )
+
+            if not agent_responses:
+                no_response = (
+                    "I reached out to the team but wasn't able to get a response. "
+                    "Let me try again — could you rephrase your question?"
+                )
+                yield _sse({"type": "chunk", "text": no_response})
+                _append_to_session(session_id, "assistant", no_response)
+                yield _sse({"type": "done", "trace_id": str(trace_id)})
+                return
+
+            # Step 5: Stream synthesis
+            yield _sse({"type": "step", "step": {
+                "label": "Putting it together...",
+                "status": "done",
+                "detail": "",
+            }})
+
+            t_synth = time.monotonic()
+            full_text = ""
+            async for chunk in stream_synthesis(
+                request.message, agent_responses, synthesis_history
+            ):
+                full_text += chunk
+                yield _sse({"type": "chunk", "text": chunk})
+            log.info(f"[{trace_id}] synthesis streamed ({time.monotonic() - t_synth:.2f}s)")
+
+            # Record the full assistant response in the session
+            _append_to_session(session_id, "assistant", full_text)
+
+            # Emit rich sources: "Name (Role)"
+            source_labels = [
+                f"{r['agent_name']} ({r['agent_role']})" for r in agent_responses
+            ]
+            yield _sse({"type": "sources", "sources": source_labels})
+
+            # Check for second-hop
+            all_refs = []
+            for r in agent_responses:
+                all_refs.extend(r.get("references", []))
+
+            queried_ids = {str(a.id) for a in target_agents}
+            new_refs = [
+                r for r in set(all_refs)
+                if r != str(source.id) and r not in queried_ids
+            ]
+            if new_refs:
+                ref_agent = await _get_agent(UUID(new_refs[0]))
+                if ref_agent:
+                    yield _sse({
+                        "type": "second_hop",
+                        "available": True,
+                        "agent_id": new_refs[0],
+                        "hint": _build_second_hop_hint(
+                            ref_agent, topic, agent_responses
+                        ),
+                    })
+
+            # Log activity
+            await log_activity(ActivityEntry(
+                type="route",
+                from_agent=source.name,
+                to_agent=", ".join(agent_names),
+                description=f"Queried {len(target_agents)} agents about: {topic}",
+            ))
+
+            elapsed = time.monotonic() - t_start
+            log.info(f"[{trace_id}] stream complete ({elapsed:.2f}s total)")
+            yield _sse({"type": "done", "trace_id": str(trace_id)})
+
+        except Exception as exc:
+            log.exception(f"[{trace_id}] stream error: {exc}")
+            yield _sse({
+                "type": "error",
+                "message": (
+                    "Something went wrong while processing your request. "
+                    "Please try again."
+                ),
+            })
+            yield _sse({"type": "done", "trace_id": str(trace_id)})
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")
+
+
+@router.post("/second-hop/stream")
+async def second_hop_stream(request: SecondHopRequest):
+    """Streaming second-hop query."""
+    source = await _get_agent(request.agent_id)
+    ref_agent = await _get_agent(request.referenced_agent_id)
+    if not source or not ref_agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    session_id = _resolve_session_id(request.session_id)
+
+    async def _generate() -> AsyncGenerator[str, None]:
+        trace_id = uuid4()
+        t_start = time.monotonic()
+        log.info(f"[{trace_id}] second-hop start: {ref_agent.name}")
+
+        try:
+            question = request.follow_up or request.original_question
+
+            # Record user follow-up in session
+            _append_to_session(session_id, "user", question)
+
+            # Use session history for synthesis context
+            _, synthesis_history = _build_conversation_context(
+                session_id, [request.original_question],
+            )
+
+            yield _sse({"type": "session", "session_id": session_id})
+
+            yield _sse({"type": "step", "step": {
+                "label": f"Reaching out to {ref_agent.name}...",
+                "status": "done",
+                "detail": f"{ref_agent.role} in {', '.join(ref_agent.departments)}",
+            }})
+
+            response = await query_agent_with_entries(ref_agent, question, source.role)
+
+            yield _sse({"type": "step", "step": {
+                "label": "Putting it together...",
+                "status": "done",
+                "detail": "",
+            }})
+
+            full_text = ""
+            async for chunk in stream_synthesis(
+                question, [response],
+                conversation_history=synthesis_history,
+            ):
+                full_text += chunk
+                yield _sse({"type": "chunk", "text": chunk})
+
+            # Record assistant response in session
+            _append_to_session(session_id, "assistant", full_text)
+
+            yield _sse({"type": "sources", "sources": [
+                f"{ref_agent.name} ({ref_agent.role})"
+            ]})
+
+            await log_activity(ActivityEntry(
+                type="route",
+                from_agent=source.name,
+                to_agent=ref_agent.name,
+                description=f"Second-hop query to {ref_agent.role}",
+            ))
+
+            log.info(
+                f"[{trace_id}] second-hop complete ({time.monotonic() - t_start:.2f}s)"
+            )
+            yield _sse({"type": "done", "trace_id": str(trace_id)})
+
+        except Exception as exc:
+            log.exception(f"[{trace_id}] second-hop error: {exc}")
+            yield _sse({
+                "type": "error",
+                "message": "Something went wrong following up. Please try again.",
+            })
+            yield _sse({"type": "done", "trace_id": str(trace_id)})
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")
 
 
 @router.get("/approval/{approval_id}/complete", response_model=OrchestrateResponse)
 async def complete_doc_request(approval_id: UUID):
-    """After approval is granted, complete the doc request and return the file/answer."""
+    """After approval is granted, complete the doc request."""
     async with db.async_session() as session:
         approval_row = await session.get(ApprovalRow, approval_id)
 
@@ -307,198 +1147,125 @@ async def complete_doc_request(approval_id: UUID):
 
     if approval_row.status == "pending":
         return OrchestrateResponse(
-            source_agent=_agent_summary(source),
-            target_agent=_agent_summary(target),
-            intent="DOC_REQUEST",
+            intent="action_request",
             steps=[OrchestrateStep(label="Waiting for approval...", status="pending")],
             answer=None,
             approval_id=approval_id,
+            source_agent=_agent_summary(source),
+            target_agent=_agent_summary(target),
         )
 
     if approval_row.status == "denied":
         return OrchestrateResponse(
+            intent="action_request",
+            steps=[OrchestrateStep(label="Request denied", detail="Access was denied")],
+            answer=(
+                f"{target.name} declined the request. This might be a sensitivity "
+                f"or timing issue — want me to follow up with them for context?"
+            ),
+            approval_id=approval_id,
             source_agent=_agent_summary(source),
             target_agent=_agent_summary(target),
-            intent="DOC_REQUEST",
-            steps=[OrchestrateStep(label="Request denied", detail="Access was denied")],
-            answer="The document request was denied.",
-            approval_id=approval_id,
         )
 
-    # Approved — get the answer from the target agent
-    answer = await process_message(target, approval_row.resource)
-
-    # Record the file delivery through ETO
-    response_msg = MessageResponse(
-        in_reply_to=approval_id,
-        from_agent=target.id,
-        content=answer,
-        payload={"type": "file_delivery"},
-    )
-    await eto_client.record_response(response_msg)
+    # Approved
+    doc_name = approval_row.resource
+    # Make the filename human-readable
+    readable_name = doc_name.replace("_", " ").rsplit(".", 1)[0]
 
     await log_activity(ActivityEntry(
         type="approval",
         from_agent=target.name,
-        description=f"Approved document share to {source.name}",
+        description=f"Approved document share to {source.name}: {doc_name}",
     ))
 
     return OrchestrateResponse(
-        source_agent=_agent_summary(source),
-        target_agent=_agent_summary(target),
-        intent="DOC_REQUEST",
+        intent="action_request",
         steps=[
             OrchestrateStep(label="Approval granted", detail=f"{target.name} approved"),
-            OrchestrateStep(label="File delivered via ETO"),
+            OrchestrateStep(label="Document shared"),
         ],
-        answer=answer,
+        answer=(
+            f"Done — {target.name} approved the share. The {readable_name} "
+            f"is now available to you. Let me know if you need anything else "
+            f"from {', '.join(target.departments)}."
+        ),
         approval_id=approval_id,
+        source_agent=_agent_summary(source),
+        target_agent=_agent_summary(target),
     )
-
-
-@router.post("/stream")
-async def orchestrate_stream(request: OrchestrateRequest):
-    """Streaming orchestration — classification is non-streaming, final answer streams via SSE."""
-    source = await _get_agent(request.agent_id)
-    if not source:
-        raise HTTPException(status_code=404, detail="Source agent not found")
-
-    async def _generate() -> AsyncGenerator[str, None]:
-        trace_id = uuid4()
-
-        # Step 1: Classify (non-streaming, fast)
-        classification = await classify_and_route(request.message)
-        intent = classification.get("intent", "QUERY")
-        department = classification.get("department", "unknown")
-        topic = classification.get("topic", "unknown")
-
-        yield _sse({"type": "step", "step": {
-            "label": "Classifying intent...",
-            "status": "done",
-            "detail": f"{intent} about {department} — {topic}",
-        }})
-
-        # Step 2: Determine routing
-        source_depts = [d.lower() for d in source.departments]
-        target_dept = department.lower()
-
-        if target_dept in source_depts:
-            yield _sse({"type": "step", "step": {
-                "label": "Answering directly...",
-                "status": "done",
-                "detail": f"{source.name} ({', '.join(source.departments)})",
-            }})
-            async for chunk in stream_message(source, request.message):
-                yield _sse({"type": "chunk", "text": chunk})
-            yield _sse({"type": "done", "trace_id": str(trace_id)})
-            return
-
-        # Step 3: Find target agent
-        search_query = f"{department} {topic}"
-        candidates = await search_agents_by_query(search_query)
-        candidates = [a for a in candidates if a.id != source.id]
-
-        if not candidates:
-            yield _sse({"type": "step", "step": {
-                "label": "No specialist found",
-                "status": "done",
-                "detail": f"No agent found for {department}",
-            }})
-            async for chunk in stream_message(source, request.message):
-                yield _sse({"type": "chunk", "text": chunk})
-            yield _sse({"type": "done", "trace_id": str(trace_id)})
-            return
-
-        target = candidates[0]
-        yield _sse({"type": "step", "step": {
-            "label": "Finding the right agent...",
-            "status": "done",
-            "detail": f"{target.name} ({', '.join(target.departments)})",
-        }})
-
-        # Step 4: Handle based on intent
-        if intent == "DOC_REQUEST":
-            resp = await _handle_doc_request(
-                source, target, request.message, [], trace_id,
-            )
-            for step in resp.steps:
-                yield _sse({"type": "step", "step": step.model_dump()})
-            if resp.answer:
-                yield _sse({"type": "chunk", "text": resp.answer})
-            if resp.approval_id:
-                yield _sse({
-                    "type": "approval",
-                    "approval_id": str(resp.approval_id),
-                })
-            yield _sse({"type": "done", "trace_id": str(trace_id)})
-            return
-
-        # QUERY flow — route through ETO, then stream the answer
-        msg_type = (
-            MessageType(intent)
-            if intent in MessageType.__members__
-            else MessageType.QUERY
-        )
-        inter_msg = InterAgentMessage(
-            type=msg_type,
-            from_agent=source.id,
-            to_agent=target.id,
-            intent=request.message,
-            permission_ctx=PermissionContext(
-                role=source.role,
-                departments=source.departments,
-                scopes=source.scopes,
-            ),
-            trace_id=trace_id,
-        )
-
-        eto_result = await eto_client.send_message(inter_msg)
-        yield _sse({"type": "step", "step": {
-            "label": f"Message sent to {target.name}'s agent",
-            "status": "done",
-            "detail": f"via ETO — {eto_result['status']}",
-        }})
-
-        # Stream the answer from the target agent
-        full_answer = ""
-        async for chunk in stream_message(target, request.message):
-            full_answer += chunk
-            yield _sse({"type": "chunk", "text": chunk})
-
-        # Record response through ETO
-        response_msg = MessageResponse(
-            in_reply_to=inter_msg.message_id,
-            from_agent=target.id,
-            content=full_answer,
-        )
-        await eto_client.record_response(response_msg)
-
-        yield _sse({"type": "step", "step": {
-            "label": f"{target.name}'s agent responded",
-            "status": "done",
-            "detail": "",
-        }})
-
-        yield _sse({"type": "done", "trace_id": str(trace_id)})
-
-    return StreamingResponse(_generate(), media_type="text/event-stream")
-
-
-def _sse(data: dict) -> str:
-    """Format a dict as an SSE data line."""
-    return f"data: {json.dumps(data)}\n\n"
 
 
 @router.post("/reset")
 async def reset_demo():
-    """Clear all demo state — approvals, activity, and message ledger."""
+    """Clear all demo state — approvals, activity, message ledger, sessions. Reseed agents."""
+    log.info("[reset] clearing all demo state")
+
     async with db.async_session() as session:
         await session.execute(ApprovalRow.__table__.delete())
         await session.execute(ActivityRow.__table__.delete())
         await session.execute(MessageLedgerRow.__table__.delete())
         await session.commit()
 
+    # Clear all conversation sessions
+    _conversation_sessions.clear()
+
+    # Close all WebSocket connections so approval screen reconnects clean
+    await ws_manager.close_all()
+
+    # Reseed agents
+    await db.seed_demo_agents()
+
+    log.info("[reset] demo state reset complete")
     return {"status": "ok", "message": "Demo state reset"}
+
+
+def _build_second_hop_hint(
+    ref_agent: Agent, topic: str, agent_responses: list[dict]
+) -> str:
+    """Build a context-aware second-hop suggestion based on the topic and agent responses."""
+    dept = ref_agent.departments[0] if ref_agent.departments else "their team"
+
+    # Scan agent responses for clues about what the referenced agent knows
+    clues = []
+    for r in agent_responses:
+        content_lower = r["content"].lower()
+        if "vendor" in content_lower or "stripe" in content_lower:
+            clues.append("vendor status")
+        if (
+            "timeline" in content_lower
+            or "delivery" in content_lower
+            or "deadline" in content_lower
+        ):
+            clues.append("the latest timeline")
+        if "blocker" in content_lower or "blocked" in content_lower:
+            clues.append("the blocker status")
+        if "support" in content_lower or "ticket" in content_lower:
+            clues.append("the support situation")
+        if "onboarding" in content_lower or "seller" in content_lower:
+            clues.append("the onboarding details")
+        if "compliance" in content_lower or "kyc" in content_lower:
+            clues.append("the compliance update")
+
+    # Deduplicate and pick the most relevant clue
+    seen = set()
+    unique_clues = []
+    for c in clues:
+        if c not in seen:
+            seen.add(c)
+            unique_clues.append(c)
+
+    if unique_clues:
+        subject = unique_clues[0]
+    else:
+        subject = f"more details on {topic}" if topic != "unknown" else "more details"
+
+    return f"Want me to check with {ref_agent.name} in {dept} about {subject}?"
+
+
+def _sse(data: dict) -> str:
+    """Format a dict as an SSE data line."""
+    return f"data: {json.dumps(data)}\n\n"
 
 
 def _agent_summary(agent: Agent) -> dict:

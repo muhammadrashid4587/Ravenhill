@@ -98,7 +98,7 @@ export async function orchestrate(agentId: string, message: string) {
 
 export async function completeDocRequest(approvalId: string) {
   const res = await fetch(
-    `${API_BASE}/api/orchestrate/approval/${approvalId}/complete`
+    `${API_BASE}/api/orchestrate/approval/${approvalId}/complete`,
   );
   return res.json();
 }
@@ -129,27 +129,111 @@ export async function fetchHealth() {
 }
 
 /**
+ * Subscribe to real-time activity events via SSE.
+ * Returns a cleanup function to close the connection.
+ */
+export function streamActivity(
+  onEvent: (entry: Record<string, unknown>) => void,
+): () => void {
+  const es = new EventSource(`${API_BASE}/api/activity/stream`);
+  es.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type !== "ping") onEvent(data);
+    } catch {
+      /* skip malformed */
+    }
+  };
+  es.onerror = () => {
+    es.close();
+  };
+  return () => es.close();
+}
+
+/**
  * Stream orchestration via SSE. Calls the callback for each parsed event.
  *
  * Event shapes:
+ *   { type: "session", session_id: string }
  *   { type: "step", step: { label, status, detail } }
  *   { type: "chunk", text: string }
- *   { type: "approval", approval_id: string }
+ *   { type: "sources", sources: string[] }
+ *   { type: "second_hop", available: boolean, agent_id: string, hint: string }
+ *   { type: "approval", approval_id: string, target_name: string }
  *   { type: "done", trace_id: string }
  */
 export async function orchestrateStream(
   agentId: string,
   message: string,
+  sessionId: string | null,
   onEvent: (event: Record<string, unknown>) => void,
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/orchestrate/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, agent_id: agentId }),
+    body: JSON.stringify({
+      message,
+      agent_id: agentId,
+      session_id: sessionId,
+    }),
   });
 
   if (!res.ok) {
     throw new Error(`Stream request failed: ${res.status}`);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          onEvent(data);
+        } catch {
+          // skip malformed lines
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Stream a second-hop query via SSE.
+ */
+export async function secondHopStream(
+  agentId: string,
+  referencedAgentId: string,
+  originalQuestion: string,
+  followUp: string,
+  sessionId: string | null,
+  onEvent: (event: Record<string, unknown>) => void,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/orchestrate/second-hop/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agent_id: agentId,
+      referenced_agent_id: referencedAgentId,
+      original_question: originalQuestion,
+      follow_up: followUp,
+      session_id: sessionId,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Second-hop stream failed: ${res.status}`);
   }
 
   const reader = res.body?.getReader();
