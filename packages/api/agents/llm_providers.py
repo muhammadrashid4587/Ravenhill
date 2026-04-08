@@ -28,7 +28,7 @@ log = logging.getLogger("llm")
 _MODELS = {
     "cerebras": {"fast": "llama3.1-8b", "reasoning": "qwen-3-235b-a22b-instruct-2507"},
     "groq": {"fast": "llama-3.3-70b-versatile", "reasoning": "llama-3.3-70b-versatile"},
-    "anthropic": {"fast": "claude-haiku-4-5", "reasoning": "claude-sonnet-4-6"},
+    "anthropic": {"fast": "claude-haiku-4-5", "reasoning": "claude-haiku-4-5"},
     "gemini": {"fast": "gemini-2.5-flash", "reasoning": "gemini-2.5-flash"},
 }
 

@@ -1,6 +1,16 @@
 """App-wide configuration — reads from environment variables and optional .env file."""
 
+from pathlib import Path
 from pydantic_settings import BaseSettings
+
+# Load .env into os.environ before pydantic-settings reads it.
+# This ensures the values are available as real env vars regardless of CWD.
+_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_ENV_FILE, override=True)
+except ImportError:
+    pass
 
 
 class Settings(BaseSettings):
@@ -35,7 +45,7 @@ class Settings(BaseSettings):
     # when the file doesn't exist (e.g. on Fly.io where secrets are injected
     # as real env vars).  The relative path works when running from repo root
     # via `cd packages/api && uvicorn ...`.
-    model_config = {"env_file": "../../.env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    model_config = {"env_file": str(_ENV_FILE), "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

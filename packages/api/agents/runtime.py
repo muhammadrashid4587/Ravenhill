@@ -612,13 +612,32 @@ async def synthesize_multi_agent_response(
 {history_context}
 Synthesize into a clear, direct answer for Riley.
 
-CRITICAL RULES:
-- ONLY include information that appears in the agent responses above. Do NOT \
-invent people, teams, events, meetings, or follow-ups that aren't mentioned.
-- If an agent said "I don't have information on that", report that honestly — \
-don't make up an answer to fill the gap.
+CRITICAL ANTI-HALLUCINATION RULES (violations break the demo):
+- ONLY use facts that appear in the agent responses above. Do NOT invent people, \
+teams, meetings, deadlines, numbers, or events that aren't in the responses.
+- NEVER reference teams or roles that don't exist in the responses (e.g., do NOT \
+mention "Finance", "Legal", "HR", "Marketing" — the only teams are Product, \
+Engineering, Operations, and Executive).
+- NEVER claim you are personally taking real-time actions ("I'm following up \
+today", "I'm flagging this to X", "I'll handle the call", "I'm sending an email \
+now"). You are an information-retrieval agent, not an actor. You can OFFER to \
+check with another named agent, but never claim ongoing personal action.
 - NEVER fabricate actions taken (like "I've confirmed with X" or "I reached out \
 to Y") unless an agent explicitly said they did that.
+- NEVER invent connections between unrelated facts. Do NOT tie work deadlines \
+to personal matters (vacation, time off, performance reviews) unless an agent \
+explicitly stated that connection.
+- NEVER claim "this is the first message" or "there's no prior history" — the \
+conversation history is provided to you above when it exists.
+- Distinguish dates carefully: the Stripe SLA breach date and the internal \
+launch-slip date may be different. Quote the exact date from the source, do not \
+merge them.
+- If an agent said "I don't have information on that", report that honestly — \
+don't make up an answer to fill the gap.
+- If asked something off-topic or personal (vacation, opinions, gossip), say \
+you only handle work matters in the agent's scope. Do NOT invent answers.
+
+STYLE RULES:
 - Lead with the most important fact or risk. Don't bury bad news.
 - Include specific numbers, dates, and names ONLY from the responses above.
 - If someone flagged a blocker or risk, highlight it clearly.
@@ -673,9 +692,34 @@ async def stream_synthesis(
 
 {responses_text}
 {history_context}
-Synthesize into a clear, direct answer for Riley. Rules:
+Synthesize into a clear, direct answer for Riley.
+
+CRITICAL ANTI-HALLUCINATION RULES (violations break the demo):
+- ONLY use facts that appear in the agent responses above. Do NOT invent people, \
+teams, meetings, deadlines, numbers, or events that aren't in the responses.
+- NEVER reference teams or roles that don't exist in the responses (e.g., do NOT \
+mention "Finance", "Legal", "HR", "Marketing" — the only teams are Product, \
+Engineering, Operations, and Executive).
+- NEVER claim you are personally taking real-time actions ("I'm following up \
+today", "I'm flagging this to X", "I'll handle the call", "I'm sending an email \
+now"). You are an information-retrieval agent, not an actor. You can OFFER to \
+check with another named agent, but never claim ongoing personal action.
+- NEVER invent connections between unrelated facts. Do NOT tie work deadlines \
+to personal matters (vacation, time off, performance reviews) unless an agent \
+explicitly stated that connection.
+- NEVER claim "this is the first message" or "there's no prior history" — the \
+conversation history is provided to you above when it exists.
+- Distinguish dates carefully: the Stripe SLA breach date and the internal \
+launch-slip date may be different. Quote the exact date from the source, do not \
+merge them.
+- If an agent said "I don't have information on that", report that honestly — \
+don't make up an answer to fill the gap.
+- If asked something off-topic or personal (vacation, opinions, gossip), say \
+you only handle work matters in the agent's scope. Do NOT invent answers.
+
+STYLE RULES:
 - Lead with the most important fact or risk. Don't bury bad news.
-- Include specific numbers, dates, and names when available.
+- Include specific numbers, dates, and names ONLY from the responses above.
 - If someone flagged a blocker or risk, highlight it clearly.
 - If another team was referenced as having more info, mention them by name and \
 offer to follow up (e.g., "I can check with Alex in Ops for the latest").
