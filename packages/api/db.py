@@ -6,7 +6,20 @@ All tables are created on startup. Demo agents are seeded if the agents table is
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, String, Text, Uuid, text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.types import JSON
@@ -120,6 +133,48 @@ class TaskRow(Base):
     due_date = Column(Date, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class EventRow(Base):
+    """Persisted RNE. Every signal from every platform lands here first."""
+
+    __tablename__ = "events"
+
+    event_id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    event_type = Column(String(50), nullable=False)
+    actor_id = Column(Uuid, nullable=False)
+
+    source_platform = Column(String(30), nullable=False)
+    source_event_id = Column(String(300), nullable=False)
+
+    channel = Column(String(300), nullable=True)
+    thread_id = Column(String(300), nullable=True)
+
+    content_hash = Column(String(64), nullable=False)
+    content_summary = Column(Text, nullable=True)
+
+    topic_ids = Column(JSON, default=list)
+    participants = Column(JSON, default=list)
+    observer_ids = Column(JSON, default=list)
+
+    trust_envelope = Column(JSON, nullable=False)
+
+    requires_response = Column(Boolean, default=False)
+    requires_verification = Column(Boolean, default=False)
+
+    parent_event_id = Column(Uuid, nullable=True)
+    forward_depth = Column(Integer, default=0)
+
+    event_metadata = Column(JSON, default=dict)
+
+    occurred_at = Column(DateTime(timezone=True), nullable=False)
+    ingested_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("source_platform", "source_event_id", name="uq_events_source_dedup"),
+        Index("ix_events_actor_occurred", "actor_id", "occurred_at"),
+        Index("ix_events_thread", "thread_id"),
+    )
 
 
 class MeetingFileRow(Base):
