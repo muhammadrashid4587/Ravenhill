@@ -1,11 +1,13 @@
 """Shared persistence for RNE — used by the HTTP ingestion endpoint and by
 adapters that receive events out-of-band (Slack webhook, Gmail push, etc.).
 
-Idempotent on (source_platform, source_event_id).
+Idempotent on (source_platform, source_event_id). Successful (non-dedup)
+inserts are projected onto the knowledge graph.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -14,6 +16,9 @@ from sqlalchemy.exc import IntegrityError
 
 import db
 from events.models import EventIngestRequest, RNEvent
+from graph.updater import apply_event_to_graph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -70,5 +75,12 @@ async def persist_event(req: EventIngestRequest) -> IngestResult:
                 )
             )
             return IngestResult(event_id=refetch.scalar_one(), deduplicated=True)
+
+    # Project to graph only on first-write — dedup hits skip this so edge
+    # weights don't double-count when an adapter retries.
+    try:
+        await apply_event_to_graph(event)
+    except Exception:  # pragma: no cover — graph update must never break ingest
+        logger.exception("graph projection failed for event %s", event.event_id)
 
     return IngestResult(event_id=event.event_id, deduplicated=False)
