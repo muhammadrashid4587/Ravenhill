@@ -11,6 +11,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -133,6 +134,45 @@ class TaskRow(Base):
     due_date = Column(Date, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class GraphNodeRow(Base):
+    """Knowledge graph node. PERSON | TEAM | TOPIC per blueprint §2.10."""
+
+    __tablename__ = "graph_nodes"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    node_type = Column(String(20), nullable=False)
+    name = Column(String(500), nullable=False)
+    attributes = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("node_type", "name", name="uq_graph_nodes_type_name"),
+        Index("ix_graph_nodes_type", "node_type"),
+    )
+
+
+class GraphEdgeRow(Base):
+    """Knowledge graph edge. One row per (from, to, edge_type)."""
+
+    __tablename__ = "graph_edges"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    from_id = Column(Uuid, ForeignKey("graph_nodes.id"), nullable=False)
+    to_id = Column(Uuid, ForeignKey("graph_nodes.id"), nullable=False)
+    edge_type = Column(String(30), nullable=False)
+    weight = Column(Float, default=0.0, nullable=False)
+    attributes = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("from_id", "to_id", "edge_type", name="uq_graph_edges_triple"),
+        Index("ix_graph_edges_to_type", "to_id", "edge_type"),
+        Index("ix_graph_edges_from_type", "from_id", "edge_type"),
+    )
 
 
 class EventRow(Base):
