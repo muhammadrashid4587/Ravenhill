@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     encryption_key: str = ""  # Fernet key for encrypting data at rest. Auto-generated if empty.
     sensitive_mode: bool = False  # When true, PII is stripped before sending to LLM
 
+    # Slack Events API (Phase 1 ingestion)
+    slack_signing_secret: str = ""  # verifies webhook authenticity; empty = skip (dev/test)
+    slack_bot_token: str = ""  # xoxb-... used for future user/channel resolution
+
     # The Singularity (formerly ETO)
     singularity_api_key: str = ""
     singularity_api_url: str = "https://api.eto.markets/v1"

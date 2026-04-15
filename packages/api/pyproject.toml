@@ -37,7 +37,7 @@ phase1 = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["agents*", "messaging*", "registry*", "approvals*", "permissions*", "admin*", "integrations*", "activity*", "meetings*", "security*", "events*", "graph*"]
+include = ["agents*", "messaging*", "registry*", "approvals*", "permissions*", "admin*", "integrations*", "integrations.*", "activity*", "meetings*", "security*", "events*", "graph*"]
 
 [tool.ruff]
 target-version = "py311"
