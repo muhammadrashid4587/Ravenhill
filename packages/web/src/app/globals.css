@@ -4,46 +4,24 @@
 
 /* ============================================================
    RAVENHILL DESIGN SYSTEM
-   Dark space with living light — atmospheric depth + neon energy
+   Clean dark, professional, alive
    ============================================================ */
 
 :root {
-  /* Backgrounds */
-  --bg-void: #030308;
-  --bg-surface: #08081a;
-  --bg-elevated: #0e0e2a;
-  --bg-interactive: #141430;
+  --bg-base: #09090b;
+  --bg-surface: #111113;
+  --bg-elevated: #1a1a1f;
+  --bg-hover: #222228;
 
-  /* Borders */
-  --border-subtle: rgba(168, 85, 247, 0.06);
-  --border-glow: rgba(236, 72, 153, 0.20);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.12);
 
-  /* Text */
-  --text-primary: #ededf0;
-  --text-secondary: #7a7a8e;
-  --text-tertiary: #4a4a60;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #52525b;
 
-  /* Accent */
-  --accent-pink: #ec4899;
-  --accent-purple: #a855f7;
-  --accent-indigo: #6366f1;
-  --accent-cyan: #22d3ee;
-
-  /* Gradients */
-  --gradient-hot: linear-gradient(135deg, #a855f7, #ec4899);
-  --gradient-cool: linear-gradient(135deg, #6366f1, #22d3ee);
-  --gradient-full: linear-gradient(135deg, #a855f7, #ec4899, #6366f1);
-
-  /* Glows */
-  --glow-pink: rgba(236, 72, 153, 0.15);
-  --glow-purple: rgba(168, 85, 247, 0.12);
-  --glow-cyan: rgba(34, 211, 238, 0.10);
-
-  /* Glass */
-  --surface-glass: rgba(14, 14, 42, 0.55);
-  --surface-glass-hover: rgba(20, 20, 48, 0.70);
-
-  /* Status */
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
   --success: #34d399;
   --warning: #fbbf24;
   --danger: #f87171;
@@ -51,7 +29,7 @@
 
 @layer base {
   body {
-    background: var(--bg-void);
+    background: var(--bg-base);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -59,385 +37,61 @@
 }
 
 /* ============================================================
-   AMBIENT BACKGROUND — "Living Darkness"
+   ANIMATIONS
    ============================================================ */
-
-/* Gradient orbs — fixed positioned, drift slowly */
-.ambient-bg {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
-}
-
-.ambient-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(140px);
-  will-change: transform;
-}
-
-.ambient-orb--purple {
-  top: -15%;
-  left: -10%;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, var(--accent-purple) 0%, transparent 70%);
-  opacity: 0.08;
-  animation: orb-drift-1 65s ease-in-out infinite;
-}
-
-.ambient-orb--pink {
-  bottom: -20%;
-  right: -10%;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, var(--accent-pink) 0%, transparent 70%);
-  opacity: 0.06;
-  animation: orb-drift-2 70s ease-in-out infinite;
-}
-
-.ambient-orb--indigo {
-  bottom: -10%;
-  left: 30%;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, var(--accent-indigo) 0%, transparent 70%);
-  opacity: 0.05;
-  animation: orb-drift-3 60s ease-in-out infinite;
-}
-
-/* Cyan variant for approval page */
-.ambient-orb--cyan {
-  top: 10%;
-  right: 20%;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, var(--accent-cyan) 0%, transparent 70%);
-  opacity: 0.06;
-  animation: orb-drift-2 75s ease-in-out infinite reverse;
-}
-
-/* Noise texture overlay */
-.ambient-bg::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-repeat: repeat;
-  background-size: 128px 128px;
-  opacity: 0.03;
-  mix-blend-mode: overlay;
-  z-index: 1;
-}
-
-/* Vignette */
-.ambient-bg::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at center, transparent 50%, rgba(3, 3, 8, 0.4) 100%);
-  z-index: 2;
-}
-
-/* Orb drift animations — slow figure-8 patterns */
-@keyframes orb-drift-1 {
-  0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(25px, -15px); }
-  50% { transform: translate(-10px, -30px); }
-  75% { transform: translate(-20px, 10px); }
-}
-
-@keyframes orb-drift-2 {
-  0%, 100% { transform: translate(0, 0); }
-  25% { transform: translate(-20px, 20px); }
-  50% { transform: translate(15px, 25px); }
-  75% { transform: translate(25px, -15px); }
-}
-
-@keyframes orb-drift-3 {
-  0%, 100% { transform: translate(0, 0); }
-  33% { transform: translate(20px, -20px); }
-  66% { transform: translate(-15px, 15px); }
-}
-
-/* ============================================================
-   GLASSMORPHISM
-   ============================================================ */
-
-.glass-card {
-  background: var(--surface-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-}
-
-.glass-card:hover {
-  background: var(--surface-glass-hover);
-}
-
-/* Gradient border pseudo-element technique */
-.gradient-border {
-  position: relative;
-}
-
-.gradient-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: var(--gradient-full);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0.2;
-  transition: opacity 300ms ease;
-  pointer-events: none;
-}
-
-.gradient-border:hover::before {
-  opacity: 0.4;
-}
-
-/* Cool variant for approval page */
-.gradient-border-cool::before {
-  background: var(--gradient-cool);
-}
-
-/* ============================================================
-   GRADIENT TEXT
-   ============================================================ */
-
-.gradient-text {
-  background: var(--gradient-hot);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* ============================================================
-   KEYFRAMES — All animations
-   ============================================================ */
-
-/* 1. Login → Chat dissolve transition */
-@keyframes dissolve-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
-    filter: blur(0);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.98);
-    filter: blur(6px);
-  }
-}
-
-@keyframes materialize-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-    filter: blur(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-  }
-}
-
-/* 2. Message animations */
-@keyframes slide-in-right {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
 
 @keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* 3. Streaming chunk fade */
-@keyframes chunk-fade {
-  from {
-    opacity: 0;
-    filter: blur(1px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-  }
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-/* 4. Source pill entrance */
-@keyframes pill-enter {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
-/* 6. Approval card entrance (cinematic) */
-@keyframes approval-enter {
-  from {
-    opacity: 0;
-    transform: translateY(30px) scale(0.96);
-    filter: blur(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
-  }
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-/* Approval exit */
-@keyframes approval-exit {
-  from {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.97) translateY(-16px);
-  }
-}
-
-/* Glow flash on approval arrival */
-@keyframes glow-pulse {
-  from {
-    transform: scale(1);
-    opacity: 0.3;
-  }
-  to {
-    transform: scale(1.5);
-    opacity: 0;
-  }
-}
-
-/* Ambient breathe for idle indicators */
-@keyframes ambient-breathe {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-}
-
-/* 7. Typing indicator shimmer wave */
-@keyframes shimmer-wave {
-  0%, 80%, 100% {
-    opacity: 0.25;
-    box-shadow: 0 0 0 transparent;
-  }
-  40% {
-    opacity: 1;
-    box-shadow: 0 0 6px var(--glow-pink);
-  }
-}
-
-/* 8. Status text crossfade */
-@keyframes crossfade-out {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-
-@keyframes crossfade-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ============================================================
-   ANIMATION UTILITY CLASSES
-   ============================================================ */
-
-.animate-dissolve-out {
-  animation: dissolve-out 450ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
-.animate-materialize-in {
-  animation: materialize-in 500ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-slide-in-right {
-  animation: slide-in-right 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .animate-fade-up {
   animation: fade-up 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.animate-chunk-fade {
-  animation: chunk-fade 150ms ease-out both;
+.animate-fade-in {
+  animation: fade-in 300ms ease both;
 }
 
-.animate-pill-enter {
-  animation: pill-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+.animate-slide-in {
+  animation: slide-in 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.animate-approval-enter {
-  animation: approval-enter 550ms cubic-bezier(0.16, 1, 0.3, 1) both;
+.animate-scale-in {
+  animation: scale-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.animate-approval-exit {
-  animation: approval-exit 350ms ease-in forwards;
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s ease-in-out infinite;
 }
 
-.animate-glow-pulse {
-  animation: glow-pulse 600ms ease-out forwards;
-}
-
-.animate-ambient-breathe {
-  animation: ambient-breathe 2.5s ease-in-out infinite;
-}
-
-.animate-crossfade-in {
-  animation: crossfade-in 250ms ease-out 100ms both;
-}
-
-.animate-crossfade-out {
-  animation: crossfade-out 200ms ease-in forwards;
-}
-
-/* Shimmer wave dots */
-.shimmer-dot-1 {
-  animation: shimmer-wave 1.4s ease-in-out infinite;
-}
-.shimmer-dot-2 {
-  animation: shimmer-wave 1.4s ease-in-out 0.2s infinite;
-}
-.shimmer-dot-3 {
-  animation: shimmer-wave 1.4s ease-in-out 0.4s infinite;
-}
+/* Stagger children */
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 50ms; }
+.stagger > *:nth-child(3) { animation-delay: 100ms; }
+.stagger > *:nth-child(4) { animation-delay: 150ms; }
+.stagger > *:nth-child(5) { animation-delay: 200ms; }
+.stagger > *:nth-child(6) { animation-delay: 250ms; }
 
 /* ============================================================
    SCROLLBAR
@@ -450,27 +104,305 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(168, 85, 247, 0.15);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(168, 85, 247, 0.3);
+  background: rgba(255, 255, 255, 0.15);
 }
 
 /* ============================================================
-   ACCESSIBILITY — respect reduced motion
+   GRADIENT GLOW — hover state for cards
+   ============================================================ */
+
+@keyframes glow-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.hover-glow {
+  position: relative;
+  overflow: hidden;
+}
+.hover-glow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    600px circle at var(--glow-x, 50%) var(--glow-y, 50%),
+    rgba(255, 255, 255, 0.03),
+    transparent 40%
+  );
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+.hover-glow:hover::after {
+  opacity: 1;
+}
+
+/* ============================================================
+   3D TILT — subtle perspective hover
+   ============================================================ */
+
+.card-3d {
+  perspective: 800px;
+}
+.card-3d-inner {
+  transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 400ms ease;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.card-3d:hover .card-3d-inner {
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================
+   SHIMMER / SKELETON LOADING
+   ============================================================ */
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
+
+/* ============================================================
+   MICRO-INTERACTIONS
+   ============================================================ */
+
+.press-scale {
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.press-scale:active {
+  transform: scale(0.97);
+}
+
+.card-lift {
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 300ms ease,
+              border-color 300ms ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================
+   ANIMATED GRADIENT BORDER — for featured/active cards
+   ============================================================ */
+
+@keyframes border-rotate {
+  0% { --border-angle: 0deg; }
+  100% { --border-angle: 360deg; }
+}
+
+.gradient-border {
+  position: relative;
+  overflow: hidden;
+}
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    transparent 25%,
+    rgba(59, 130, 246, 0.4) 50%,
+    transparent 75%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: border-rotate 4s linear infinite;
+}
+
+/* Colored glow variants */
+.glow-blue { --glow-color: rgba(59, 130, 246, 0.15); }
+.glow-emerald { --glow-color: rgba(52, 211, 153, 0.15); }
+.glow-violet { --glow-color: rgba(139, 92, 246, 0.15); }
+.glow-amber { --glow-color: rgba(251, 191, 36, 0.15); }
+
+.card-glow {
+  transition: box-shadow 300ms ease, transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-glow:hover {
+  box-shadow: 0 0 30px -5px var(--glow-color, rgba(59, 130, 246, 0.1));
+}
+
+/* ============================================================
+   HERO GRID BACKGROUND
+   ============================================================ */
+
+@keyframes grid-fade {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.hero-grid {
+  position: relative;
+  overflow: hidden;
+}
+.hero-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 70%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 70%);
+  pointer-events: none;
+}
+.hero-grid::after {
+  content: "";
+  position: absolute;
+  top: -40%;
+  left: 20%;
+  width: 60%;
+  height: 60%;
+  background: radial-gradient(
+    circle,
+    rgba(59, 130, 246, 0.06) 0%,
+    rgba(139, 92, 246, 0.04) 30%,
+    transparent 70%
+  );
+  filter: blur(60px);
+  pointer-events: none;
+  animation: grid-fade 6s ease-in-out infinite;
+}
+
+/* ============================================================
+   INPUT FOCUS GLOW
+   ============================================================ */
+
+.input-focus-glow {
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+.input-focus-glow:focus {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ============================================================
+   SIDEBAR ACTIVE INDICATOR
+   ============================================================ */
+
+.nav-active-bar {
+  position: relative;
+}
+.nav-active-bar::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(180deg, #3b82f6, #60a5fa);
+  opacity: 0;
+  transition: opacity 250ms ease, height 250ms ease;
+}
+.nav-active-bar.active::before {
+  opacity: 1;
+}
+
+/* ============================================================
+   STAGGER EXTENDED — more children
+   ============================================================ */
+
+.stagger > *:nth-child(7) { animation-delay: 300ms; }
+.stagger > *:nth-child(8) { animation-delay: 350ms; }
+.stagger > *:nth-child(9) { animation-delay: 400ms; }
+.stagger > *:nth-child(10) { animation-delay: 450ms; }
+.stagger > *:nth-child(11) { animation-delay: 500ms; }
+.stagger > *:nth-child(12) { animation-delay: 550ms; }
+
+/* ============================================================
+   ANIMATED GRADIENT PANEL — for decorative panels
+   ============================================================ */
+
+@keyframes gradient-drift {
+  0%, 100% { background-position: 0% 0%; }
+  25% { background-position: 100% 0%; }
+  50% { background-position: 100% 100%; }
+  75% { background-position: 0% 100%; }
+}
+
+.animated-gradient-panel {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.05) 0%,
+    rgba(139, 92, 246, 0.05) 25%,
+    rgba(52, 211, 153, 0.03) 50%,
+    rgba(59, 130, 246, 0.05) 75%,
+    rgba(139, 92, 246, 0.05) 100%
+  );
+  background-size: 300% 300%;
+  animation: gradient-drift 12s ease-in-out infinite;
+}
+
+/* ============================================================
+   3D MESH BACKGROUND — floating orbs
+   ============================================================ */
+
+@keyframes orb-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes orb-spin {
+  0% { transform: translate(-50%, -70%) rotate(0deg); }
+  100% { transform: translate(-50%, -70%) rotate(360deg); }
+}
+
+@keyframes mesh-float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -20px) scale(1.05); }
+  50% { transform: translate(-15px, -40px) scale(0.95); }
+  75% { transform: translate(-25px, 15px) scale(1.02); }
+}
+
+@keyframes mesh-float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-25px, 25px) scale(0.97); }
+  50% { transform: translate(20px, 30px) scale(1.04); }
+  75% { transform: translate(30px, -20px) scale(0.98); }
+}
+
+@keyframes mesh-float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(25px, -25px) scale(1.03); }
+  66% { transform: translate(-20px, 20px) scale(0.96); }
+}
+
+/* ============================================================
+   ACCESSIBILITY
    ============================================================ */
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-
-  .ambient-orb {
-    animation: none !important;
   }
 }

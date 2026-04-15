@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
 
     # Database
-    database_url: str = "postgresql+asyncpg://eagent:eagent@localhost:5432/eagent"
+    database_url: str = "postgresql+asyncpg://eagent:eagent@localhost:5433/eagent"
 
     # Redis
     redis_url: str = "redis://localhost:6379"
@@ -24,9 +24,18 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     gemini_api_key: str = ""
 
-    # ETO
-    eto_api_key: str = ""
-    eto_api_url: str = "https://api.eto.markets/v1"
+    # Google OAuth (for Google Meet transcript integration)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:3000/meetings/google/callback"
+
+    # Security
+    encryption_key: str = ""  # Fernet key for encrypting data at rest. Auto-generated if empty.
+    sensitive_mode: bool = False  # When true, PII is stripped before sending to LLM
+
+    # The Singularity (formerly ETO)
+    singularity_api_key: str = ""
+    singularity_api_url: str = "https://api.eto.markets/v1"
 
     # Frontend
     next_public_api_url: str = "http://localhost:8000"

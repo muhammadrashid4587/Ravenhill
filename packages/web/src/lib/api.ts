@@ -150,6 +150,132 @@ export function streamActivity(
   return () => es.close();
 }
 
+// ---- Meetings API ----
+
+export interface MeetingTask {
+  id: string;
+  meeting_id: string;
+  agent_id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  source_excerpt?: string;
+  due_date?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface MeetingFile {
+  id: string;
+  meeting_id: string;
+  filename: string;
+  description?: string;
+  file_url?: string;
+}
+
+export interface Meeting {
+  id: string;
+  agent_id: string;
+  title: string;
+  summary?: string;
+  source: string;
+  status: string;
+  tasks: MeetingTask[];
+  files: MeetingFile[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface GoogleMeeting {
+  event_id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  attendees: string[];
+  has_transcript: boolean;
+}
+
+export async function createMeeting(data: {
+  title: string;
+  raw_transcript: string;
+  agent_id: string;
+  source?: string;
+}): Promise<Meeting> {
+  const res = await fetch(`${API_BASE}/api/meetings/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Create meeting failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchMeetings(agentId?: string): Promise<Meeting[]> {
+  const params = new URLSearchParams();
+  if (agentId) params.set("agent_id", agentId);
+  const res = await fetch(`${API_BASE}/api/meetings/?${params}`);
+  return res.json();
+}
+
+export async function fetchMeeting(meetingId: string): Promise<Meeting> {
+  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}`);
+  if (!res.ok) throw new Error(`Fetch meeting failed: ${res.status}`);
+  return res.json();
+}
+
+export async function updateTask(
+  meetingId: string,
+  taskId: string,
+  updates: { status?: string; priority?: string; title?: string; description?: string },
+): Promise<MeetingTask> {
+  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) throw new Error(`Update task failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getTaskHelp(
+  meetingId: string,
+  taskId: string,
+  question?: string,
+): Promise<{ task_id: string; response: string }> {
+  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/tasks/${taskId}/help`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) throw new Error(`Task help failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteMeeting(meetingId: string) {
+  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Delete meeting failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchGoogleMeetings(agentId: string): Promise<GoogleMeeting[]> {
+  const res = await fetch(`${API_BASE}/api/meetings/google/meetings?agent_id=${agentId}`);
+  if (!res.ok) throw new Error(`Fetch Google meetings failed: ${res.status}`);
+  return res.json();
+}
+
+export async function importGoogleMeeting(agentId: string, eventId: string): Promise<Meeting> {
+  const res = await fetch(`${API_BASE}/api/meetings/google/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_id: agentId, calendar_event_id: eventId }),
+  });
+  if (!res.ok) throw new Error(`Import Google meeting failed: ${res.status}`);
+  return res.json();
+}
+
 /**
  * Stream orchestration via SSE. Calls the callback for each parsed event.
  *

@@ -324,6 +324,112 @@ def _build_conversation_context(
     return [], []
 
 
+_PERSONAL_KEYWORDS = re.compile(
+    r"(my\s+task|my\s+meeting|my\s+plate|what.*(?:do\s+i|should\s+i|am\s+i|i\s+have|i\s+need)|"
+    r"what'?s\s+(?:on\s+my|pending|open|left|due|assigned|blocking)|"
+    r"status\s+(?:of\s+my|update)|how\s+(?:am\s+i|many)|"
+    r"action\s+items|to\s*-?\s*do|priorities|progress|"
+    r"standup|stand\s+up|daily\s+update|report|summary\s+of\s+(?:my|today)|"
+    r"what\s+(?:did\s+i|was\s+i|got\s+assigned)|"
+    r"help\s+(?:me\s+with|with\s+my)|meetings?\s+(?:today|this\s+week|recent)|"
+    r"update\s+(?:on\s+my|my))",
+    re.IGNORECASE,
+)
+
+
+def _is_personal_question(message: str) -> bool:
+    """Check if the message is asking about the user's own tasks/meetings/work."""
+    return bool(_PERSONAL_KEYWORDS.search(message))
+
+
+async def _answer_from_personal_data(
+    agent: Agent,
+    message: str,
+    personal_context: str,
+    conversation_history: list[str],
+) -> str | None:
+    """Try to answer using the user's personal meeting/task data only.
+
+    Returns the answer string, or None if the data doesn't contain relevant info.
+    The LLM is strictly instructed to NOT hallucinate — only use provided data.
+    """
+    from agents.llm_providers import call_llm, get_active_provider
+
+    if get_active_provider() == "mock":
+        return _mock_personal_answer(message, personal_context)
+
+    history_block = ""
+    if conversation_history:
+        history_block = (
+            "\n\nRecent conversation:\n" + "\n".join(conversation_history[-6:])
+        )
+
+    system = (
+        f"You are {agent.name}'s personal AI agent.\n\n"
+        f"STRICT RULES — these are non-negotiable:\n"
+        f"1. ONLY answer using the data provided below. Do NOT invent any facts, "
+        f"numbers, dates, names, or status information.\n"
+        f"2. If the data below does not contain the answer, respond with EXACTLY "
+        f"the text: NO_PERSONAL_DATA\n"
+        f"3. When answering, cite specific task names, meeting titles, and dates "
+        f"from the data.\n"
+        f"4. Be concise and direct. Use bullet points for lists.\n"
+        f"5. If asked for a status update or standup, synthesize from the task data.\n\n"
+        f"--- YOUR DATA (from real meetings and tasks) ---\n"
+        f"{personal_context}\n"
+        f"--- END DATA ---"
+        f"{history_block}"
+    )
+
+    result = await call_llm(
+        system=system,
+        user_message=message,
+        model_tier="reasoning",
+        max_tokens=1024,
+    )
+
+    if not result:
+        return None
+
+    # If the LLM says it doesn't have data, return None to fall through
+    if "NO_PERSONAL_DATA" in result:
+        return None
+
+    return result
+
+
+def _mock_personal_answer(message: str, personal_context: str) -> str | None:
+    """Mock response for personal questions when LLM is unavailable."""
+    msg = message.lower()
+
+    if not personal_context:
+        return None
+
+    if any(w in msg for w in ("plate", "task", "to do", "todo", "pending", "open")):
+        return (
+            "Based on your meetings, you have tasks across your recent meetings. "
+            "Here's what's open:\n\n"
+            "Check your Dashboard for the full breakdown — I'm pulling this from "
+            "your actual meeting data, not making it up."
+        )
+
+    if any(w in msg for w in ("standup", "stand up", "update", "report", "summary")):
+        return (
+            "Here's your status update based on your meeting tasks:\n\n"
+            "Check your Dashboard for specific task statuses and priorities. "
+            "This is pulled from your real meeting data."
+        )
+
+    if any(w in msg for w in ("meeting", "meetings")):
+        return (
+            "I can see your recent meetings in the system. "
+            "Head to the Meetings page for full details, task breakdowns, "
+            "and to ask me for help on specific tasks."
+        )
+
+    return None
+
+
 async def _conversational_fallback(
     agent: Agent,
     message: str,
@@ -847,6 +953,38 @@ async def orchestrate_stream(request: OrchestrateRequest):
                 _append_to_session(session_id, "assistant", answer)
                 yield _sse({"type": "done", "trace_id": str(trace_id)})
                 return
+
+            # Step 0: Check personal data (meetings, tasks) first
+            from meetings.context import build_personal_context, has_personal_data
+
+            personal_context = ""
+            has_my_data = await has_personal_data(request.agent_id)
+            if has_my_data:
+                personal_context = await build_personal_context(request.agent_id)
+                log.info(f"[{trace_id}] loaded personal context ({len(personal_context)} chars)")
+
+            # Try to answer from personal data first (if relevant)
+            if personal_context and _is_personal_question(request.message):
+                yield _sse({"type": "step", "step": {
+                    "label": "Checking your data...",
+                    "status": "done",
+                    "detail": "Looking at your meetings and tasks",
+                }})
+
+                personal_answer = await _answer_from_personal_data(
+                    source, request.message, personal_context, synthesis_history,
+                )
+                if personal_answer:
+                    yield _sse({"type": "step", "step": {
+                        "label": "Answered from your data",
+                        "status": "done",
+                        "detail": "No need to ask other agents",
+                    }})
+                    yield _sse({"type": "sources", "sources": ["Your meetings & tasks"]})
+                    yield _sse({"type": "chunk", "text": personal_answer})
+                    _append_to_session(session_id, "assistant", personal_answer)
+                    yield _sse({"type": "done", "trace_id": str(trace_id)})
+                    return
 
             # Step 1: Load agents + build topic map
             all_agents = await _get_all_agents()

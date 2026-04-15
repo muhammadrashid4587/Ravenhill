@@ -6,7 +6,7 @@ All tables are created on startup. Demo agents are seeded if the agents table is
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, String, Text, Uuid, text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, String, Text, Uuid, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.types import JSON
@@ -91,6 +91,48 @@ class MessageLedgerRow(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class MeetingRow(Base):
+    __tablename__ = "meetings"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    title = Column(String(500), nullable=False)
+    raw_transcript = Column(Text, nullable=False)
+    summary = Column(Text, nullable=True)
+    source = Column(String(50), default="paste")  # "paste" | "google_meet" | "zoom"
+    source_meeting_id = Column(String(200), nullable=True)  # external meeting ID
+    status = Column(String(20), default="processing")  # "processing" | "ready" | "archived"
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class TaskRow(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    meeting_id = Column(Uuid, ForeignKey("meetings.id"), nullable=False)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=False)
+    status = Column(String(20), default="pending")  # "pending" | "in_progress" | "done" | "blocked"
+    priority = Column(String(20), default="medium")  # "high" | "medium" | "low"
+    source_excerpt = Column(Text, nullable=True)  # relevant transcript snippet
+    due_date = Column(Date, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class MeetingFileRow(Base):
+    __tablename__ = "meeting_files"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    meeting_id = Column(Uuid, ForeignKey("meetings.id"), nullable=False)
+    filename = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    file_url = Column(String(1000), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 async def init_db():
     """Create all tables if they don't exist."""
     async with engine.begin() as conn:
@@ -118,7 +160,10 @@ async def seed_demo_agents():
     from agents.seed import SEED_AGENTS
 
     async with async_session() as session:
-        # Always delete and reseed for demo consistency
+        # Clear dependent tables first (foreign key constraints)
+        await session.execute(MeetingFileRow.__table__.delete())
+        await session.execute(TaskRow.__table__.delete())
+        await session.execute(MeetingRow.__table__.delete())
         await session.execute(AgentRow.__table__.delete())
         for agent_data in SEED_AGENTS:
             row = AgentRow(**agent_data)

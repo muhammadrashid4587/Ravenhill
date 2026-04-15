@@ -1,36 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Bot,
   MessageSquare,
-  Activity,
-  Shield,
-  Settings,
-  ArrowLeftRight,
+  Building2,
+  CalendarCheck,
 } from "lucide-react";
 import { useAgent } from "@/lib/AgentContext";
 
-const MAIN_NAV = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/agents", label: "Agents", icon: Bot },
+const NAV_ITEMS = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/chat", label: "Chat", icon: MessageSquare },
-];
-
-const MONITOR_NAV = [
-  { href: "/activity", label: "Activity", icon: Activity },
-  { href: "/audit", label: "Audit Log", icon: Shield },
+  { href: "/organization", label: "Organization", icon: Building2 },
+  { href: "/meetings", label: "Meetings", icon: CalendarCheck },
 ];
 
 const DEPT_COLORS: Record<string, string> = {
+  Executive: "bg-amber-500",
   Sales: "bg-blue-500",
   Finance: "bg-purple-500",
   Marketing: "bg-emerald-500",
   Engineering: "bg-orange-500",
   Product: "bg-pink-500",
-  HR: "bg-cyan-500",
+  Operations: "bg-cyan-500",
+  HR: "bg-teal-500",
 };
 
 function getInitials(name: string) {
@@ -43,140 +38,72 @@ function getInitials(name: string) {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { myAgent } = useAgent();
 
-  const handlePickAgent = () => {
-    router.push("/agents?pick=true");
-  };
-
   const isActive = (href: string) =>
-    pathname === href || (href !== "/" && pathname.startsWith(href));
+    pathname === href || pathname.startsWith(href + "/");
 
   return (
-    <aside className="w-56 border-r border-white/[0.06] bg-white/[0.02] flex flex-col shrink-0 h-screen sticky top-0">
-      {/* Logo */}
-      <div className="py-5 px-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-blue-400"
-          >
-            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-          </svg>
-          <span className="text-base font-bold text-zinc-100 tracking-tight">
-            Ravenhill
-          </span>
-        </Link>
-      </div>
+    <nav className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-[#0c0c0e]/80 backdrop-blur-xl">
+      <div className="flex items-center justify-between h-12 px-4">
+        {/* Left: Logo + Nav */}
+        <div className="flex items-center gap-6">
+          {/* Logo */}
+          <Link href="/home" className="flex items-center gap-2 group shrink-0">
+            <div className="w-6 h-6 rounded-md bg-white flex items-center justify-center group-hover:scale-105 transition-transform">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                <path d="M13 3L4 14h7v7l9-11h-7V3z" fill="#09090b" />
+              </svg>
+            </div>
+            <span className="text-sm font-display font-semibold text-zinc-100 tracking-tight">
+              Ravenhill
+            </span>
+          </Link>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 overflow-y-auto">
-        {/* Main nav (no section label) */}
-        <div className="space-y-0.5">
-          {MAIN_NAV.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-all ${
-                  active
-                    ? "bg-white/[0.08] text-white"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* Monitor section */}
-        <div className="mt-6">
-          <div className="text-[11px] font-medium text-zinc-600 uppercase tracking-widest px-3 mb-1">
-            Monitor
-          </div>
-          <div className="space-y-0.5">
-            {MONITOR_NAV.map((item) => {
+          {/* Nav items */}
+          <div className="flex items-center gap-1">
+            {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                  className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all duration-200 ${
                     active
-                      ? "bg-white/[0.08] text-white"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]"
+                      ? "text-white bg-white/[0.08]"
+                      : "text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.04]"
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className={`w-4 h-4 ${active ? "text-blue-400" : ""}`} />
                   <span>{item.label}</span>
+                  {active && (
+                    <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-blue-500 rounded-full" />
+                  )}
                 </Link>
               );
             })}
           </div>
         </div>
-      </nav>
 
-      {/* Bottom section */}
-      <div className="px-3 pb-3">
-        {/* Settings */}
-        <Link
-          href="/settings"
-          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-all ${
-            isActive("/settings")
-              ? "bg-white/[0.08] text-white"
-              : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.06]"
-          }`}
-        >
-          <Settings className="w-4 h-4" />
-          <span>Settings</span>
-        </Link>
-
-        {/* Divider */}
-        <div className="border-t border-white/[0.06] my-3" />
-
-        {/* Agent selector */}
-        {myAgent ? (
-          <div className="flex items-center gap-2.5 px-3 py-2">
-            <div
-              className={`w-7 h-7 rounded-full ${DEPT_COLORS[myAgent.departments?.[0]] ?? "bg-zinc-600"} flex items-center justify-center text-[10px] font-bold text-white shrink-0`}
-            >
-              {getInitials(myAgent.name)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-zinc-200 truncate">
-                {myAgent.name}
+        {/* Right: User */}
+        {myAgent && (
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs text-zinc-500">{myAgent.role}</span>
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-7 h-7 rounded-full ${DEPT_COLORS[myAgent.departments?.[0]] ?? "bg-zinc-600"} flex items-center justify-center text-[9px] font-bold text-white`}
+              >
+                {getInitials(myAgent.name)}
               </div>
+              <span className="text-xs font-medium text-zinc-200">
+                {myAgent.name}
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
             </div>
-            <button
-              onClick={handlePickAgent}
-              className="text-xs text-zinc-500 hover:text-zinc-200 transition"
-              title="Switch agent"
-            >
-              Switch
-            </button>
           </div>
-        ) : (
-          <button
-            onClick={handlePickAgent}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-400 hover:to-violet-400 text-xs font-medium text-white transition"
-          >
-            Select Agent
-          </button>
         )}
       </div>
-    </aside>
+    </nav>
   );
 }

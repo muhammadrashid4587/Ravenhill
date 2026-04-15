@@ -15,7 +15,7 @@ log = logging.getLogger("eto")
 
 
 def _eto_is_live() -> bool:
-    return bool(settings.eto_api_key) and not settings.eto_api_key.startswith("your-")
+    return bool(settings.singularity_api_key) and not settings.singularity_api_key.startswith("your-")
 
 
 async def _persist_ledger_entry(entry: dict):
@@ -46,8 +46,8 @@ class ETOClient:
     """Client for ETO messaging and file transfer APIs."""
 
     def __init__(self):
-        self.base_url = settings.eto_api_url
-        self.api_key = settings.eto_api_key
+        self.base_url = settings.singularity_api_url
+        self.api_key = settings.singularity_api_key
         self._client: httpx.AsyncClient | None = None
 
     def _get_client(self) -> httpx.AsyncClient:

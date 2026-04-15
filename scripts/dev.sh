@@ -7,11 +7,17 @@ echo "Starting e-agent dev environment..."
 
 # Start infrastructure (Postgres + Redis)
 echo "Starting database and cache..."
-docker compose up -d
+# Use docker-compose v1 if v2 plugin not available
+if docker compose version > /dev/null 2>&1; then
+  COMPOSE="docker compose"
+else
+  COMPOSE="docker-compose"
+fi
+$COMPOSE up -d
 
 # Wait for Postgres to be ready
 echo "Waiting for Postgres..."
-until docker compose exec db pg_isready -U eagent > /dev/null 2>&1; do
+until $COMPOSE exec -T db pg_isready -U eagent > /dev/null 2>&1; do
   sleep 1
 done
 echo "Postgres ready."
@@ -19,6 +25,10 @@ echo "Postgres ready."
 # Start API server
 echo "Starting API server..."
 cd packages/api
+# Activate venv if it exists
+if [ -f .venv/bin/activate ]; then
+  source .venv/bin/activate
+fi
 uvicorn main:app --reload --port 8000 &
 API_PID=$!
 cd ../..
