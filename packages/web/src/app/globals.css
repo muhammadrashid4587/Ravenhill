@@ -3,41 +3,66 @@
 @tailwind utilities;
 
 /* ============================================================
-   RAVENHILL DESIGN SYSTEM
-   Clean dark, professional, alive
+   RAVENHILL DESIGN SYSTEM — v1
+   Obsidian surfaces, oxblood brand, editorial typography.
    ============================================================ */
 
 :root {
-  --bg-base: #09090b;
-  --bg-surface: #111113;
-  --bg-elevated: #1a1a1f;
-  --bg-hover: #222228;
+  /* Surfaces */
+  --bg-base: #0B0A0C;
+  --bg-surface: #141316;
+  --bg-elevated: #1C1B20;
+  --bg-hover: #25242A;
 
+  /* Borders */
   --border: rgba(255, 255, 255, 0.06);
   --border-hover: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.18);
 
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-tertiary: #52525b;
+  /* Text */
+  --text-primary: #F5F0E6;
+  --text-body: #E8E4DC;
+  --text-secondary: #8A8A92;
+  --text-tertiary: #4A4A52;
 
-  --accent: #3b82f6;
-  --accent-hover: #60a5fa;
-  --success: #34d399;
-  --warning: #fbbf24;
-  --danger: #f87171;
+  /* Brand — oxblood */
+  --brand: #8B1E2F;
+  --brand-hover: #B23246;
+  --brand-pressed: #5D0F1D;
+  --brand-soft: rgba(139, 30, 47, 0.10);
+  --brand-ring: rgba(139, 30, 47, 0.22);
+
+  /* Status — muted, never neon */
+  --success: #3FA46A;
+  --warning: #C98A2B;
+  --danger: #C9443A;
+  --info: #5A7FAE;
+
+  /* Back-compat: legacy `accent` var pointed at blue before. Point it at
+     the brand so any stale reference reads oxblood now. */
+  --accent: var(--brand);
+  --accent-hover: var(--brand-hover);
 }
 
 @layer base {
+  html {
+    color-scheme: dark;
+  }
   body {
     background: var(--bg-base);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  /* Selection — oxblood tint */
+  ::selection {
+    background: rgba(139, 30, 47, 0.35);
+    color: var(--text-primary);
+  }
 }
 
 /* ============================================================
-   ANIMATIONS
+   ANIMATIONS — restrained, never perpetual in product surfaces
    ============================================================ */
 
 @keyframes fade-up {
@@ -56,70 +81,67 @@
 }
 
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.96); }
+  from { opacity: 0; transform: scale(0.97); }
   to { opacity: 1; transform: scale(1); }
 }
 
 @keyframes pulse-subtle {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes type-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 .animate-fade-up {
-  animation: fade-up 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fade-up 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-
 .animate-fade-in {
-  animation: fade-in 300ms ease both;
+  animation: fade-in 400ms ease both;
 }
-
 .animate-slide-in {
-  animation: slide-in 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: slide-in 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-
 .animate-scale-in {
-  animation: scale-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: scale-in 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-
 .animate-pulse-subtle {
-  animation: pulse-subtle 2s ease-in-out infinite;
+  animation: pulse-subtle 2.2s ease-in-out infinite;
 }
 
 /* Stagger children */
 .stagger > *:nth-child(1) { animation-delay: 0ms; }
-.stagger > *:nth-child(2) { animation-delay: 50ms; }
-.stagger > *:nth-child(3) { animation-delay: 100ms; }
-.stagger > *:nth-child(4) { animation-delay: 150ms; }
-.stagger > *:nth-child(5) { animation-delay: 200ms; }
-.stagger > *:nth-child(6) { animation-delay: 250ms; }
+.stagger > *:nth-child(2) { animation-delay: 60ms; }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+.stagger > *:nth-child(5) { animation-delay: 240ms; }
+.stagger > *:nth-child(6) { animation-delay: 300ms; }
+.stagger > *:nth-child(7) { animation-delay: 360ms; }
+.stagger > *:nth-child(8) { animation-delay: 420ms; }
+.stagger > *:nth-child(9) { animation-delay: 480ms; }
+.stagger > *:nth-child(10) { animation-delay: 540ms; }
+.stagger > *:nth-child(11) { animation-delay: 600ms; }
+.stagger > *:nth-child(12) { animation-delay: 660ms; }
 
 /* ============================================================
    SCROLLBAR
    ============================================================ */
 
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 /* ============================================================
-   GRADIENT GLOW — hover state for cards
+   GRADIENT HOVER — subtle radial highlight following cursor
    ============================================================ */
-
-@keyframes glow-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
 
 .hover-glow {
   position: relative;
@@ -133,7 +155,7 @@
   border-radius: inherit;
   background: radial-gradient(
     600px circle at var(--glow-x, 50%) var(--glow-y, 50%),
-    rgba(255, 255, 255, 0.03),
+    rgba(255, 255, 255, 0.025),
     transparent 40%
   );
   transition: opacity 300ms ease;
@@ -141,23 +163,6 @@
 }
 .hover-glow:hover::after {
   opacity: 1;
-}
-
-/* ============================================================
-   3D TILT — subtle perspective hover
-   ============================================================ */
-
-.card-3d {
-  perspective: 800px;
-}
-.card-3d-inner {
-  transition: transform 400ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 400ms ease;
-  transform-style: preserve-3d;
-  will-change: transform;
-}
-.card-3d:hover .card-3d-inner {
-  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
-  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.4);
 }
 
 /* ============================================================
@@ -186,7 +191,7 @@
    ============================================================ */
 
 .press-scale {
-  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .press-scale:active {
   transform: scale(0.97);
@@ -199,11 +204,106 @@
 }
 .card-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.55);
+  border-color: var(--border-hover);
 }
 
 /* ============================================================
-   ANIMATED GRADIENT BORDER — for featured/active cards
+   GLOW VARIANTS — mapped to a single oxblood tint for brand cohesion.
+   The named classes are kept so existing pages don't break; they all
+   resolve to oxblood now, with slight intensity variation.
+   ============================================================ */
+
+.glow-brand { --glow-color: rgba(139, 30, 47, 0.20); }
+.glow-blue { --glow-color: rgba(139, 30, 47, 0.16); }
+.glow-emerald { --glow-color: rgba(139, 30, 47, 0.12); }
+.glow-violet { --glow-color: rgba(139, 30, 47, 0.20); }
+.glow-amber { --glow-color: rgba(139, 30, 47, 0.10); }
+.glow-neutral { --glow-color: rgba(255, 255, 255, 0.06); }
+
+.card-glow {
+  transition: box-shadow 300ms ease, transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-glow:hover {
+  box-shadow: 0 0 32px -4px var(--glow-color, rgba(139, 30, 47, 0.12));
+}
+
+/* ============================================================
+   HERO GRID BACKGROUND — used on landing only.
+   Replaced perpetual orb with a single static oxblood radial.
+   ============================================================ */
+
+.hero-grid {
+  position: relative;
+  overflow: hidden;
+}
+.hero-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 75%);
+  pointer-events: none;
+}
+.hero-grid::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  left: 50%;
+  width: 70%;
+  height: 90%;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(139, 30, 47, 0.16) 0%,
+    rgba(93, 15, 29, 0.08) 30%,
+    transparent 65%
+  );
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+/* ============================================================
+   INPUT FOCUS GLOW — oxblood
+   ============================================================ */
+
+.input-focus-glow {
+  transition: border-color 200ms ease, box-shadow 200ms ease, background-color 200ms ease;
+}
+.input-focus-glow:focus {
+  outline: none;
+  border-color: rgba(139, 30, 47, 0.6);
+  box-shadow: 0 0 0 3px rgba(139, 30, 47, 0.18);
+}
+
+/* ============================================================
+   NAV ACTIVE INDICATOR — oxblood
+   ============================================================ */
+
+.nav-active-bar {
+  position: relative;
+}
+.nav-active-bar::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(180deg, #B23246, #8B1E2F);
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+.nav-active-bar.active::before { opacity: 1; }
+
+/* ============================================================
+   SUBTLE ANIMATED BORDER — reserved for the landing hero only.
    ============================================================ */
 
 @keyframes border-rotate {
@@ -224,180 +324,204 @@
   background: conic-gradient(
     from var(--border-angle, 0deg),
     transparent 25%,
-    rgba(59, 130, 246, 0.4) 50%,
+    rgba(139, 30, 47, 0.45) 50%,
     transparent 75%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
-  animation: border-rotate 4s linear infinite;
-}
-
-/* Colored glow variants */
-.glow-blue { --glow-color: rgba(59, 130, 246, 0.15); }
-.glow-emerald { --glow-color: rgba(52, 211, 153, 0.15); }
-.glow-violet { --glow-color: rgba(139, 92, 246, 0.15); }
-.glow-amber { --glow-color: rgba(251, 191, 36, 0.15); }
-
-.card-glow {
-  transition: box-shadow 300ms ease, transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.card-glow:hover {
-  box-shadow: 0 0 30px -5px var(--glow-color, rgba(59, 130, 246, 0.1));
+  animation: border-rotate 6s linear infinite;
 }
 
 /* ============================================================
-   HERO GRID BACKGROUND
+   BUTTON PRIMITIVES — utility classes used by the Button component
    ============================================================ */
 
-@keyframes grid-fade {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.6; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  border-radius: 0.625rem;
+  transition: background-color 180ms ease, color 180ms ease,
+              border-color 180ms ease, box-shadow 180ms ease,
+              transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
-.hero-grid {
+.btn-primary {
+  background: var(--brand);
+  color: #F5F0E6;
+  border: 1px solid transparent;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--brand-hover);
+  box-shadow: 0 0 0 3px rgba(139, 30, 47, 0.18);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-hover);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ============================================================
+   EDITORIAL ACCENTS — section labels, eyebrow text
+   ============================================================ */
+
+.eyebrow {
+  font-size: 0.6875rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--brand-hover);
+  font-weight: 500;
+}
+
+.display-italic {
+  font-family: var(--font-display), serif;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* ============================================================
+   HERO LIVE — cursor-reactive spotlight, soft grid, micro-parallax.
+   Consumed by <HeroLive> on the landing. Pure CSS; rAF drives the
+   --spot-x / --spot-y / --parallax-* variables.
+   ============================================================ */
+
+.hero-live {
   position: relative;
   overflow: hidden;
+  isolation: isolate;
 }
-.hero-grid::before {
+
+/* Cursor-reactive oxblood spotlight — structural grid is now provided by
+   InfrastructureBackdrop, so this is the only decorative hero layer. */
+.hero-live::after {
   content: "";
   position: absolute;
+  inset: -10%;
+  z-index: 0;
+  background:
+    radial-gradient(
+      circle 540px at var(--spot-x, 50%) var(--spot-y, 40%),
+      rgba(139, 30, 47, 0.26) 0%,
+      rgba(139, 30, 47, 0.14) 22%,
+      rgba(93, 15, 29, 0.06) 45%,
+      transparent 70%
+    );
+  filter: blur(12px);
+  pointer-events: none;
+  will-change: background;
+}
+
+/* Parallax target — any descendant with class `hero-parallax` drifts
+   subtly with the cursor. Opt-in, so copy that must stay still doesn't. */
+.hero-parallax {
+  transform: translate3d(var(--parallax-x, 0px), var(--parallax-y, 0px), 0);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+/* Routing mesh — full-viewport node grid + cursor-reactive paths.
+   The canvas itself does all the drawing; this wrapper handles
+   positioning, layering, and the radial mask that biases intensity
+   toward the hero and softens it behind copy-dense middle sections. */
+.routing-mesh {
+  position: fixed;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 70%);
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 20%, transparent 70%);
+  z-index: 0;
   pointer-events: none;
+  overflow: hidden;
+  mask-image:
+    radial-gradient(
+      ellipse 120% 95% at 50% 22%,
+      black 0%,
+      black 40%,
+      rgba(0, 0, 0, 0.55) 70%,
+      transparent 100%
+    );
+  -webkit-mask-image:
+    radial-gradient(
+      ellipse 120% 95% at 50% 22%,
+      black 0%,
+      black 40%,
+      rgba(0, 0, 0, 0.55) 70%,
+      transparent 100%
+    );
 }
-.hero-grid::after {
-  content: "";
-  position: absolute;
-  top: -40%;
-  left: 20%;
-  width: 60%;
-  height: 60%;
-  background: radial-gradient(
-    circle,
-    rgba(59, 130, 246, 0.06) 0%,
-    rgba(139, 92, 246, 0.04) 30%,
-    transparent 70%
-  );
-  filter: blur(60px);
+.routing-mesh > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Film grain — premium texture, very subtle */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
   pointer-events: none;
-  animation: grid-fade 6s ease-in-out infinite;
+  z-index: 2;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
 
 /* ============================================================
-   INPUT FOCUS GLOW
+   LEGACY UTILITIES — kept so existing admin-style pages (agents,
+   audit, activity, approval, demo) keep rendering under the new
+   palette. When those pages get a proper pass, remove these.
    ============================================================ */
 
-.input-focus-glow {
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(10px);
 }
-.input-focus-glow:focus {
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-/* ============================================================
-   SIDEBAR ACTIVE INDICATOR
-   ============================================================ */
-
-.nav-active-bar {
-  position: relative;
-}
-.nav-active-bar::before {
-  content: "";
-  position: absolute;
-  left: -12px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 16px;
-  border-radius: 0 2px 2px 0;
-  background: linear-gradient(180deg, #3b82f6, #60a5fa);
-  opacity: 0;
-  transition: opacity 250ms ease, height 250ms ease;
-}
-.nav-active-bar.active::before {
-  opacity: 1;
+.glass:hover {
+  border-color: var(--border-hover);
 }
 
-/* ============================================================
-   STAGGER EXTENDED — more children
-   ============================================================ */
-
-.stagger > *:nth-child(7) { animation-delay: 300ms; }
-.stagger > *:nth-child(8) { animation-delay: 350ms; }
-.stagger > *:nth-child(9) { animation-delay: 400ms; }
-.stagger > *:nth-child(10) { animation-delay: 450ms; }
-.stagger > *:nth-child(11) { animation-delay: 500ms; }
-.stagger > *:nth-child(12) { animation-delay: 550ms; }
-
-/* ============================================================
-   ANIMATED GRADIENT PANEL — for decorative panels
-   ============================================================ */
-
-@keyframes gradient-drift {
-  0%, 100% { background-position: 0% 0%; }
-  25% { background-position: 100% 0%; }
-  50% { background-position: 100% 100%; }
-  75% { background-position: 0% 100%; }
-}
-
-.animated-gradient-panel {
-  background: linear-gradient(
-    135deg,
-    rgba(59, 130, 246, 0.05) 0%,
-    rgba(139, 92, 246, 0.05) 25%,
-    rgba(52, 211, 153, 0.03) 50%,
-    rgba(59, 130, 246, 0.05) 75%,
-    rgba(139, 92, 246, 0.05) 100%
-  );
-  background-size: 300% 300%;
-  animation: gradient-drift 12s ease-in-out infinite;
-}
-
-/* ============================================================
-   3D MESH BACKGROUND — floating orbs
-   ============================================================ */
-
-@keyframes orb-breathe {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.8; }
-}
-
-@keyframes orb-spin {
-  0% { transform: translate(-50%, -70%) rotate(0deg); }
-  100% { transform: translate(-50%, -70%) rotate(360deg); }
-}
-
-@keyframes mesh-float-1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(30px, -20px) scale(1.05); }
-  50% { transform: translate(-15px, -40px) scale(0.95); }
-  75% { transform: translate(-25px, 15px) scale(1.02); }
-}
-
-@keyframes mesh-float-2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25% { transform: translate(-25px, 25px) scale(0.97); }
-  50% { transform: translate(20px, 30px) scale(1.04); }
-  75% { transform: translate(30px, -20px) scale(0.98); }
-}
-
-@keyframes mesh-float-3 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(25px, -25px) scale(1.03); }
-  66% { transform: translate(-20px, 20px) scale(0.96); }
+.page-gradient {
+  background: var(--bg-base);
+  min-height: 100vh;
 }
 
 /* ============================================================
    ACCESSIBILITY
    ============================================================ */
+
+*:focus-visible {
+  outline: 2px solid rgba(178, 50, 70, 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -58,15 +58,10 @@ const QUICK_PROMPTS = [
   { label: "Give me a standup update", desc: "Status report" },
 ];
 
-const DEPT_COLORS: Record<string, string> = {
-  Sales: "bg-blue-500",
-  Finance: "bg-purple-500",
-  Marketing: "bg-emerald-500",
-  Engineering: "bg-orange-500",
-  Product: "bg-pink-500",
-  Operations: "bg-cyan-500",
-  Executive: "bg-amber-500",
-};
+// Department coloring is intentionally neutral in v1; identity is conveyed
+// by the person's name, not by a hue.
+const AGENT_AVATAR_CLS =
+  "bg-graphite border border-white/[0.08] text-parchment";
 
 function getInitials(name: string) {
   return name.split(" ").map((w) => w[0]).join("").toUpperCase();
@@ -338,11 +333,11 @@ export default function ChatPage() {
   // ---- Not logged in ----
   if (!myAgent) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-[#09090b] text-white">
-        <p className="text-sm text-zinc-500 mb-4">Sign in to chat with your agent</p>
+      <div className="flex flex-col items-center justify-center h-full bg-obsidian text-parchment">
+        <p className="text-sm text-smoke mb-4">Sign in to chat with your agent</p>
         <Link
           href="/login"
-          className="bg-white text-black px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-zinc-200 transition press-scale"
+          className="btn btn-primary text-sm px-5 py-2.5"
         >
           Sign in
         </Link>
@@ -350,24 +345,22 @@ export default function ChatPage() {
     );
   }
 
-  const agentColor = DEPT_COLORS[myAgent.departments?.[0]] ?? "bg-zinc-600";
+  const agentColor = AGENT_AVATAR_CLS;
 
   return (
-    <div className="flex h-full bg-[#09090b] text-white">
+    <div className="flex h-full bg-obsidian text-parchment">
       {/* ======== LEFT PANEL: Agent Conversations ======== */}
       <div className="w-64 border-r border-white/[0.06] flex flex-col shrink-0">
         <div className="px-4 py-3 border-b border-white/[0.06]">
-          <h2 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-            Agent Conversations
-          </h2>
+          <h2 className="eyebrow">Agent conversations</h2>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
           {reachOuts.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-4 text-center">
-              <div className="w-10 h-10 rounded-xl bg-surface border border-white/[0.06] flex items-center justify-center mb-3">
-                <ArrowRight className="w-4 h-4 text-zinc-600" />
+              <div className="w-10 h-10 rounded-xl bg-ink border border-white/[0.06] flex items-center justify-center mb-3">
+                <ArrowRight className="w-4 h-4 text-dusk" />
               </div>
-              <p className="text-[11px] text-zinc-600 leading-relaxed">
+              <p className="text-[11px] text-dusk leading-relaxed">
                 When your agent reaches out to others, conversations will appear here
               </p>
             </div>
@@ -376,24 +369,24 @@ export default function ChatPage() {
               {reachOuts.map((r) => (
                 <div
                   key={r.id}
-                  className="px-3 py-2.5 rounded-lg bg-surface border border-white/[0.06] hover:border-white/[0.12] transition animate-fade-up"
+                  className="px-3 py-2.5 rounded-lg bg-ink border border-white/[0.06] hover:border-white/[0.12] transition animate-fade-up"
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center text-[8px] font-bold text-blue-400">
+                    <div className="w-6 h-6 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[8px] font-semibold text-parchment">
                       {getInitials(r.agentName)}
                     </div>
-                    <span className="text-xs font-medium text-zinc-200 truncate">
+                    <span className="text-xs font-medium text-parchment truncate">
                       {r.agentName}
                     </span>
-                    <span className="text-[10px] text-zinc-600 ml-auto shrink-0">
+                    <span className="text-[10px] text-dusk ml-auto shrink-0">
                       {r.timestamp}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 ml-8">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-oxblood/15 text-claret border border-oxblood/30">
                       {r.direction === "outgoing" ? `You → ${r.agentName.split(" ")[0]}` : `${r.agentName.split(" ")[0]} → You`}
                     </span>
-                    <span className="text-[10px] text-zinc-600 truncate">
+                    <span className="text-[10px] text-dusk truncate">
                       {r.topic}
                     </span>
                   </div>
@@ -410,26 +403,26 @@ export default function ChatPage() {
         <header className="border-b border-white/[0.06] px-5 py-3 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div
-              className={`w-8 h-8 rounded-full ${agentColor} flex items-center justify-center text-[10px] font-bold`}
+              className={`w-8 h-8 rounded-full ${agentColor} flex items-center justify-center text-[10px] font-semibold`}
             >
               {getInitials(myAgent.name)}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold font-display">
-                  {myAgent.name}&apos;s Agent
+                <h1 className="text-sm font-medium text-bone">
+                  {myAgent.name}&apos;s agent
                 </h1>
-                <span className="flex items-center gap-1 text-[10px] text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="flex items-center gap-1 text-[10px] text-[#88D3A4]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#3FA46A]" />
                   Active
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-500">{myAgent.role}</p>
+              <p className="text-[11px] text-smoke">{myAgent.role}</p>
             </div>
           </div>
           <button
             onClick={handleReset}
-            className="text-xs text-zinc-600 hover:text-zinc-300 px-2.5 py-1 rounded-md hover:bg-white/[0.04] transition"
+            className="text-xs text-smoke hover:text-parchment px-2.5 py-1 rounded-md hover:bg-white/[0.04] transition"
           >
             Clear
           </button>
@@ -438,14 +431,14 @@ export default function ChatPage() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-1">
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-zinc-600">
+            <div className="flex flex-col items-center justify-center h-full text-dusk">
               <div
-                className={`w-12 h-12 rounded-2xl ${agentColor} flex items-center justify-center text-base font-bold text-white mb-4`}
+                className={`w-12 h-12 rounded-2xl ${agentColor} flex items-center justify-center text-base font-semibold mb-4`}
               >
                 {getInitials(myAgent.name)}
               </div>
-              <p className="text-sm mb-1">Your personal agent</p>
-              <p className="text-xs text-zinc-600 max-w-xs text-center">
+              <p className="text-sm text-parchment mb-1">Your personal agent</p>
+              <p className="text-xs text-smoke max-w-xs text-center">
                 Ask anything — it knows your tasks and meetings, and reaches out to other agents when needed.
               </p>
             </div>
@@ -454,9 +447,9 @@ export default function ChatPage() {
             if (msg.type === "system") {
               return (
                 <div key={msg.id} className="flex justify-center my-2">
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface/80 border border-white/[0.06]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                    <span className="text-[11px] text-zinc-400">{msg.content}</span>
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-ink/80 border border-white/[0.06]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-claret" />
+                    <span className="text-[11px] text-parchment">{msg.content}</span>
                   </div>
                 </div>
               );
@@ -464,12 +457,12 @@ export default function ChatPage() {
             if (msg.type === "thinking") {
               return (
                 <div key={msg.id} className="flex justify-start mb-3">
-                  <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-elevated/80">
-                    <div className="text-[11px] font-medium mb-1 text-zinc-400">{msg.sender}</div>
+                  <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-graphite/80">
+                    <div className="text-[11px] font-medium mb-1 text-parchment">{msg.sender}</div>
                     <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="w-2 h-2 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      <span className="w-2 h-2 bg-smoke rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <span className="w-2 h-2 bg-smoke rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <span className="w-2 h-2 bg-smoke rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                     </div>
                   </div>
                 </div>
@@ -497,10 +490,10 @@ export default function ChatPage() {
                   key={prompt.label}
                   onClick={() => handleSend(prompt.label)}
                   disabled={loading}
-                  className="flex flex-col items-start text-left bg-surface hover:bg-elevated border border-white/[0.06] hover:border-white/[0.12] px-3 py-2 rounded-xl whitespace-nowrap transition disabled:opacity-40 min-w-0 press-scale"
+                  className="flex flex-col items-start text-left bg-ink hover:bg-graphite border border-white/[0.06] hover:border-white/[0.12] px-3 py-2 rounded-xl whitespace-nowrap transition disabled:opacity-40 min-w-0 press-scale"
                 >
-                  <span className="text-xs text-white">{prompt.label}</span>
-                  <span className="text-[10px] text-zinc-500">{prompt.desc}</span>
+                  <span className="text-xs text-parchment">{prompt.label}</span>
+                  <span className="text-[10px] text-smoke">{prompt.desc}</span>
                 </button>
               ))}
             </div>
@@ -517,17 +510,17 @@ export default function ChatPage() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={`Ask your agent anything...`}
+              placeholder="Ask your agent anything…"
               disabled={loading}
-              className="flex-1 bg-surface border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500/50 transition disabled:opacity-50 placeholder:text-zinc-600"
+              className="flex-1 bg-ink border border-white/[0.06] rounded-xl px-4 py-2.5 text-sm text-parchment input-focus-glow transition disabled:opacity-50 placeholder:text-dusk"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="bg-blue-600 hover:bg-blue-500 disabled:bg-elevated disabled:text-zinc-600 px-4 py-2.5 rounded-xl font-medium text-sm transition flex items-center gap-2 press-scale"
+              className="btn btn-primary text-sm px-4 py-2.5 disabled:!bg-graphite disabled:!text-dusk"
             >
               {loading ? (
-                <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span className="inline-block w-4 h-4 border-2 border-bone/30 border-t-bone rounded-full animate-spin" />
               ) : (
                 <Send className="w-4 h-4" />
               )}
@@ -539,11 +532,9 @@ export default function ChatPage() {
       {/* ======== RIGHT PANEL: Agent Activity ======== */}
       <div className="w-72 border-l border-white/[0.06] flex flex-col shrink-0">
         <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-          <h2 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-            Agent Activity
-          </h2>
+          <h2 className="eyebrow">Reasoning</h2>
           {activitySteps.length > 0 && (
-            <span className="text-[10px] text-zinc-600">
+            <span className="text-[10px] text-dusk font-mono">
               {activitySteps.filter((s) => s.type === "step").length} steps
             </span>
           )}
@@ -551,10 +542,10 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto p-3">
           {activitySteps.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-4 text-center">
-              <div className="w-10 h-10 rounded-xl bg-surface border border-white/[0.06] flex items-center justify-center mb-3">
-                <Clock className="w-4 h-4 text-zinc-600" />
+              <div className="w-10 h-10 rounded-xl bg-ink border border-white/[0.06] flex items-center justify-center mb-3">
+                <Clock className="w-4 h-4 text-dusk" />
               </div>
-              <p className="text-[11px] text-zinc-600 leading-relaxed">
+              <p className="text-[11px] text-dusk leading-relaxed">
                 When you ask a question, you&apos;ll see exactly what your agent does behind the scenes
               </p>
             </div>
@@ -564,12 +555,12 @@ export default function ChatPage() {
                 const isLast = i === activitySteps.length - 1;
                 const dotColor =
                   step.type === "done"
-                    ? "bg-emerald-500"
+                    ? "bg-[#3FA46A]"
                     : step.type === "source"
-                      ? "bg-blue-500"
+                      ? "bg-claret"
                       : step.type === "approval"
-                        ? "bg-amber-500"
-                        : "bg-zinc-500";
+                        ? "bg-[#C98A2B]"
+                        : "bg-smoke";
 
                 return (
                   <div key={step.id} className="flex gap-3 animate-fade-up">
@@ -584,23 +575,23 @@ export default function ChatPage() {
                     {/* Content */}
                     <div className="pb-4 min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] text-zinc-500">
+                        <span className="text-[10px] text-smoke font-mono">
                           {step.elapsed}
                         </span>
-                        <span className="text-[10px] text-zinc-700">
+                        <span className="text-[10px] text-dusk font-mono">
                           {step.timestamp}
                         </span>
                       </div>
-                      <p className="text-xs font-medium text-zinc-300 mt-0.5">
+                      <p className="text-xs font-medium text-parchment mt-0.5">
                         {step.label}
                       </p>
                       {step.detail && (
-                        <p className="text-[11px] text-zinc-600 mt-0.5">
+                        <p className="text-[11px] text-smoke mt-0.5">
                           {step.detail}
                         </p>
                       )}
                       {step.agentName && step.type === "source" && (
-                        <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                        <span className="inline-flex items-center gap-1 mt-1 text-[10px] px-1.5 py-0.5 rounded bg-oxblood/15 text-claret border border-oxblood/30">
                           {step.agentName}
                         </span>
                       )}
@@ -618,25 +609,25 @@ export default function ChatPage() {
           <div className="border-t border-white/[0.06] px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[10px] text-zinc-600">Total time</div>
-                <div className="text-sm font-semibold text-white">
+                <div className="text-[10px] text-dusk uppercase tracking-widest">Total time</div>
+                <div className="text-sm font-semibold text-bone mt-0.5">
                   {activitySteps.find((s) => s.type === "done")?.elapsed || "—"}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-[10px] text-zinc-600">Sources</div>
-                <div className="flex items-center gap-1 mt-0.5">
+                <div className="text-[10px] text-dusk uppercase tracking-widest">Sources</div>
+                <div className="flex items-center gap-1 mt-1">
                   {currentSources.length > 0
                     ? currentSources.map((src) => (
                         <span
                           key={src}
-                          className="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center text-[7px] font-bold text-blue-400"
+                          className="w-6 h-6 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[7px] font-semibold text-parchment"
                           title={src}
                         >
                           {getInitials(src)}
                         </span>
                       ))
-                    : <span className="text-xs text-zinc-600">—</span>
+                    : <span className="text-xs text-dusk">—</span>
                   }
                 </div>
               </div>

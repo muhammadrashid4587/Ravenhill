@@ -9,6 +9,7 @@ import {
   CalendarCheck,
 } from "lucide-react";
 import { useAgent } from "@/lib/AgentContext";
+import DeptAvatar from "@/components/ui/DeptAvatar";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -16,25 +17,6 @@ const NAV_ITEMS = [
   { href: "/organization", label: "Organization", icon: Building2 },
   { href: "/meetings", label: "Meetings", icon: CalendarCheck },
 ];
-
-const DEPT_COLORS: Record<string, string> = {
-  Executive: "bg-amber-500",
-  Sales: "bg-blue-500",
-  Finance: "bg-purple-500",
-  Marketing: "bg-emerald-500",
-  Engineering: "bg-orange-500",
-  Product: "bg-pink-500",
-  Operations: "bg-cyan-500",
-  HR: "bg-teal-500",
-};
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase();
-}
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -44,23 +26,21 @@ export default function Sidebar() {
     pathname === href || pathname.startsWith(href + "/");
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-[#0c0c0e]/80 backdrop-blur-xl">
+    <nav className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-obsidian/80 backdrop-blur-xl">
       <div className="flex items-center justify-between h-12 px-4">
-        {/* Left: Logo + Nav */}
+        {/* Left: logo + nav */}
         <div className="flex items-center gap-6">
-          {/* Logo */}
           <Link href="/home" className="flex items-center gap-2 group shrink-0">
-            <div className="w-6 h-6 rounded-md bg-white flex items-center justify-center group-hover:scale-105 transition-transform">
+            <div className="w-6 h-6 rounded-md bg-oxblood flex items-center justify-center group-hover:bg-claret transition">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-                <path d="M13 3L4 14h7v7l9-11h-7V3z" fill="#09090b" />
+                <path d="M12 2L3 12l9 10 9-10L12 2z" fill="#F5F0E6" />
               </svg>
             </div>
-            <span className="text-sm font-display font-semibold text-zinc-100 tracking-tight">
+            <span className="text-sm font-semibold text-bone tracking-tight">
               Ravenhill
             </span>
           </Link>
 
-          {/* Nav items */}
           <div className="flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
@@ -71,14 +51,17 @@ export default function Sidebar() {
                   href={item.href}
                   className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all duration-200 ${
                     active
-                      ? "text-white bg-white/[0.08]"
-                      : "text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.04]"
+                      ? "text-bone bg-white/[0.06]"
+                      : "text-smoke hover:text-parchment hover:bg-white/[0.04]"
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${active ? "text-blue-400" : ""}`} />
+                  <Icon
+                    className={`w-4 h-4 ${active ? "text-claret" : ""}`}
+                    strokeWidth={1.75}
+                  />
                   <span>{item.label}</span>
                   {active && (
-                    <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-blue-500 rounded-full" />
+                    <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-oxblood rounded-full" />
                   )}
                 </Link>
               );
@@ -86,20 +69,21 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Right: User */}
+        {/* Right: user */}
         {myAgent && (
           <div className="flex items-center gap-2.5">
-            <span className="text-xs text-zinc-500">{myAgent.role}</span>
+            <span className="text-xs text-smoke hidden sm:block">
+              {myAgent.role}
+            </span>
             <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-full ${DEPT_COLORS[myAgent.departments?.[0]] ?? "bg-zinc-600"} flex items-center justify-center text-[9px] font-bold text-white`}
-              >
-                {getInitials(myAgent.name)}
-              </div>
-              <span className="text-xs font-medium text-zinc-200">
+              <DeptAvatar name={myAgent.name} size="xs" />
+              <span className="text-xs font-medium text-parchment">
                 {myAgent.name}
               </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-[#3FA46A]"
+                aria-label="active"
+              />
             </div>
           </div>
         )}

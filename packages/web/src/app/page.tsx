@@ -1,260 +1,289 @@
-"use client";
-
-import { useRef, useEffect } from "react";
 import Link from "next/link";
+import { ArrowUpRight, Shield, GitBranch, ScrollText, Plug } from "lucide-react";
+import HeroLive from "@/components/landing/HeroLive";
+import ProductMoment from "@/components/landing/ProductMoment";
+import InfrastructurePlane from "@/components/landing/InfrastructurePlane";
+import RoutingMesh from "@/components/landing/RoutingMesh";
 
-function StarField() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+// -----------------------------------------------------------------------------
+// Landing — Ravenhill V1
+// Editorial dark aesthetic, oxblood brand, one static glow, no perpetual motion.
+// -----------------------------------------------------------------------------
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight * 2;
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    const stars = Array.from({ length: 200 }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      r: Math.random() * 1.0 + 0.2,
-      alpha: Math.random() * 0.5 + 0.05,
-      speed: Math.random() * 0.001 + 0.0002,
-      phase: Math.random() * Math.PI * 2,
-    }));
-
-    let animId: number;
-    const draw = (t: number) => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const s of stars) {
-        const flicker = Math.sin(t * s.speed + s.phase) * 0.3 + 0.7;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${s.alpha * flicker})`;
-        ctx.fill();
-      }
-      animId = requestAnimationFrame(draw);
-    };
-    animId = requestAnimationFrame(draw);
-
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
-
+function Wordmark({ className = "" }: { className?: string }) {
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none"
-      style={{ zIndex: 1 }}
-    />
-  );
-}
-
-function GlowOrb() {
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
-      {/* Outer pink/magenta sweep */}
-      <div
-        className="absolute top-[50%] left-[50%]"
-        style={{
-          width: "750px",
-          height: "750px",
-          transform: "translate(-50%, -70%)",
-          borderRadius: "50%",
-          background: "conic-gradient(from 180deg at 50% 50%, rgba(180, 60, 255, 0.2) 0deg, rgba(255, 80, 200, 0.18) 90deg, rgba(120, 50, 255, 0.22) 180deg, rgba(200, 100, 255, 0.15) 270deg, rgba(180, 60, 255, 0.2) 360deg)",
-          filter: "blur(50px)",
-          animation: "orb-spin 20s linear infinite",
-        }}
-      />
-
-      {/* Main purple sphere */}
-      <div
-        className="absolute top-[50%] left-[50%]"
-        style={{
-          width: "600px",
-          height: "600px",
-          transform: "translate(-50%, -70%)",
-          borderRadius: "50%",
-          background: "radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.15) 0%, rgba(180, 140, 255, 0.25) 15%, rgba(130, 80, 220, 0.3) 30%, rgba(100, 50, 200, 0.2) 50%, rgba(80, 30, 180, 0.08) 70%, transparent 85%)",
-          filter: "blur(8px)",
-          animation: "orb-breathe 8s ease-in-out infinite",
-        }}
-      />
-
-      {/* Inner bright core */}
-      <div
-        className="absolute top-[50%] left-[50%]"
-        style={{
-          width: "350px",
-          height: "350px",
-          transform: "translate(-50%, -75%)",
-          borderRadius: "50%",
-          background: "radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.2) 0%, rgba(220, 200, 255, 0.15) 20%, rgba(160, 120, 255, 0.12) 40%, transparent 70%)",
-          filter: "blur(15px)",
-          animation: "orb-breathe 6s ease-in-out infinite reverse",
-        }}
-      />
-
-      {/* Hot white center spot */}
-      <div
-        className="absolute top-[50%] left-[50%]"
-        style={{
-          width: "120px",
-          height: "120px",
-          transform: "translate(-50%, -85%)",
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(255, 255, 255, 0.25) 0%, rgba(200, 180, 255, 0.1) 40%, transparent 70%)",
-          filter: "blur(10px)",
-          animation: "orb-breathe 5s ease-in-out infinite",
-        }}
-      />
-
-      {/* Ambient lower glow (reflects on content below) */}
-      <div
-        className="absolute top-[50%] left-[50%]"
-        style={{
-          width: "900px",
-          height: "400px",
-          transform: "translate(-50%, -40%)",
-          borderRadius: "50%",
-          background: "radial-gradient(ellipse, rgba(130, 80, 220, 0.06) 0%, transparent 70%)",
-          filter: "blur(40px)",
-        }}
-      />
+    <div className={`flex items-center gap-2 ${className}`}>
+      <div className="w-7 h-7 rounded-md bg-oxblood flex items-center justify-center shadow-[0_0_20px_-4px_rgba(139,30,47,0.6)]">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 12l9 10 9-10L12 2z" fill="#F5F0E6" />
+        </svg>
+      </div>
+      <span className="text-sm font-semibold tracking-tight text-bone">
+        Ravenhill
+      </span>
     </div>
   );
 }
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#050507] text-white overflow-hidden">
-      <StarField />
-      <GlowOrb />
+    <div className="min-h-screen bg-obsidian text-parchment overflow-x-hidden">
+      {/* Live coordination fabric — cursor-reactive node grid behind the page */}
+      <RoutingMesh />
 
-      {/* Nav */}
-      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M13 3L4 14h7v7l9-11h-7V3z" fill="#09090b" />
-            </svg>
-          </div>
-          <span className="text-sm font-semibold tracking-tight">Ravenhill</span>
-        </div>
-        <Link
-          href="/login"
-          className="text-sm text-zinc-400 hover:text-white transition"
-        >
-          Sign in
-        </Link>
-      </nav>
+      {/* Subtle global film grain — premium texture, not noise */}
+      <div className="grain-overlay" aria-hidden="true" />
 
-      {/* Hero — centered */}
-      <div className="relative z-10 flex flex-col items-center justify-center text-center px-6 pt-28 pb-32">
-        {/* Badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] text-xs text-zinc-400 mb-8 animate-fade-up backdrop-blur-sm">
-          <span className="px-2 py-0.5 rounded-full bg-violet-600 text-white text-[10px] font-medium">New</span>
-          Personal AI Agents for Enterprise
-        </div>
-
-        {/* Heading */}
-        <h1 className="text-6xl md:text-7xl font-display font-semibold tracking-tight leading-[1.05] mb-6 animate-fade-up max-w-4xl" style={{ animationDelay: "100ms" }}>
-          Your AI agent handles
-          <br />
-          the coordination.
-        </h1>
-
-        {/* Sub */}
-        <p className="text-lg text-zinc-500 leading-relaxed mb-10 max-w-xl animate-fade-up" style={{ animationDelay: "200ms" }}>
-          Every employee gets a personal AI agent. The agents talk to each
-          other — so you can focus on real work.
-        </p>
-
-        {/* CTAs */}
-        <div className="flex items-center gap-4 animate-fade-up" style={{ animationDelay: "300ms" }}>
+      {/* ============================================================
+          NAV
+          ============================================================ */}
+      <nav className="relative z-20 max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
+        <Wordmark />
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Link
+            href="/manifesto"
+            className="hidden sm:inline-flex btn btn-ghost text-[13px] px-3 py-1.5"
+          >
+            Manifesto
+          </Link>
+          <Link
+            href="/trust"
+            className="hidden sm:inline-flex btn btn-ghost text-[13px] px-3 py-1.5"
+          >
+            Trust
+          </Link>
+          <span className="hidden sm:block w-px h-4 bg-white/[0.08] mx-1" />
           <Link
             href="/login"
-            className="group px-7 py-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition press-scale flex items-center gap-2"
+            className="btn btn-ghost text-[13px] px-3 py-1.5"
           >
-            Get started
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="group-hover:translate-x-0.5 transition-transform">
-              <path d="M7 17l9.2-9.2M17 17V8H8" />
-            </svg>
+            Sign in
           </Link>
           <Link
-            href="#how-it-works"
-            className="px-7 py-3 rounded-lg border border-white/[0.1] bg-white/[0.03] text-sm text-zinc-300 hover:text-white hover:border-white/[0.2] hover:bg-white/[0.05] transition press-scale backdrop-blur-sm"
+            href="/login"
+            className="btn btn-primary text-[13px] px-3.5 py-1.5"
           >
-            How it works
+            Request access
           </Link>
         </div>
-      </div>
+      </nav>
 
-      {/* How it works */}
-      <div id="how-it-works" className="relative z-10 max-w-5xl mx-auto px-6 py-24 border-t border-white/[0.06]">
+      {/* ============================================================
+          HERO — cursor-reactive spotlight, micro-parallax on copy
+          ============================================================ */}
+      <HeroLive>
+        <div className="relative z-10 max-w-5xl mx-auto px-6 pt-28 pb-24 text-center">
+          <div
+            className="hero-parallax inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/[0.08] bg-white/[0.03] text-[11px] text-smoke mb-8 animate-fade-up backdrop-blur-sm"
+            style={{ animationDelay: "40ms" }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-oxblood animate-pulse-subtle" />
+            Early access · 2026
+          </div>
+
+          <h1
+            className="hero-parallax font-display font-normal text-display-xl text-bone mb-8 animate-fade-up max-w-4xl mx-auto"
+            style={{ animationDelay: "120ms" }}
+          >
+            The agent that handles your{" "}
+            <span className="display-italic text-claret">coordination.</span>
+          </h1>
+
+          <p
+            className="hero-parallax text-lg text-smoke leading-relaxed max-w-xl mx-auto mb-10 animate-fade-up"
+            style={{ animationDelay: "220ms" }}
+          >
+            Every person at your company gets an AI agent. The agents handle
+            the questions, files, and follow-ups between teams — so your
+            people do real work.
+          </p>
+
+          <div
+            className="hero-parallax flex items-center justify-center gap-3 animate-fade-up"
+            style={{ animationDelay: "300ms" }}
+          >
+            <Link
+              href="/login"
+              className="btn btn-primary text-sm px-5 py-2.5"
+            >
+              Request access
+              <ArrowUpRight className="w-4 h-4" />
+            </Link>
+            <Link
+              href="#how"
+              className="btn btn-secondary text-sm px-5 py-2.5"
+            >
+              See how it works
+            </Link>
+          </div>
+        </div>
+      </HeroLive>
+
+      {/* ============================================================
+          PRODUCT MOMENT — live agent-reasoning animation
+          ============================================================ */}
+      <section className="relative z-10 pb-20 animate-fade-up" style={{ animationDelay: "380ms" }}>
+        <ProductMoment />
+      </section>
+
+      {/* ============================================================
+          INFRASTRUCTURE PLANE — the coordination fabric underneath
+          ============================================================ */}
+      <section className="relative z-10 pb-28 pt-12 border-t border-white/[0.05] animate-fade-up">
+        <InfrastructurePlane />
+      </section>
+
+      {/* ============================================================
+          HOW IT WORKS
+          ============================================================ */}
+      <section
+        id="how"
+        className="relative z-10 max-w-4xl mx-auto px-6 py-24 border-t border-white/[0.06]"
+      >
         <div className="text-center mb-16">
-          <p className="text-xs text-violet-400 uppercase tracking-widest mb-3 animate-fade-up">How it works</p>
-          <h2 className="text-3xl font-display font-semibold tracking-tight animate-fade-up" style={{ animationDelay: "50ms" }}>
-            Three things your agent does for you
+          <div className="eyebrow mb-3">How it works</div>
+          <h2 className="font-display text-display-lg text-bone">
+            Agents that{" "}
+            <span className="display-italic text-claret">know</span> your
+            company.
           </h2>
         </div>
 
-        <div className="grid grid-cols-3 gap-5 stagger">
-          <div className="border border-white/[0.06] bg-white/[0.02] rounded-2xl p-6 card-lift hover-glow animate-fade-up backdrop-blur-sm">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mb-4">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-violet-400">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 12l2 2 4-4" />
-              </svg>
-            </div>
-            <h3 className="text-sm font-medium mb-2">Extracts your tasks</h3>
-            <p className="text-sm text-zinc-500 leading-relaxed">
-              After every meeting, your agent pulls out the action items,
-              priorities, and deadlines — so you know exactly what to do.
-            </p>
-          </div>
+        <ol className="space-y-12">
+          {[
+            {
+              n: "01",
+              title: "Your agent watches the signals you already produce.",
+              body:
+                "Starting with Slack and Google Meet, with more on the way. No new behavior for your team — the agent learns from the work that's already happening.",
+            },
+            {
+              n: "02",
+              title: "It builds a quiet map of who knows what.",
+              body:
+                "Conversations, documents, meetings, threads. All become expertise signal. Your agent learns the shape of your organization.",
+            },
+            {
+              n: "03",
+              title: "When a question comes up, the right agent is reached.",
+              body:
+                "Not a person. The answer comes back — with sources, with reasoning, and with the paper trail for sensitive requests.",
+            },
+          ].map((step, i) => (
+            <li
+              key={step.n}
+              className="grid grid-cols-[auto_1fr] gap-6 md:gap-10 items-start"
+            >
+              <div className="font-display text-4xl text-oxblood tabular-nums">
+                {step.n}
+              </div>
+              <div className="pt-1">
+                <h3 className="text-lg md:text-xl text-bone font-medium mb-2 leading-tight">
+                  {step.title}
+                </h3>
+                <p className="text-sm md:text-[15px] text-smoke leading-relaxed max-w-xl">
+                  {step.body}
+                </p>
+              </div>
+              {i < 2 && (
+                <>
+                  <div />
+                  <div className="h-px bg-white/[0.06] mt-8 -mb-2" />
+                </>
+              )}
+            </li>
+          ))}
+        </ol>
+      </section>
 
-          <div className="border border-white/[0.06] bg-white/[0.02] rounded-2xl p-6 card-lift hover-glow animate-fade-up backdrop-blur-sm">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mb-4">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-violet-400">
-                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-              </svg>
-            </div>
-            <h3 className="text-sm font-medium mb-2">Talks to other agents</h3>
-            <p className="text-sm text-zinc-500 leading-relaxed">
-              Need a file from another team? Your agent asks their agent.
-              No Slack messages, no waiting, no follow-ups.
-            </p>
-          </div>
-
-          <div className="border border-white/[0.06] bg-white/[0.02] rounded-2xl p-6 card-lift hover-glow animate-fade-up backdrop-blur-sm">
-            <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mb-4">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-violet-400">
-                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-              </svg>
-            </div>
-            <h3 className="text-sm font-medium mb-2">Knows your organization</h3>
-            <p className="text-sm text-zinc-500 leading-relaxed">
-              Who owns what, who&apos;s available, who to reach out to —
-              your agent knows the org so you don&apos;t have to.
-            </p>
-          </div>
+      {/* ============================================================
+          WHAT'S BUILT IN (grounded in real code)
+          ============================================================ */}
+      <section className="relative z-10 max-w-5xl mx-auto px-6 py-24 border-t border-white/[0.06]">
+        <div className="text-center mb-14">
+          <div className="eyebrow mb-3">Built in, not bolted on</div>
+          <h2 className="font-display text-display-lg text-bone">
+            Trust is not an afterthought.
+          </h2>
         </div>
-      </div>
 
-      {/* Footer */}
-      <footer className="relative z-10 max-w-5xl mx-auto px-6 py-8 border-t border-white/[0.06] flex items-center justify-between">
-        <span className="text-xs text-zinc-700">Ravenhill</span>
-        <span className="text-xs text-zinc-700">Early access — 2026</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger">
+          {[
+            {
+              icon: Shield,
+              title: "Human approvals for sensitive actions",
+              body:
+                "File shares, cross-team requests, and data transfers route through the owner before they happen. No silent access.",
+            },
+            {
+              icon: ScrollText,
+              title: "Full audit trail, every interaction",
+              body:
+                "Every question, routing decision, and approval is captured in a queryable log you can review at any time.",
+            },
+            {
+              icon: GitBranch,
+              title: "Event-level scope and classification",
+              body:
+                "Every signal carries its own confidentiality class, directional scope, and hop count — enforced at the edge.",
+            },
+            {
+              icon: Plug,
+              title: "Works with tools you already use",
+              body:
+                "Slack and Google Meet integrations today, more on the way. No rip-and-replace of your existing stack.",
+            },
+          ].map(({ icon: Icon, title, body }) => (
+            <div
+              key={title}
+              className="rounded-xl border border-white/[0.06] bg-ink p-6 animate-fade-up hover:border-white/[0.12] transition"
+            >
+              <div className="w-9 h-9 rounded-lg bg-graphite border border-white/[0.06] flex items-center justify-center mb-4">
+                <Icon className="w-4 h-4 text-claret" strokeWidth={1.75} />
+              </div>
+              <h3 className="text-[15px] text-bone font-medium mb-2">
+                {title}
+              </h3>
+              <p className="text-sm text-smoke leading-relaxed">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ============================================================
+          CLOSING CTA
+          ============================================================ */}
+      <section className="relative z-10 max-w-3xl mx-auto px-6 py-28 border-t border-white/[0.06] text-center">
+        <h2 className="font-display text-display-lg text-bone mb-5">
+          Less coordination. <span className="display-italic text-claret">More work.</span>
+        </h2>
+        <p className="text-smoke text-base max-w-md mx-auto mb-9 leading-relaxed">
+          Ravenhill is in early access. We&apos;re onboarding our first design
+          partners this quarter.
+        </p>
+        <Link href="/login" className="btn btn-primary text-sm px-6 py-3 inline-flex">
+          Request access
+          <ArrowUpRight className="w-4 h-4" />
+        </Link>
+      </section>
+
+      {/* ============================================================
+          FOOTER
+          ============================================================ */}
+      <footer className="relative z-10 max-w-6xl mx-auto px-6 py-10 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+        <Wordmark />
+        <div className="flex items-center gap-5 text-[13px]">
+          <Link href="/manifesto" className="text-smoke hover:text-parchment transition">
+            Manifesto
+          </Link>
+          <Link href="/trust" className="text-smoke hover:text-parchment transition">
+            Trust
+          </Link>
+          <Link href="/login" className="text-smoke hover:text-parchment transition">
+            Sign in
+          </Link>
+          <span className="text-[11px] text-dusk font-mono">© 2026 Ravenhill</span>
+        </div>
       </footer>
     </div>
   );

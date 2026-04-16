@@ -14,14 +14,8 @@ import AgentPicker from "@/components/AgentPicker";
 import { useAgent } from "@/lib/AgentContext";
 import type { Agent } from "@/lib/AgentContext";
 
-const DEPT_COLORS: Record<string, string> = {
-  Sales: "bg-blue-500",
-  Finance: "bg-purple-500",
-  Marketing: "bg-emerald-500",
-  Engineering: "bg-orange-500",
-  Product: "bg-pink-500",
-  HR: "bg-cyan-500",
-};
+const AVATAR_CLS =
+  "bg-graphite border border-white/[0.08] text-parchment";
 
 function getInitials(name: string) {
   return name
@@ -179,10 +173,10 @@ function AgentsPageInner() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-400 hover:to-violet-400 px-4 py-2 rounded-lg text-sm font-medium text-white transition"
+          className="btn btn-primary text-sm px-4 py-2"
         >
           <Plus className="w-4 h-4" />
-          Add Agent
+          Add agent
         </button>
       </div>
 
@@ -208,7 +202,7 @@ function AgentsPageInner() {
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div
-                  className={`w-10 h-10 rounded-full ${DEPT_COLORS[agent.departments?.[0]] ?? "bg-zinc-600"} flex items-center justify-center text-sm font-semibold text-white shrink-0`}
+                  className={`w-10 h-10 rounded-full ${AVATAR_CLS} flex items-center justify-center text-sm font-semibold shrink-0`}
                 >
                   {getInitials(agent.name)}
                 </div>
@@ -380,13 +374,13 @@ function AgentsPageInner() {
                 disabled={
                   saving || !form.name || !form.role || !form.departments?.length
                 }
-                className="bg-gradient-to-r from-blue-500 to-violet-500 hover:from-blue-400 hover:to-violet-400 disabled:opacity-30 disabled:cursor-not-allowed px-5 py-2 rounded-lg text-sm font-medium text-white transition"
+                className="btn btn-primary text-sm px-5 py-2"
               >
                 {saving
-                  ? "Saving..."
+                  ? "Saving…"
                   : editingId
-                    ? "Update Agent"
-                    : "Create Agent"}
+                    ? "Update agent"
+                    : "Create agent"}
               </button>
             </div>
           </div>

@@ -8,8 +8,10 @@ chat query integration.
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from graph import queries
+from graph.ask import ask_who_knows
 from graph.models import (
     ExpertHit,
     GraphEdge,
@@ -18,6 +20,20 @@ from graph.models import (
     UpsertEdgeRequest,
     UpsertNodeRequest,
 )
+
+
+class AskRequest(BaseModel):
+    question: str
+    limit: int = 5
+    min_weight: float = 0.05
+
+
+class AskResponse(BaseModel):
+    question: str
+    extracted_query: str
+    topic: dict | None
+    experts: list[dict]
+    answer: str
 
 router = APIRouter()
 
@@ -81,3 +97,17 @@ async def get_manager(person_id: UUID) -> GraphNode | None:
 @router.get("/teams/{team_id}/members", response_model=list[GraphNode])
 async def team_members(team_id: UUID) -> list[GraphNode]:
     return await queries.team_members(team_id)
+
+
+@router.post("/ask", response_model=AskResponse)
+async def ask(req: AskRequest) -> AskResponse:
+    """The v1 deliverable: 'who knows about X?' over the live expertise graph.
+
+    No LLM in the routing path — topic extraction is deterministic regex,
+    matching is name lookup. The system says 'I don't know' instead of
+    guessing when there's no signal.
+    """
+    result = await ask_who_knows(
+        question=req.question, limit=req.limit, min_weight=req.min_weight
+    )
+    return AskResponse(**result)

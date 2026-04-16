@@ -15,14 +15,8 @@ import { fetchAgent, fetchActivity } from "@/lib/api";
 import ActivityItem, { ActivityType } from "@/components/ActivityItem";
 import { timeAgo } from "@/lib/utils";
 
-const DEPT_COLORS: Record<string, string> = {
-  Sales: "bg-blue-600",
-  Finance: "bg-purple-600",
-  Marketing: "bg-emerald-600",
-  Engineering: "bg-orange-600",
-  Product: "bg-pink-600",
-  HR: "bg-cyan-600",
-};
+const AVATAR_CLS =
+  "bg-graphite border border-white/[0.08] text-parchment";
 
 function getInitials(name: string) {
   return name
@@ -131,7 +125,7 @@ export default function AgentDetailPage() {
     );
   }
 
-  const avatarColor = DEPT_COLORS[agent.departments?.[0]] ?? "bg-gray-600";
+  const avatarColor = AVATAR_CLS;
 
   // Filter activity entries that mention this agent
   const agentActivity = activity.filter(
@@ -153,7 +147,7 @@ export default function AgentDetailPage() {
       {/* Profile header */}
       <div className="flex items-start gap-5 mb-8">
         <div
-          className={`w-20 h-20 rounded-full ${avatarColor} flex items-center justify-center text-2xl font-bold text-white shrink-0`}
+          className={`w-20 h-20 rounded-full ${avatarColor} flex items-center justify-center text-2xl font-semibold shrink-0`}
         >
           {getInitials(agent.name)}
         </div>
@@ -173,7 +167,7 @@ export default function AgentDetailPage() {
           </div>
           <p className="text-sm text-gray-400 mb-1">{agent.role}</p>
           <span
-            className={`inline-block text-[11px] px-2.5 py-0.5 rounded-full ${avatarColor}/20 text-white border border-gray-700`}
+            className="inline-block text-[11px] px-2.5 py-0.5 rounded-full bg-white/[0.04] text-parchment border border-white/[0.08]"
           >
             {agent.departments?.[0]}
           </span>

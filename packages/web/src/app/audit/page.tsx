@@ -270,7 +270,7 @@ export default function AuditPage() {
           >
             {t.label}
             {tab === t.key && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 to-violet-500 rounded-full" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-oxblood rounded-full" />
             )}
           </button>
         ))}

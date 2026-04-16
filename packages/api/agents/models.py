@@ -28,6 +28,7 @@ class DocumentRef(BaseModel):
 class Agent(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     name: str
+    email: str = ""
     role: str
     role_description: str = ""
     departments: list[str] = []

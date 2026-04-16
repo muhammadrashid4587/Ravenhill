@@ -299,7 +299,7 @@ export default function MeetingDetailPage() {
                   {task.status !== "done" && (
                     <button
                       onClick={() => handleHelp(task)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 text-xs font-medium transition shrink-0"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-oxblood/10 text-claret border border-oxblood/25 hover:bg-oxblood/20 text-xs font-medium transition shrink-0"
                     >
                       {helpLoading === task.id ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -318,7 +318,7 @@ export default function MeetingDetailPage() {
 
                 {/* Help response (expandable) */}
                 {isExpanded && (
-                  <div className="border-t border-white/[0.06] px-4 py-3 bg-violet-500/[0.03]">
+                  <div className="border-t border-white/[0.06] px-4 py-3 bg-oxblood/[0.04]">
                     {helpLoading === task.id ? (
                       <div className="flex items-center gap-2 text-xs text-zinc-500">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />

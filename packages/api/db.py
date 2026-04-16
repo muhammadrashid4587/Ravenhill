@@ -48,6 +48,7 @@ class AgentRow(Base):
 
     id = Column(Uuid, primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=False)
+    email = Column(String(320), nullable=True, unique=True)
     role = Column(String(200), nullable=False)
     role_description = Column(Text, default="")
     departments = Column(JSON, default=list)
@@ -103,6 +104,36 @@ class MessageLedgerRow(Base):
     content = Column(Text, nullable=True)
     payload = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AuthSessionRow(Base):
+    __tablename__ = "auth_sessions"
+
+    session_token = Column(String(128), primary_key=True)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    email = Column(String(320), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_seen_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ix_auth_sessions_agent", "agent_id"),
+        Index("ix_auth_sessions_expires", "expires_at"),
+    )
+
+
+class ConversationMessageRow(Base):
+    __tablename__ = "conversation_messages"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    session_id = Column(String(100), nullable=False)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_conversation_messages_session_created", "session_id", "created_at"),
+    )
 
 
 class MeetingRow(Base):
@@ -238,6 +269,7 @@ async def alter_table_if_needed():
     """Add new columns to existing tables if they don't exist."""
     async with engine.begin() as conn:
         for col_def in [
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS email VARCHAR(320)",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS topic_keys JSON",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS knowledge_entries JSON",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS documents JSON",

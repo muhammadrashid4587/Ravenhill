@@ -1,7 +1,6 @@
 /**
- * ApprovalPopup — the human-in-the-loop approval UI.
+ * ApprovalPopup — human-in-the-loop approval UI.
  * Shows when an agent requests access to another employee's data/files.
- * One-click approve or deny.
  */
 
 interface ApprovalPopupProps {
@@ -22,26 +21,28 @@ export default function ApprovalPopup({
   onDeny,
 }: ApprovalPopupProps) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-surface border border-white/[0.1] rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-scale-in">
-        <div className="text-xs text-zinc-500 mb-1 font-medium">Approval Request</div>
-        <h3 className="text-lg font-semibold font-display mb-3">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+      <div className="bg-ink border border-white/[0.1] rounded-2xl p-6 max-w-md w-full mx-4 shadow-lift animate-scale-in">
+        <div className="eyebrow mb-2">Approval request</div>
+        <h3 className="text-lg font-medium text-bone mb-3 leading-snug">
           {requesterName}&apos;s agent wants to {action}
         </h3>
-        <div className="bg-elevated rounded-lg p-3 mb-4">
-          <div className="text-sm font-medium text-blue-400">{resource}</div>
-          <div className="text-sm text-zinc-300 mt-1">{description}</div>
+        <div className="bg-graphite border border-white/[0.06] rounded-lg p-3 mb-5">
+          <div className="text-sm font-medium text-claret">{resource}</div>
+          <div className="text-sm text-parchment mt-1 leading-relaxed">
+            {description}
+          </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             onClick={onApprove}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-lg text-sm font-medium transition"
+            className="flex-1 btn btn-primary text-sm py-2.5"
           >
             Approve
           </button>
           <button
             onClick={onDeny}
-            className="flex-1 bg-elevated hover:bg-white/[0.08] border border-white/[0.06] text-white py-2.5 rounded-lg text-sm font-medium transition"
+            className="flex-1 btn btn-secondary text-sm py-2.5"
           >
             Deny
           </button>

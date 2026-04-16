@@ -1,8 +1,3 @@
-/**
- * ChatMessage — renders a single message in the chat interface.
- * Supports user, agent, and system (inter-agent routing) message styles.
- */
-
 interface ChatMessageProps {
   sender: string;
   content: string;
@@ -17,16 +12,20 @@ export default function ChatMessage({
   timestamp,
 }: ChatMessageProps) {
   // Inter-agent routing messages get a distinct style
-  const isSystem = sender.includes("\u2192") && isAgent;
+  const isRouting = sender.includes("\u2192") && isAgent;
 
-  if (isSystem) {
+  if (isRouting) {
     return (
       <div className="flex justify-center mb-3">
-        <div className="bg-surface border border-white/[0.06] rounded-lg px-3 py-2 max-w-[90%]">
-          <div className="text-[10px] font-medium text-blue-400 mb-0.5">{sender}</div>
-          <div className="text-xs text-zinc-400 italic">{content}</div>
+        <div className="bg-ink border border-white/[0.06] rounded-lg px-3 py-2 max-w-[90%]">
+          <div className="text-[10px] font-medium text-claret mb-0.5">
+            {sender}
+          </div>
+          <div className="text-xs text-parchment italic">{content}</div>
           {timestamp && (
-            <div className="text-[10px] text-zinc-600 mt-1">{timestamp}</div>
+            <div className="text-[10px] text-dusk mt-1 font-mono">
+              {timestamp}
+            </div>
           )}
         </div>
       </div>
@@ -38,16 +37,24 @@ export default function ChatMessage({
       <div
         className={`max-w-[85%] rounded-2xl px-4 py-3 ${
           isAgent
-            ? "bg-elevated/80 text-zinc-100"
-            : "bg-blue-600 text-white"
+            ? "bg-graphite/80 text-parchment border border-white/[0.06]"
+            : "bg-oxblood text-bone"
         }`}
       >
-        <div className={`text-[11px] font-medium mb-1 ${isAgent ? "text-zinc-400" : "text-blue-200"}`}>
+        <div
+          className={`text-[11px] font-medium mb-1 ${
+            isAgent ? "text-smoke" : "text-bone/75"
+          }`}
+        >
           {sender}
         </div>
-        <div className="text-sm leading-relaxed">{content}</div>
+        <div className="text-sm leading-relaxed whitespace-pre-wrap">
+          {content}
+        </div>
         {timestamp && (
-          <div className="text-[10px] opacity-40 mt-1.5">{timestamp}</div>
+          <div className="text-[10px] opacity-50 mt-1.5 font-mono">
+            {timestamp}
+          </div>
         )}
       </div>
     </div>

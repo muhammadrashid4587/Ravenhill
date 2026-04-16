@@ -4,23 +4,8 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { fetchAgents } from "@/lib/api";
 import type { Agent } from "@/lib/AgentContext";
-
-const DEPT_COLORS: Record<string, string> = {
-  Sales: "bg-blue-600",
-  Finance: "bg-purple-600",
-  Marketing: "bg-emerald-600",
-  Engineering: "bg-orange-600",
-  Product: "bg-pink-600",
-  HR: "bg-cyan-600",
-};
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase();
-}
+import DeptAvatar from "@/components/ui/DeptAvatar";
+import Chip from "@/components/ui/Chip";
 
 interface AgentPickerProps {
   open: boolean;
@@ -48,65 +33,57 @@ export default function AgentPicker({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl p-6">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+      <div className="bg-ink border border-white/[0.08] rounded-2xl w-full max-w-2xl p-6 animate-scale-in shadow-lift">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-semibold text-white">
-              Choose Your Agent
-            </h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <h2 className="text-lg font-semibold text-bone">Choose your agent</h2>
+            <p className="text-sm text-smoke mt-1">
               Select the agent you want to operate as
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-white transition"
+            className="text-smoke hover:text-bone transition p-1"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-gray-500 text-sm">
-            Loading agents...
+          <div className="text-center py-12 text-smoke text-sm">
+            Loading agents…
           </div>
         ) : agents.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 text-sm">
+          <div className="text-center py-12 text-smoke text-sm">
             No agents available.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             {agents.map((agent) => (
               <button
                 key={agent.id}
                 onClick={() => onSelect(agent)}
-                className="bg-gray-800 border border-gray-700 rounded-xl p-4 text-left hover:border-blue-500 hover:bg-gray-800/80 transition group"
+                className="bg-graphite border border-white/[0.06] rounded-xl p-4 text-left hover:border-white/[0.12] card-lift transition"
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <div
-                    className={`w-10 h-10 rounded-full ${DEPT_COLORS[agent.departments?.[0]] ?? "bg-gray-600"} flex items-center justify-center text-xs font-bold text-white`}
-                  >
-                    {getInitials(agent.name)}
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-white">
+                  <DeptAvatar name={agent.name} size="md" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-bone truncate">
                       {agent.name}
                     </div>
-                    <div className="text-xs text-gray-500">{agent.role}</div>
+                    <div className="text-xs text-smoke truncate">
+                      {agent.role}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-900 text-gray-400 border border-gray-700">
-                    {agent.departments?.[0]}
-                  </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {agent.departments?.[0] && (
+                    <Chip>{agent.departments[0]}</Chip>
+                  )}
                   {agent.knowledge_areas.slice(0, 2).map((area) => (
-                    <span
-                      key={area}
-                      className="text-[10px] px-2 py-0.5 rounded-full bg-gray-900/50 text-gray-500"
-                    >
-                      {area}
-                    </span>
+                    <Chip key={area}>{area}</Chip>
                   ))}
                 </div>
               </button>
