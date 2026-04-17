@@ -1,64 +1,121 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const IS_DEV = process.env.NEXT_PUBLIC_APP_ENV !== "production";
+
+interface SeedAgent {
+  id: string;
+  name: string;
+  role: string;
+  departments: string[];
+}
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-obsidian" />}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
-  const { setMyAgent } = useAgent();
-  const [name, setName] = useState("");
+  const searchParams = useSearchParams();
+  const { agent, loading: authLoading, refresh } = useAuth();
+
+  // Request-access form state
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
-  const [department, setDepartment] = useState("");
+  const [useCase, setUseCase] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [manualOpen, setManualOpen] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Dev-only seed-agent picker
+  const [devOpen, setDevOpen] = useState(false);
+  const [seedAgents, setSeedAgents] = useState<SeedAgent[]>([]);
+
+  // Redirect already-authenticated users away from /login.
+  useEffect(() => {
+    if (authLoading) return;
+    if (agent) {
+      const from = searchParams.get("from") || "/home";
+      router.replace(from);
+    }
+  }, [agent, authLoading, router, searchParams]);
+
+  // Lazy-load seed agents when the dev picker opens.
+  useEffect(() => {
+    if (!devOpen || seedAgents.length > 0) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/agents`, {
+          credentials: "include",
+        });
+        if (res.ok) {
+          const data: SeedAgent[] = await res.json();
+          setSeedAgents(data);
+        }
+      } catch {
+        // silent — dev-only affordance
+      }
+    })();
+  }, [devOpen, seedAgents.length]);
+
+  const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!email.trim()) return;
     setSubmitting(true);
-
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/agents/`, {
+      const res = await fetch(`${API_BASE}/api/auth/request-access`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim(),
-          role: role.trim() || "Employee",
-          departments: [department.trim() || "General"],
-          knowledge_areas: [],
-          knowledge_base: "",
-          scopes: ["read:public"],
+          email: email.trim(),
+          name: name.trim() || null,
+          company: company.trim() || null,
+          role: role.trim() || null,
+          use_case: useCase.trim() || null,
         }),
       });
-      const agent = await res.json();
-      setMyAgent(agent);
-      router.push("/home");
-    } catch {
-      setMyAgent({
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        role: role.trim() || "Employee",
-        departments: [department.trim() || "General"],
-        knowledge_areas: [],
-        knowledge_base: "",
-        scopes: [],
-        is_active: true,
-      });
-      router.push("/home");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail?.[0]?.msg || "Please enter a valid email.");
+      }
+      setSubmitted(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleGoogleSignIn = () => {
-    // Placeholder — in production this would be real Google OAuth.
-    setName("Muhammad Rashid");
-    setEmail("muhammad@company.com");
-    setRole("CTO");
-    setDepartment("Engineering");
-  };
+  const handleDevSignIn = useCallback(
+    async (agentId: string) => {
+      try {
+        const res = await fetch(
+          `${API_BASE}/api/auth/dev-login?agent_id=${agentId}`,
+          { method: "POST", credentials: "include" },
+        );
+        if (!res.ok) throw new Error("dev-login failed");
+        await refresh();
+        const from = searchParams.get("from") || "/home";
+        router.push(from);
+      } catch {
+        setError("Dev sign-in failed. Is the API running?");
+      }
+    },
+    [router, searchParams, refresh],
+  );
 
   const inputCls =
     "w-full bg-ink border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-sm text-parchment placeholder:text-dusk focus:outline-none input-focus-glow transition";
@@ -66,7 +123,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-obsidian text-parchment flex">
       {/* Left: form */}
-      <div className="flex-1 flex items-center justify-center px-6">
+      <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <Link
             href="/"
@@ -82,100 +139,88 @@ export default function LoginPage() {
             </span>
           </Link>
 
-          <h1
-            className="text-2xl font-display font-normal tracking-tight text-bone mb-2 animate-fade-up"
-            style={{ animationDelay: "50ms" }}
-          >
-            Sign in
-          </h1>
-          <p
-            className="text-sm text-smoke mb-8 animate-fade-up"
-            style={{ animationDelay: "100ms" }}
-          >
-            Ravenhill is in early access with a small group of design
-            partners. Sign in with your work account to continue.
-          </p>
+          {submitted ? (
+            <div className="animate-fade-up">
+              <h1 className="text-2xl font-display font-normal tracking-tight text-bone mb-2">
+                Thanks — we&apos;ll be in touch.
+              </h1>
+              <p className="text-sm text-smoke leading-relaxed mb-6">
+                Ravenhill is in early access. A founder reviews every
+                request personally. If we&apos;re a fit for your team, you
+                will receive an invite link at{" "}
+                <span className="text-parchment">{email}</span> within a
+                few days.
+              </p>
+              <p className="text-[11px] text-dusk leading-relaxed">
+                Already have an invite?{" "}
+                <span className="text-smoke">
+                  Click the link in your email — it signs you in directly.
+                </span>
+              </p>
+            </div>
+          ) : (
+            <>
+              <h1
+                className="text-2xl font-display font-normal tracking-tight text-bone mb-2 animate-fade-up"
+                style={{ animationDelay: "50ms" }}
+              >
+                Request access
+              </h1>
+              <p
+                className="text-sm text-smoke mb-8 animate-fade-up"
+                style={{ animationDelay: "100ms" }}
+              >
+                Ravenhill is in early access with a small group of design
+                partners. Tell us about yourself and we&apos;ll get in touch.
+              </p>
 
-          <button
-            onClick={handleGoogleSignIn}
-            className="w-full btn btn-secondary text-sm py-2.5 animate-fade-up"
-            style={{ animationDelay: "150ms" }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24">
-              <path
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-                fill="#4285F4"
-              />
-              <path
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                fill="#34A853"
-              />
-              <path
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                fill="#FBBC05"
-              />
-              <path
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                fill="#EA4335"
-              />
-            </svg>
-            Continue with Google
-          </button>
-
-          <p
-            className="text-[11px] text-dusk mt-3 text-center animate-fade-in"
-            style={{ animationDelay: "220ms" }}
-          >
-            Ravenhill never posts as you or reads your DMs.{" "}
-            <Link href="/trust" className="underline-offset-4 hover:underline hover:text-smoke">
-              What we collect
-            </Link>
-            .
-          </p>
-
-          <div
-            className="mt-8 pt-6 border-t border-white/[0.06] animate-fade-in"
-            style={{ animationDelay: "320ms" }}
-          >
-            <button
-              type="button"
-              onClick={() => setManualOpen((v) => !v)}
-              className="text-[11px] text-dusk hover:text-smoke transition flex items-center gap-2"
-            >
-              <span className={`transition-transform ${manualOpen ? "rotate-90" : ""}`}>›</span>
-              Use a design-partner account
-            </button>
-
-            {manualOpen && (
               <form
-                onSubmit={handleSubmit}
-                className="space-y-3 mt-4 animate-fade-up"
-                style={{ animationDuration: "240ms" }}
+                onSubmit={handleSubmitRequest}
+                className="space-y-3 animate-fade-up"
+                style={{ animationDelay: "150ms" }}
               >
                 <div>
-                  <label className="block text-xs text-smoke mb-1.5">Name</label>
+                  <label className="block text-xs text-smoke mb-1.5">
+                    Work email
+                  </label>
                   <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Jane Park"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@company.com"
                     required
                     className={inputCls}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-smoke mb-1.5">Work email</label>
+                  <label className="block text-xs text-smoke mb-1.5">
+                    Name
+                  </label>
                   <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="jane@company.com"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Jane Park"
                     className={inputCls}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs text-smoke mb-1.5">Role</label>
+                    <label className="block text-xs text-smoke mb-1.5">
+                      Company
+                    </label>
+                    <input
+                      type="text"
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      placeholder="Acme, Inc."
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-smoke mb-1.5">
+                      Role
+                    </label>
                     <input
                       type="text"
                       value={role}
@@ -184,33 +229,101 @@ export default function LoginPage() {
                       className={inputCls}
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-smoke mb-1.5">
-                      Team
-                    </label>
-                    <input
-                      type="text"
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="Finance"
-                      className={inputCls}
-                    />
-                  </div>
                 </div>
+                <div>
+                  <label className="block text-xs text-smoke mb-1.5">
+                    What are you hoping to solve?{" "}
+                    <span className="text-dusk">(optional)</span>
+                  </label>
+                  <textarea
+                    value={useCase}
+                    onChange={(e) => setUseCase(e.target.value)}
+                    placeholder="e.g. Finance spends hours every week answering the same questions across teams…"
+                    rows={3}
+                    className={inputCls}
+                  />
+                </div>
+                {error && (
+                  <p className="text-xs text-claret">{error}</p>
+                )}
                 <button
                   type="submit"
-                  disabled={!name.trim() || submitting}
+                  disabled={!email.trim() || submitting}
                   className="w-full btn btn-primary text-sm py-2.5 mt-2"
                 >
-                  {submitting ? "Setting up…" : "Continue"}
+                  {submitting ? "Submitting…" : "Request access"}
                 </button>
               </form>
-            )}
-          </div>
+
+              <p
+                className="text-[11px] text-dusk mt-6 leading-relaxed animate-fade-in"
+                style={{ animationDelay: "260ms" }}
+              >
+                Already have an invite?{" "}
+                <span className="text-smoke">
+                  Click the link in your email.
+                </span>{" "}
+                <Link
+                  href="/trust"
+                  className="underline-offset-4 hover:underline hover:text-smoke"
+                >
+                  What we collect
+                </Link>
+                .
+              </p>
+            </>
+          )}
+
+          {IS_DEV && !submitted && (
+            <div
+              className="mt-10 pt-6 border-t border-white/[0.06] animate-fade-in"
+              style={{ animationDelay: "340ms" }}
+            >
+              <button
+                type="button"
+                onClick={() => setDevOpen((v) => !v)}
+                className="text-[11px] text-dusk hover:text-smoke transition flex items-center gap-2"
+              >
+                <span
+                  className={`transition-transform ${devOpen ? "rotate-90" : ""}`}
+                >
+                  ›
+                </span>
+                Sign in as a seed agent (development only)
+              </button>
+              {devOpen && (
+                <div className="mt-3 space-y-1.5">
+                  {seedAgents.length === 0 ? (
+                    <p className="text-[11px] text-dusk">
+                      Loading seed agents…
+                    </p>
+                  ) : (
+                    seedAgents.map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => handleDevSignIn(a.id)}
+                        className="w-full text-left px-3 py-2 rounded-md hover:bg-white/[0.03] transition flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="text-[12px] text-parchment">
+                            {a.name}
+                          </div>
+                          <div className="text-[10px] text-dusk font-mono">
+                            {a.role} · {a.departments?.[0] || "—"}
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-dusk">sign in ›</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Right: decorative, restrained */}
+      {/* Right: editorial panel */}
       <div className="hidden lg:flex flex-1 items-center justify-center border-l border-white/[0.06] bg-ink/60 hero-grid relative overflow-hidden">
         <div
           className="text-center px-12 relative z-10 max-w-sm animate-fade-up"

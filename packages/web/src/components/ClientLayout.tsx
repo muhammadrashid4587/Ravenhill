@@ -2,9 +2,15 @@
 
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
-import { AgentProvider } from "@/lib/AgentContext";
+import { AuthProvider } from "@/lib/AuthContext";
 
-const NO_NAV_ROUTES = ["/", "/login", "/home"];
+const NO_NAV_ROUTES = ["/", "/login", "/home", "/manifesto", "/trust"];
+
+function isNoNavPath(pathname: string): boolean {
+  if (NO_NAV_ROUTES.includes(pathname)) return true;
+  if (pathname.startsWith("/login/")) return true;
+  return false;
+}
 
 export default function ClientLayout({
   children,
@@ -12,10 +18,10 @@ export default function ClientLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const hideNav = NO_NAV_ROUTES.includes(pathname);
+  const hideNav = isNoNavPath(pathname);
 
   return (
-    <AgentProvider>
+    <AuthProvider>
       {hideNav ? (
         <>{children}</>
       ) : (
@@ -24,6 +30,6 @@ export default function ClientLayout({
           <main className="flex-1 overflow-y-auto">{children}</main>
         </div>
       )}
-    </AgentProvider>
+    </AuthProvider>
   );
 }

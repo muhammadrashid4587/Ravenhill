@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Search, Plus, X, Pencil, Trash2, MessageSquare } from "lucide-react";
 import {
   fetchAgents,
@@ -10,9 +10,7 @@ import {
   deleteAgent,
   CreateAgentPayload,
 } from "@/lib/api";
-import AgentPicker from "@/components/AgentPicker";
-import { useAgent } from "@/lib/AgentContext";
-import type { Agent } from "@/lib/AgentContext";
+import type { Agent } from "@/lib/AuthContext";
 
 const AVATAR_CLS =
   "bg-graphite border border-white/[0.08] text-parchment";
@@ -43,36 +41,14 @@ export default function AgentsPage() {
 }
 
 function AgentsPageInner() {
-  const searchParams = useSearchParams();
   const router = useRouter();
-  const { setMyAgent } = useAgent();
-
   const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CreateAgentPayload>(EMPTY_FORM);
   const [areasInput, setAreasInput] = useState("");
   const [saving, setSaving] = useState(false);
-
-  // Open picker modal when navigated here with ?pick=true
-  useEffect(() => {
-    if (searchParams.get("pick") === "true") {
-      setShowPicker(true);
-    }
-  }, [searchParams]);
-
-  const handlePickAgent = (agent: Agent) => {
-    setMyAgent(agent);
-    setShowPicker(false);
-    router.replace("/agents");
-  };
-
-  const handleClosePicker = () => {
-    setShowPicker(false);
-    router.replace("/agents");
-  };
 
   const loadAgents = useCallback(() => {
     fetchAgents()
@@ -101,16 +77,17 @@ function AgentsPageInner() {
   };
 
   const openEdit = (agent: Agent) => {
+    const areas = agent.knowledge_areas ?? [];
     setEditingId(agent.id);
     setForm({
       name: agent.name,
       role: agent.role,
       departments: agent.departments,
-      knowledge_areas: agent.knowledge_areas,
-      knowledge_base: agent.knowledge_base,
+      knowledge_areas: areas,
+      knowledge_base: agent.knowledge_base ?? "",
       scopes: agent.scopes,
     });
-    setAreasInput(agent.knowledge_areas.join(", "));
+    setAreasInput(areas.join(", "));
     setShowForm(true);
   };
 
@@ -232,7 +209,7 @@ function AgentsPageInner() {
               <span className="bg-white/[0.06] rounded-full px-2 py-0.5 text-[11px] text-zinc-400">
                 {agent.departments?.[0]}
               </span>
-              {agent.knowledge_areas.slice(0, 3).map((area) => (
+              {(agent.knowledge_areas ?? []).slice(0, 3).map((area) => (
                 <span
                   key={area}
                   className="bg-white/[0.06] rounded-full px-2 py-0.5 text-[11px] text-zinc-400"
@@ -387,12 +364,6 @@ function AgentsPageInner() {
         </div>
       )}
 
-      {/* Agent Picker Modal */}
-      <AgentPicker
-        open={showPicker}
-        onSelect={handlePickAgent}
-        onClose={handleClosePicker}
-      />
     </div>
   );
 }

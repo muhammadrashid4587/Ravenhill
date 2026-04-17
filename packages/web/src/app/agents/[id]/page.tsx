@@ -10,7 +10,7 @@ import {
   Check,
   ArrowRight,
 } from "lucide-react";
-import { useAgent, Agent } from "@/lib/AgentContext";
+import { useAuth, type Agent } from "@/lib/AuthContext";
 import { fetchAgent, fetchActivity } from "@/lib/api";
 import ActivityItem, { ActivityType } from "@/components/ActivityItem";
 import { timeAgo } from "@/lib/utils";
@@ -37,7 +37,7 @@ interface ActivityEntry {
 export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { myAgent, setMyAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -72,17 +72,11 @@ export default function AgentDetailPage() {
     loadActivity();
   }, [loadAgent, loadActivity]);
 
-  const handleSetAsMyAgent = () => {
-    if (agent) {
-      setMyAgent(agent);
-    }
-  };
-
-  const handleChatWithAgent = () => {
-    if (agent) {
-      setMyAgent(agent);
-      router.push("/chat");
-    }
+  // Impersonation removed — the signed-in identity is authoritative.
+  // "View in chat" simply opens your own chat view; the detail page is
+  // now purely for browsing another agent's public profile.
+  const handleOpenChat = () => {
+    router.push("/chat");
   };
 
   if (loading) {
@@ -176,34 +170,27 @@ export default function AgentDetailPage() {
 
       {/* Action buttons */}
       <div className="flex gap-3 mb-8">
-        {isMyAgent ? (
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-900/20 border border-green-800/50 text-sm text-green-400">
+        {isMyAgent && (
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-oxblood/15 border border-oxblood/40 text-sm text-claret">
             <Check className="w-4 h-4" />
-            This is your current agent
+            This is you
           </div>
-        ) : (
-          <button
-            onClick={handleSetAsMyAgent}
-            className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-sm font-medium transition"
-          >
-            Set as My Agent
-          </button>
         )}
         <button
-          onClick={handleChatWithAgent}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-700 hover:border-gray-600 text-sm text-gray-300 hover:text-white transition"
+          onClick={handleOpenChat}
+          className="btn btn-secondary text-sm px-4 py-2"
         >
           <MessageSquare className="w-4 h-4" />
-          Chat with {agent.name.split(" ")[0]}
+          Open chat
         </button>
       </div>
 
       {/* Knowledge Areas */}
-      {agent.knowledge_areas.length > 0 && (
+      {(agent.knowledge_areas ?? []).length > 0 && (
         <section className="mb-6">
           <h2 className="text-sm font-medium text-gray-400 mb-3">Knowledge Areas</h2>
           <div className="flex flex-wrap gap-2">
-            {agent.knowledge_areas.map((area) => (
+            {(agent.knowledge_areas ?? []).map((area) => (
               <span
                 key={area}
                 className="text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-gray-300 border border-gray-800"

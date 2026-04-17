@@ -1,16 +1,35 @@
 /**
  * API client for the Ravenhill backend.
+ *
+ * Every call runs with `credentials: "include"` so the session cookie set
+ * by /api/auth/verify travels with the request. CORS on the backend is
+ * already configured with allow_credentials=true for the configured
+ * origins.
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// Default init for every request — always include credentials.
+const defaultInit: RequestInit = { credentials: "include" };
+
+function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
+    ...defaultInit,
+    ...init,
+    credentials: "include",
+    headers: {
+      ...(init.headers || {}),
+    },
+  });
+}
+
 export async function fetchAgents() {
-  const res = await fetch(`${API_BASE}/api/agents`);
+  const res = await apiFetch("/api/agents");
   return res.json();
 }
 
 export async function fetchAgent(agentId: string) {
-  const res = await fetch(`${API_BASE}/api/agents/${agentId}`);
+  const res = await apiFetch(`/api/agents/${agentId}`);
   if (!res.ok) throw new Error(`Fetch agent failed: ${res.status}`);
   return res.json();
 }
@@ -25,7 +44,7 @@ export interface CreateAgentPayload {
 }
 
 export async function createAgent(agent: CreateAgentPayload) {
-  const res = await fetch(`${API_BASE}/api/agents/`, {
+  const res = await apiFetch(`/api/agents/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(agent),
@@ -38,7 +57,7 @@ export async function updateAgent(
   agentId: string,
   updates: Partial<CreateAgentPayload & { is_active: boolean }>,
 ) {
-  const res = await fetch(`${API_BASE}/api/agents/${agentId}`, {
+  const res = await apiFetch(`/api/agents/${agentId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -48,7 +67,7 @@ export async function updateAgent(
 }
 
 export async function deleteAgent(agentId: string) {
-  const res = await fetch(`${API_BASE}/api/agents/${agentId}`, {
+  const res = await apiFetch(`/api/agents/${agentId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Delete agent failed: ${res.status}`);
@@ -56,7 +75,7 @@ export async function deleteAgent(agentId: string) {
 }
 
 export async function chatWithAgent(agentId: string, message: string) {
-  const res = await fetch(`${API_BASE}/api/agents/${agentId}/chat`, {
+  const res = await apiFetch(`/api/agents/${agentId}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content: message, agent_id: agentId }),
@@ -70,7 +89,7 @@ export async function sendInterAgentMessage(message: {
   to_agent?: string;
   intent: string;
 }) {
-  const res = await fetch(`${API_BASE}/api/messages/send`, {
+  const res = await apiFetch(`/api/messages/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(message),
@@ -79,7 +98,7 @@ export async function sendInterAgentMessage(message: {
 }
 
 export async function submitApproval(approvalId: string, approved: boolean) {
-  const res = await fetch(`${API_BASE}/api/approvals/${approvalId}/decide`, {
+  const res = await apiFetch(`/api/approvals/${approvalId}/decide`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status: approved ? "approved" : "denied" }),
@@ -88,7 +107,7 @@ export async function submitApproval(approvalId: string, approved: boolean) {
 }
 
 export async function orchestrate(agentId: string, message: string) {
-  const res = await fetch(`${API_BASE}/api/orchestrate/`, {
+  const res = await apiFetch(`/api/orchestrate/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, agent_id: agentId }),
@@ -97,14 +116,14 @@ export async function orchestrate(agentId: string, message: string) {
 }
 
 export async function completeDocRequest(approvalId: string) {
-  const res = await fetch(
-    `${API_BASE}/api/orchestrate/approval/${approvalId}/complete`,
+  const res = await apiFetch(
+    `/api/orchestrate/approval/${approvalId}/complete`,
   );
   return res.json();
 }
 
 export async function resetDemo() {
-  const res = await fetch(`${API_BASE}/api/orchestrate/reset`, {
+  const res = await apiFetch(`/api/orchestrate/reset`, {
     method: "POST",
   });
   return res.json();
@@ -114,17 +133,17 @@ export async function fetchActivity(type?: string, limit?: number) {
   const params = new URLSearchParams();
   if (type) params.set("type", type);
   if (limit) params.set("limit", String(limit));
-  const res = await fetch(`${API_BASE}/api/activity?${params}`);
+  const res = await apiFetch(`/api/activity?${params}`);
   return res.json();
 }
 
 export async function fetchStats() {
-  const res = await fetch(`${API_BASE}/api/activity/stats`);
+  const res = await apiFetch(`/api/activity/stats`);
   return res.json();
 }
 
 export async function fetchHealth() {
-  const res = await fetch(`${API_BASE}/health`);
+  const res = await apiFetch(`/health`);
   return res.json();
 }
 
@@ -135,7 +154,9 @@ export async function fetchHealth() {
 export function streamActivity(
   onEvent: (entry: Record<string, unknown>) => void,
 ): () => void {
-  const es = new EventSource(`${API_BASE}/api/activity/stream`);
+  const es = new EventSource(`${API_BASE}/api/activity/stream`, {
+    withCredentials: true,
+  });
   es.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
@@ -202,7 +223,7 @@ export async function createMeeting(data: {
   agent_id: string;
   source?: string;
 }): Promise<Meeting> {
-  const res = await fetch(`${API_BASE}/api/meetings/`, {
+  const res = await apiFetch(`/api/meetings/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -214,12 +235,12 @@ export async function createMeeting(data: {
 export async function fetchMeetings(agentId?: string): Promise<Meeting[]> {
   const params = new URLSearchParams();
   if (agentId) params.set("agent_id", agentId);
-  const res = await fetch(`${API_BASE}/api/meetings/?${params}`);
+  const res = await apiFetch(`/api/meetings/?${params}`);
   return res.json();
 }
 
 export async function fetchMeeting(meetingId: string): Promise<Meeting> {
-  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}`);
+  const res = await apiFetch(`/api/meetings/${meetingId}`);
   if (!res.ok) throw new Error(`Fetch meeting failed: ${res.status}`);
   return res.json();
 }
@@ -229,7 +250,7 @@ export async function updateTask(
   taskId: string,
   updates: { status?: string; priority?: string; title?: string; description?: string },
 ): Promise<MeetingTask> {
-  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/tasks/${taskId}`, {
+  const res = await apiFetch(`/api/meetings/${meetingId}/tasks/${taskId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
@@ -243,7 +264,7 @@ export async function getTaskHelp(
   taskId: string,
   question?: string,
 ): Promise<{ task_id: string; response: string }> {
-  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/tasks/${taskId}/help`, {
+  const res = await apiFetch(`/api/meetings/${meetingId}/tasks/${taskId}/help`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question }),
@@ -253,7 +274,7 @@ export async function getTaskHelp(
 }
 
 export async function deleteMeeting(meetingId: string) {
-  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}`, {
+  const res = await apiFetch(`/api/meetings/${meetingId}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Delete meeting failed: ${res.status}`);
@@ -261,13 +282,13 @@ export async function deleteMeeting(meetingId: string) {
 }
 
 export async function fetchGoogleMeetings(agentId: string): Promise<GoogleMeeting[]> {
-  const res = await fetch(`${API_BASE}/api/meetings/google/meetings?agent_id=${agentId}`);
+  const res = await apiFetch(`/api/meetings/google/meetings?agent_id=${agentId}`);
   if (!res.ok) throw new Error(`Fetch Google meetings failed: ${res.status}`);
   return res.json();
 }
 
 export async function importGoogleMeeting(agentId: string, eventId: string): Promise<Meeting> {
-  const res = await fetch(`${API_BASE}/api/meetings/google/import`, {
+  const res = await apiFetch(`/api/meetings/google/import`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ agent_id: agentId, calendar_event_id: eventId }),
@@ -294,7 +315,7 @@ export async function orchestrateStream(
   sessionId: string | null,
   onEvent: (event: Record<string, unknown>) => void,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/orchestrate/stream`, {
+  const res = await apiFetch(`/api/orchestrate/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -346,7 +367,7 @@ export async function secondHopStream(
   sessionId: string | null,
   onEvent: (event: Record<string, unknown>) => void,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/orchestrate/second-hop/stream`, {
+  const res = await apiFetch(`/api/orchestrate/second-hop/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

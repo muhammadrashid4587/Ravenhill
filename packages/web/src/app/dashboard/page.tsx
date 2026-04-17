@@ -12,7 +12,7 @@ import {
   ArrowRight,
   Plus,
 } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import { fetchMeetings, fetchStats, fetchActivity, type Meeting } from "@/lib/api";
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -50,7 +50,7 @@ interface Stats {
 }
 
 export default function DashboardPage() {
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);

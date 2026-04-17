@@ -12,7 +12,7 @@ import {
   Users,
   Clock,
 } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import {
   createMeeting,
   fetchGoogleMeetings,
@@ -24,7 +24,7 @@ type Tab = "paste" | "google";
 
 export default function NewMeetingPage() {
   const router = useRouter();
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [tab, setTab] = useState<Tab>("google");
   const [title, setTitle] = useState("");
   const [transcript, setTranscript] = useState("");

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Plus, Calendar, Clock, CheckCircle2, AlertCircle } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import { fetchMeetings, type Meeting } from "@/lib/api";
 
 function statusBadge(meeting: Meeting) {
@@ -35,7 +35,7 @@ function priorityCount(meeting: Meeting) {
 }
 
 export default function MeetingsPage() {
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
 

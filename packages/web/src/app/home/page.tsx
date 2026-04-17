@@ -8,7 +8,7 @@ import {
   Building2,
   ArrowUpRight,
 } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import Button from "@/components/ui/Button";
 import DeptAvatar from "@/components/ui/DeptAvatar";
 
@@ -35,7 +35,15 @@ const DESTINATIONS = [
 
 export default function HomePage() {
   const router = useRouter();
-  const { myAgent } = useAgent();
+  const { agent: myAgent, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-obsidian text-parchment flex items-center justify-center">
+        <div className="text-sm text-dusk">Loading…</div>
+      </div>
+    );
+  }
 
   if (!myAgent) {
     return (

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { fetchAgents } from "@/lib/api";
-import type { Agent } from "@/lib/AgentContext";
+import type { Agent } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
 import Chip from "@/components/ui/Chip";
 
@@ -82,7 +82,7 @@ export default function AgentPicker({
                   {agent.departments?.[0] && (
                     <Chip>{agent.departments[0]}</Chip>
                   )}
-                  {agent.knowledge_areas.slice(0, 2).map((area) => (
+                  {(agent.knowledge_areas ?? []).slice(0, 2).map((area) => (
                     <Chip key={area}>{area}</Chip>
                   ))}
                 </div>

@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState, useRef, useEffect } from "react";
 import {
   LayoutDashboard,
   MessageSquare,
   Building2,
   CalendarCheck,
+  LogOut,
 } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
 
 const NAV_ITEMS = [
@@ -20,10 +22,28 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { myAgent } = useAgent();
+  const { agent: myAgent, logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleEsc);
+    };
+  }, [menuOpen]);
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-obsidian/80 backdrop-blur-xl">
@@ -69,22 +89,50 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Right: user */}
+        {/* Right: user + logout menu */}
         {myAgent && (
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs text-smoke hidden sm:block">
-              {myAgent.role}
-            </span>
-            <div className="flex items-center gap-2">
-              <DeptAvatar name={myAgent.name} size="xs" />
-              <span className="text-xs font-medium text-parchment">
-                {myAgent.name}
+          <div ref={menuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="flex items-center gap-2.5 rounded-md px-1.5 py-1 hover:bg-white/[0.04] transition"
+              aria-label="Account menu"
+              aria-expanded={menuOpen}
+            >
+              <span className="text-xs text-smoke hidden sm:block">
+                {myAgent.role}
               </span>
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-[#3FA46A]"
-                aria-label="active"
-              />
-            </div>
+              <div className="flex items-center gap-2">
+                <DeptAvatar name={myAgent.name} size="xs" />
+                <span className="text-xs font-medium text-parchment">
+                  {myAgent.name}
+                </span>
+                <span
+                  className="w-1.5 h-1.5 rounded-full bg-[#3FA46A]"
+                  aria-label="active"
+                />
+              </div>
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-56 rounded-lg border border-white/[0.08] bg-ink shadow-[0_20px_60px_-20px_rgba(0,0,0,0.8)] overflow-hidden animate-fade-up">
+                <div className="px-3 py-2.5 border-b border-white/[0.06]">
+                  <div className="text-[12px] text-parchment truncate">
+                    {myAgent.name}
+                  </div>
+                  <div className="text-[10px] text-dusk font-mono truncate">
+                    {myAgent.email || "no email"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-[12px] text-smoke hover:text-bone hover:bg-white/[0.04] transition"
+                >
+                  <LogOut className="w-3.5 h-3.5" strokeWidth={1.75} />
+                  Sign out
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

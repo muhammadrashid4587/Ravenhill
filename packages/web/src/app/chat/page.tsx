@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Send, Clock, FileText, ArrowRight } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import ApprovalPopup from "@/components/ApprovalPopup";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import {
   orchestrateStream,
   submitApproval,
@@ -72,7 +72,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // ---- Main Component ----
 
 export default function ChatPage() {
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);

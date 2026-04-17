@@ -9,14 +9,14 @@ import {
   ChevronRight,
   Loader2,
 } from "lucide-react";
-import { useAgent, type Agent } from "@/lib/AgentContext";
+import { useAuth, type Agent } from "@/lib/AuthContext";
 import { fetchAgents } from "@/lib/api";
 import DeptAvatar from "@/components/ui/DeptAvatar";
 import Chip from "@/components/ui/Chip";
 
 export default function OrganizationPage() {
   const router = useRouter();
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
