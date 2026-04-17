@@ -366,7 +366,7 @@ async def test_signin_token_consume_preserves_profile():
         # Simulate profile edit — change the name directly via DB.
         # (In a real product, a profile API would do this; for now we
         # don't have one, but the invariant still matters.)
-        from sqlalchemy import select, update
+        from sqlalchemy import update
         import db as db_mod
         from db import AgentRow
         async with db_mod.async_session() as s:

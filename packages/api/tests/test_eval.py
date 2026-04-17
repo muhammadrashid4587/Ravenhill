@@ -13,12 +13,26 @@ Or standalone: python tests/test_eval.py  (prints scorecard)
 """
 
 import asyncio
+import os
 import time
 
 import pytest
 
 from agents.seed import COO_ID, PRODUCT_LEAD_ID, ENG_LEAD_ID, OPS_MANAGER_ID
 from orchestrator import orchestrate, OrchestrateRequest
+
+# Skip the entire module in CI / mock mode. These evals measure real LLM
+# behavior; in mock mode the fake responses can't satisfy the scoring
+# rubric, and they'd also burn rate limits if they ran on every push.
+# Run manually with a real provider:  pytest tests/test_eval.py -v
+_has_llm_key = any(
+    os.environ.get(k, "").strip()
+    for k in ("ANTHROPIC_API_KEY", "CEREBRAS_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY")
+)
+pytestmark = pytest.mark.skipif(
+    os.environ.get("LLM_PROVIDER", "").lower() == "mock" or not _has_llm_key,
+    reason="Eval suite requires a real LLM provider; set an API key to run locally.",
+)
 
 # ---------------------------------------------------------------------------
 # Eval case definitions
