@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     # Frontend
     next_public_api_url: str = "http://localhost:8000"
 
+    # Auth — admin-issued magic-link invites.
+    # `admin_token` gates /api/auth/invite. Leave empty to disable admin
+    # endpoints entirely (fail-closed). Generate with `openssl rand -hex 32`.
+    admin_token: str = ""
+    session_cookie_name: str = "ravenhill_session"
+    session_ttl_days: int = 30
+    invite_ttl_days: int = 7
+    # When the frontend lives at this origin, the cookie is scoped to it.
+    # Used to build invite_url and to set the correct cookie domain/secure.
+    site_url: str = "http://localhost:3000"
+
     # env_file is a best-effort load: pydantic-settings v2 silently skips it
     # when the file doesn't exist (e.g. on Fly.io where secrets are injected
     # as real env vars).  The relative path works when running from repo root

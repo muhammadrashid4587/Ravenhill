@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from activity.router import router as activity_router
 from agents.router import router as agents_router
+from auth.router import router as auth_router
 from registry.router import router as registry_router
 from messaging.router import router as messaging_router
 from approvals.router import router as approvals_router
@@ -48,6 +49,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(activity_router, prefix="/api/activity", tags=["activity"])
 app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
 app.include_router(registry_router, prefix="/api/registry", tags=["registry"])

@@ -136,6 +136,51 @@ class ConversationMessageRow(Base):
     )
 
 
+class AuthInviteRow(Base):
+    """Single-use magic-link invite issued by the admin endpoint.
+
+    The token value itself is the primary key (URL-safe random). `used_at`
+    is set on first consumption; subsequent lookups see it as used and 401.
+    """
+
+    __tablename__ = "auth_invites"
+
+    token = Column(String(64), primary_key=True)
+    email = Column(String(320), nullable=False)
+    name = Column(String(200), nullable=False)
+    role = Column(String(200), nullable=False, default="Employee")
+    department = Column(String(200), nullable=False, default="General")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_auth_invites_email", "email"),
+        Index("ix_auth_invites_expires", "expires_at"),
+    )
+
+
+class AccessRequestRow(Base):
+    """Waitlist entry from a public visitor. Admin reviews and, if approved,
+    issues an AuthInvite. No automatic promotion."""
+
+    __tablename__ = "access_requests"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    email = Column(String(320), nullable=False)
+    name = Column(String(200), nullable=True)
+    company = Column(String(200), nullable=True)
+    role = Column(String(200), nullable=True)
+    use_case = Column(Text, nullable=True)
+    status = Column(String(20), default="pending")  # pending | invited | declined
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_access_requests_email", "email"),
+        Index("ix_access_requests_status", "status"),
+    )
+
+
 class MeetingRow(Base):
     __tablename__ = "meetings"
 
@@ -275,6 +320,7 @@ async def alter_table_if_needed():
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS documents JSON",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS trust_level VARCHAR(20) DEFAULT 'auto'",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS role_description TEXT DEFAULT ''",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_email_nonempty ON agents (LOWER(email)) WHERE email IS NOT NULL AND email <> ''",
         ]:
             try:
                 await conn.execute(text(col_def))
@@ -283,20 +329,26 @@ async def alter_table_if_needed():
 
 
 async def seed_demo_agents():
-    """Delete all existing agents and re-insert fresh seed data."""
+    """Ensure the hard-coded demo agents exist. Idempotent: upserts by id so
+    real signed-up users and their data are never wiped on restart.
+
+    Demo agents use deterministic UUIDs (see agents/seed.py) so they remain
+    stable across restarts and can be referenced from the UI."""
     from agents.seed import SEED_AGENTS
 
     async with async_session() as session:
-        # Clear dependent tables first (foreign key constraints)
-        await session.execute(MeetingFileRow.__table__.delete())
-        await session.execute(TaskRow.__table__.delete())
-        await session.execute(MeetingRow.__table__.delete())
-        await session.execute(AgentRow.__table__.delete())
         for agent_data in SEED_AGENTS:
-            row = AgentRow(**agent_data)
-            session.add(row)
+            existing = await session.get(AgentRow, agent_data["id"])
+            if existing:
+                # Refresh mutable demo fields in place; leave id/created_at alone.
+                for key, value in agent_data.items():
+                    if key in ("id", "created_at"):
+                        continue
+                    setattr(existing, key, value)
+            else:
+                session.add(AgentRow(**agent_data))
         await session.commit()
-        print(f"Seeded {len(SEED_AGENTS)} demo agents.")
+        print(f"Ensured {len(SEED_AGENTS)} demo agents (idempotent upsert).")
 
 
 async def close_db():
