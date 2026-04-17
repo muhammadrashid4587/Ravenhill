@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [role, setRole] = useState("");
   const [department, setDepartment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,18 +86,19 @@ export default function LoginPage() {
             className="text-2xl font-display font-normal tracking-tight text-bone mb-2 animate-fade-up"
             style={{ animationDelay: "50ms" }}
           >
-            Welcome to Ravenhill
+            Sign in
           </h1>
           <p
             className="text-sm text-smoke mb-8 animate-fade-up"
             style={{ animationDelay: "100ms" }}
           >
-            Sign in and your personal AI agent will be created for you.
+            Ravenhill is in early access with a small group of design
+            partners. Sign in with your work account to continue.
           </p>
 
           <button
             onClick={handleGoogleSignIn}
-            className="w-full btn btn-secondary text-sm py-2.5 mb-6 animate-fade-up"
+            className="w-full btn btn-secondary text-sm py-2.5 animate-fade-up"
             style={{ animationDelay: "150ms" }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24">
@@ -120,82 +122,91 @@ export default function LoginPage() {
             Continue with Google
           </button>
 
-          <div
-            className="flex items-center gap-3 mb-6 animate-fade-in"
-            style={{ animationDelay: "200ms" }}
-          >
-            <div className="flex-1 h-px bg-white/[0.06]" />
-            <span className="text-[11px] text-dusk uppercase tracking-widest">
-              or continue manually
-            </span>
-            <div className="flex-1 h-px bg-white/[0.06]" />
-          </div>
-
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-3 animate-fade-up"
-            style={{ animationDelay: "250ms" }}
-          >
-            <div>
-              <label className="block text-xs text-smoke mb-1.5">Your name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Muhammad Rashid"
-                required
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-smoke mb-1.5">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com"
-                className={inputCls}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-smoke mb-1.5">Role</label>
-                <input
-                  type="text"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  placeholder="e.g. CTO"
-                  className={inputCls}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-smoke mb-1.5">
-                  Department
-                </label>
-                <input
-                  type="text"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="e.g. Engineering"
-                  className={inputCls}
-                />
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={!name.trim() || submitting}
-              className="w-full btn btn-primary text-sm py-2.5 mt-2"
-            >
-              {submitting ? "Creating your agent…" : "Sign in"}
-            </button>
-          </form>
-
           <p
-            className="text-[11px] text-dusk mt-6 text-center animate-fade-in"
-            style={{ animationDelay: "350ms" }}
+            className="text-[11px] text-dusk mt-3 text-center animate-fade-in"
+            style={{ animationDelay: "220ms" }}
           >
-            Your personal agent will be created with your name and role.
+            Ravenhill never posts as you or reads your DMs.{" "}
+            <Link href="/trust" className="underline-offset-4 hover:underline hover:text-smoke">
+              What we collect
+            </Link>
+            .
           </p>
+
+          <div
+            className="mt-8 pt-6 border-t border-white/[0.06] animate-fade-in"
+            style={{ animationDelay: "320ms" }}
+          >
+            <button
+              type="button"
+              onClick={() => setManualOpen((v) => !v)}
+              className="text-[11px] text-dusk hover:text-smoke transition flex items-center gap-2"
+            >
+              <span className={`transition-transform ${manualOpen ? "rotate-90" : ""}`}>›</span>
+              Use a design-partner account
+            </button>
+
+            {manualOpen && (
+              <form
+                onSubmit={handleSubmit}
+                className="space-y-3 mt-4 animate-fade-up"
+                style={{ animationDuration: "240ms" }}
+              >
+                <div>
+                  <label className="block text-xs text-smoke mb-1.5">Name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Jane Park"
+                    required
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-smoke mb-1.5">Work email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="jane@company.com"
+                    className={inputCls}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-smoke mb-1.5">Role</label>
+                    <input
+                      type="text"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      placeholder="Head of Finance"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-smoke mb-1.5">
+                      Team
+                    </label>
+                    <input
+                      type="text"
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      placeholder="Finance"
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={!name.trim() || submitting}
+                  className="w-full btn btn-primary text-sm py-2.5 mt-2"
+                >
+                  {submitting ? "Setting up…" : "Continue"}
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </div>
 

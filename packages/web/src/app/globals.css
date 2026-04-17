@@ -421,8 +421,8 @@
   isolation: isolate;
 }
 
-/* Cursor-reactive oxblood spotlight — structural grid is now provided by
-   InfrastructureBackdrop, so this is the only decorative hero layer. */
+/* Cursor-reactive oxblood spotlight — the one warm layer under the hero.
+   Kept soft and low-alpha so it reads as ambient warmth, not a glow. */
 .hero-live::after {
   content: "";
   position: absolute;
@@ -430,13 +430,13 @@
   z-index: 0;
   background:
     radial-gradient(
-      circle 540px at var(--spot-x, 50%) var(--spot-y, 40%),
-      rgba(139, 30, 47, 0.26) 0%,
-      rgba(139, 30, 47, 0.14) 22%,
-      rgba(93, 15, 29, 0.06) 45%,
-      transparent 70%
+      circle 480px at var(--spot-x, 50%) var(--spot-y, 40%),
+      rgba(139, 30, 47, 0.16) 0%,
+      rgba(139, 30, 47, 0.08) 28%,
+      rgba(93, 15, 29, 0.04) 50%,
+      transparent 72%
     );
-  filter: blur(12px);
+  filter: blur(14px);
   pointer-events: none;
   will-change: background;
 }
@@ -459,20 +459,25 @@
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
+  /* Global dim so the fabric never fights foreground copy. */
+  opacity: 0.72;
+  /* Single radial mask: fully visible along the upper band (hero + product
+     moment), softened through the reading sections, fully transparent at
+     the very bottom and far edges. */
   mask-image:
     radial-gradient(
-      ellipse 120% 95% at 50% 22%,
+      ellipse 125% 90% at 50% 25%,
       black 0%,
-      black 40%,
-      rgba(0, 0, 0, 0.55) 70%,
+      black 38%,
+      rgba(0, 0, 0, 0.5) 68%,
       transparent 100%
     );
   -webkit-mask-image:
     radial-gradient(
-      ellipse 120% 95% at 50% 22%,
+      ellipse 125% 90% at 50% 25%,
       black 0%,
-      black 40%,
-      rgba(0, 0, 0, 0.55) 70%,
+      black 38%,
+      rgba(0, 0, 0, 0.5) 68%,
       transparent 100%
     );
 }

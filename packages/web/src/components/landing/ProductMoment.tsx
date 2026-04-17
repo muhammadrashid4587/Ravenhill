@@ -16,11 +16,11 @@ import { Check } from "lucide-react";
 // -----------------------------------------------------------------------------
 
 const STEPS = [
-  { label: "Classifying question", detail: "Cross-team query" },
-  { label: "Resolving topic", detail: "payments · stripe" },
-  { label: "Ranking experts", detail: "Sam Torres · 0.82" },
-  { label: "Consulting graph", detail: "2 edges · 18 events" },
-  { label: "Drafting response", detail: "with sources" },
+  { label: "Classify intent", detail: "cross_team.query", ms: "42ms" },
+  { label: "Resolve topic", detail: "payments · stripe", ms: "61ms" },
+  { label: "Rank experts", detail: "sam.torres · 0.82", ms: "88ms" },
+  { label: "Consult graph", detail: "2 edges · 18 events", ms: "134ms" },
+  { label: "Draft response", detail: "with sources", ms: "720ms" },
 ] as const;
 
 const USER_QUESTION = "Who knows about the Stripe Connect integration?";
@@ -201,20 +201,19 @@ export default function ProductMoment() {
   return (
     <div ref={rootRef} className="relative max-w-5xl mx-auto px-6">
       <div className="relative rounded-2xl border border-white/[0.08] bg-ink overflow-hidden shadow-[0_40px_100px_-20px_rgba(0,0,0,0.7)]">
-        {/* Chrome */}
+        {/* Chrome — minimal app bar with a real-feeling thread path */}
         <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/[0.06] bg-graphite">
           <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
           <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
           <span className="w-2.5 h-2.5 rounded-full bg-white/[0.08]" />
-          <span className="ml-3 text-[10px] text-smoke font-mono">
-            ravenhill.app / chat
+          <span className="ml-3 text-[10px] text-smoke font-mono flex items-center gap-1.5">
+            <span className="text-dusk">threads</span>
+            <span className="text-dusk/60">/</span>
+            <span>q2-payments</span>
           </span>
-          {!reducedTick && (
-            <span className="ml-auto flex items-center gap-1.5 text-[10px] text-dusk font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#3FA46A] animate-pulse-subtle" />
-              live
-            </span>
-          )}
+          <span className="ml-auto text-[10px] text-dusk font-mono tabular-nums">
+            14:32 · apr 16
+          </span>
         </div>
 
         {/* Three-panel layout */}
@@ -225,12 +224,15 @@ export default function ProductMoment() {
               {/* User message */}
               {frame.showUser && (
                 <div
-                  className="flex gap-3 justify-end animate-fade-up"
+                  className="flex flex-col items-end gap-1 animate-fade-up"
                   style={{ animationDuration: "350ms" }}
                   key="user-msg"
                 >
                   <div className="max-w-[70%] rounded-lg px-3.5 py-2.5 bg-oxblood/90 text-bone text-[13px] leading-relaxed">
                     {USER_QUESTION}
+                  </div>
+                  <div className="text-[10px] text-dusk font-mono tabular-nums pr-1">
+                    you · 14:32
                   </div>
                 </div>
               )}
@@ -245,8 +247,13 @@ export default function ProductMoment() {
                   <div className="w-7 h-7 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
                     R
                   </div>
-                  <div className="flex-1">
-                    <div className="text-[11px] text-smoke mb-1">Your agent</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-[11px] text-parchment">Your agent</span>
+                      <span className="text-[10px] text-dusk font-mono tabular-nums">
+                        14:32 · 1.05s
+                      </span>
+                    </div>
                     <div className="rounded-lg px-3.5 py-2.5 bg-graphite border border-white/[0.06] text-[13px] leading-relaxed text-parchment min-h-[48px]">
                       {renderTypedResponse(frame.typingChars)}
                       {frame.showCursor && (
@@ -256,6 +263,24 @@ export default function ProductMoment() {
                         />
                       )}
                     </div>
+                    {/* Product-authentic source strip — only after typing finishes */}
+                    {frame.typingChars >= RESPONSE_TOTAL_CHARS && (
+                      <div
+                        className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-dusk font-mono animate-fade-in"
+                        style={{ animationDuration: "280ms" }}
+                      >
+                        <span className="flex items-center gap-1">
+                          <span className="text-smoke">sources</span>
+                          <span>#payments · 30d</span>
+                        </span>
+                        <span className="text-dusk/40">·</span>
+                        <span>API_Integration_Spec_Stripe_Connect.pdf</span>
+                        <span className="text-dusk/40">·</span>
+                        <span className="text-smoke hover:text-parchment cursor-default">
+                          view trace
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -289,10 +314,15 @@ export default function ProductMoment() {
             </div>
           </div>
 
-          {/* Side: reasoning panel */}
-          <div className="p-5 bg-obsidian/60">
-            <div className="eyebrow mb-4">Reasoning</div>
-            <ol className="space-y-3">
+          {/* Side: trace panel — product-log styling */}
+          <div className="p-5 bg-obsidian/60 flex flex-col">
+            <div className="flex items-baseline justify-between mb-4">
+              <span className="eyebrow">Trace</span>
+              <span className="text-[10px] text-dusk font-mono tabular-nums">
+                req_8f2c
+              </span>
+            </div>
+            <ol className="space-y-2.5 flex-1">
               {STEPS.map((step, i) => {
                 const done = i < frame.stepProgress;
                 const active = i === frame.stepProgress && frame.stepProgress < STEPS.length;
@@ -300,34 +330,37 @@ export default function ProductMoment() {
                   <li
                     key={i}
                     className="flex items-start gap-3 transition-opacity duration-300"
-                    style={{ opacity: done || active ? 1 : 0.35 }}
+                    style={{ opacity: done || active ? 1 : 0.32 }}
                   >
                     <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-semibold shrink-0 mt-0.5 transition-all duration-300 ${
+                      className={`w-4 h-4 rounded-sm flex items-center justify-center shrink-0 mt-0.5 transition-all duration-300 ${
                         done
-                          ? "bg-oxblood text-bone"
+                          ? "bg-oxblood/80"
                           : active
-                            ? "bg-oxblood/30 text-claret ring-2 ring-oxblood/40"
-                            : "bg-graphite border border-white/[0.08] text-smoke"
+                            ? "bg-oxblood/20 ring-1 ring-oxblood/60"
+                            : "bg-graphite border border-white/[0.08]"
                       }`}
                     >
                       {done ? (
-                        <Check className="w-2.5 h-2.5" strokeWidth={3} />
+                        <Check className="w-2 h-2 text-bone" strokeWidth={3.5} />
                       ) : active ? (
-                        <span className="w-1.5 h-1.5 rounded-full bg-claret animate-pulse-subtle" />
-                      ) : (
-                        i + 1
-                      )}
+                        <span className="w-1 h-1 rounded-full bg-claret animate-pulse-subtle" />
+                      ) : null}
                     </div>
-                    <div className="min-w-0">
-                      <div
-                        className={`text-[12px] leading-tight transition-colors ${
-                          active ? "text-bone" : "text-parchment"
-                        }`}
-                      >
-                        {step.label}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span
+                          className={`text-[12px] leading-tight transition-colors ${
+                            active ? "text-bone" : done ? "text-parchment" : "text-smoke"
+                          }`}
+                        >
+                          {step.label}
+                        </span>
+                        <span className="text-[10px] text-dusk font-mono tabular-nums">
+                          {done || active ? step.ms : "—"}
+                        </span>
                       </div>
-                      <div className="text-[10px] text-dusk font-mono mt-0.5">
+                      <div className="text-[10px] text-dusk font-mono mt-0.5 truncate">
                         {step.detail}
                       </div>
                     </div>
@@ -335,6 +368,10 @@ export default function ProductMoment() {
                 );
               })}
             </ol>
+            <div className="pt-3 mt-3 border-t border-white/[0.06] text-[10px] text-dusk font-mono flex items-baseline justify-between">
+              <span>total</span>
+              <span className="tabular-nums text-smoke">1.05s</span>
+            </div>
           </div>
         </div>
       </div>

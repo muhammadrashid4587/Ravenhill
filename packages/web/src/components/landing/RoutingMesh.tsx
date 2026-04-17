@@ -42,10 +42,10 @@ type Route = {
 };
 
 const CELL = 46;
-const CURSOR_RADIUS = 190;
-const MAX_ROUTES = 16;
-const AMBIENT_MIN = 1400;
-const AMBIENT_MAX = 2600;
+const CURSOR_RADIUS = 170;
+const MAX_ROUTES = 9;
+const AMBIENT_MIN = 2600;
+const AMBIENT_MAX = 4200;
 
 export default function RoutingMesh() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -202,18 +202,18 @@ export default function RoutingMesh() {
             }
           }
 
-          const baseAlpha = 0.1 * scrollIntensity;
-          const radius = 1.1 + proximity * 1.6;
+          const baseAlpha = 0.075 * scrollIntensity;
+          const radius = 1.05 + proximity * 1.2;
 
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, Math.PI * 2);
 
           if (proximity > 0.08) {
             // Warm illuminated node — bone with oxblood undertone
-            const a = (baseAlpha + proximity * 0.7) * Math.min(1, scrollIntensity + 0.4);
+            const a = (baseAlpha + proximity * 0.45) * Math.min(1, scrollIntensity + 0.4);
             ctx.fillStyle = `rgba(245, 240, 230, ${a})`;
           } else {
-            ctx.fillStyle = `rgba(139, 30, 47, ${baseAlpha * 0.9})`;
+            ctx.fillStyle = `rgba(139, 30, 47, ${baseAlpha * 0.85})`;
           }
           ctx.fill();
         }
@@ -229,7 +229,7 @@ export default function RoutingMesh() {
           continue;
         }
 
-        const headProgress = Math.min(1, elapsed / route.duration);
+        const headProgress = Math.max(0, Math.min(1, elapsed / route.duration));
         const postTime = elapsed - route.duration;
         const fadeAlpha = postTime > 0 ? Math.max(0, 1 - postTime / route.decay) : 1;
 
@@ -260,7 +260,7 @@ export default function RoutingMesh() {
           // Trail age — segments farther behind the head fade out
           const ageFromHead = headIndex - seg - 0.5;
           const trailFade = Math.max(0, 1 - ageFromHead / Math.max(pathLen, 4));
-          const alpha = Math.min(0.7, 0.45 * trailFade * globalIntensity + 0.15 * globalIntensity);
+          const alpha = Math.min(0.55, 0.32 * trailFade * globalIntensity + 0.1 * globalIntensity);
           if (alpha <= 0.01) continue;
 
           ctx.strokeStyle = `rgba(139, 30, 47, ${alpha})`;
@@ -272,10 +272,11 @@ export default function RoutingMesh() {
 
         // Head — bone core + claret halo. Arrived heads linger briefly
         // at the destination while the trail fades out behind them.
-        const hi = Math.min(pathLen - 1, Math.floor(headIndex));
-        const frac = Math.min(1, headIndex - hi);
+        const hi = Math.max(0, Math.min(pathLen - 1, Math.floor(headIndex)));
+        const frac = Math.max(0, Math.min(1, headIndex - hi));
         const a = route.path[hi];
         const b = route.path[Math.min(hi + 1, pathLen)];
+        if (!a || !b) continue;
         const na = nodeXY(a.col, a.row);
         const nb = nodeXY(b.col, b.row);
         const hx = na.x + (nb.x - na.x) * frac;
@@ -284,13 +285,13 @@ export default function RoutingMesh() {
         const headAlpha = globalIntensity;
         if (headAlpha > 0.02) {
           ctx.beginPath();
-          ctx.arc(hx, hy, 5.5, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(178, 50, 70, ${0.22 * headAlpha})`;
+          ctx.arc(hx, hy, 3.8, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(178, 50, 70, ${0.14 * headAlpha})`;
           ctx.fill();
 
           ctx.beginPath();
-          ctx.arc(hx, hy, 2.1, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(245, 240, 230, ${0.9 * headAlpha})`;
+          ctx.arc(hx, hy, 1.7, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(245, 240, 230, ${0.72 * headAlpha})`;
           ctx.fill();
         }
       }
@@ -304,7 +305,7 @@ export default function RoutingMesh() {
           lastAmbient = t;
           const tCol = Math.floor(Math.random() * cols);
           const tRow = Math.floor(Math.random() * rows);
-          spawnRoute({ col: tCol, row: tRow }, 0.4);
+          spawnRoute({ col: tCol, row: tRow }, 0.28);
         }
       }
     };
@@ -332,11 +333,11 @@ export default function RoutingMesh() {
       lastCell.row = row;
 
       const now = performance.now();
-      if (now - lastSpawn < 110) return;
-      if (Math.random() > 0.72) return;
+      if (now - lastSpawn < 220) return;
+      if (Math.random() > 0.45) return;
       lastSpawn = now;
 
-      spawnRoute({ col, row }, 1);
+      spawnRoute({ col, row }, 0.85);
     };
 
     const handleLeave = () => {

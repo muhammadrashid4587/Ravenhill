@@ -55,17 +55,14 @@ export default function HeroLive({
 
     const tick = () => {
       // Soft lerp for premium feel
-      currentX += (targetX - currentX) * 0.08;
-      currentY += (targetY - currentY) * 0.08;
+      currentX += (targetX - currentX) * 0.06;
+      currentY += (targetY - currentY) * 0.06;
       el.style.setProperty("--spot-x", `${currentX.toFixed(2)}%`);
       el.style.setProperty("--spot-y", `${currentY.toFixed(2)}%`);
 
-      // Tiny parallax — 3px max on each axis. Subtle depth, not motion sickness.
-      const px = ((currentX - 50) / 50) * 3;
-      const py = ((currentY - 38) / 38) * 2;
-      el.style.setProperty("--parallax-x", `${px.toFixed(2)}px`);
-      el.style.setProperty("--parallax-y", `${py.toFixed(2)}px`);
-
+      // Parallax drift removed — the headline stays still. Keeping the
+      // CSS variables pinned at 0 so any .hero-parallax descendants don't
+      // jitter on re-renders.
       raf = requestAnimationFrame(tick);
     };
 

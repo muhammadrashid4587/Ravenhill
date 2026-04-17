@@ -77,7 +77,7 @@ export default function LandingPage() {
             className="hero-parallax inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/[0.08] bg-white/[0.03] text-[11px] text-smoke mb-8 animate-fade-up backdrop-blur-sm"
             style={{ animationDelay: "40ms" }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-oxblood animate-pulse-subtle" />
+            <span className="w-1.5 h-1.5 rounded-full bg-oxblood" />
             Early access · 2026
           </div>
 
