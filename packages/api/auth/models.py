@@ -36,6 +36,21 @@ class InviteResponse(BaseModel):
     expires_at: datetime
 
 
+# ---------- Sign-in (self-serve magic link for existing users) ----------
+
+
+class SignInRequestPayload(BaseModel):
+    email: EmailStr
+
+
+class SignInRequestResponse(BaseModel):
+    status: str  # "sent" | "too_frequent"
+    # Only populated in development mode when no email provider is set —
+    # lets the local user click through without a real inbox. Never
+    # returned when RESEND_API_KEY is configured.
+    dev_url: str | None = None
+
+
 # ---------- Verify (public; consumes a magic-link token) ----------
 
 

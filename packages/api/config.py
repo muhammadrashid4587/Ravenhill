@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     # When the frontend lives at this origin, the cookie is scoped to it.
     # Used to build invite_url and to set the correct cookie domain/secure.
     site_url: str = "http://localhost:3000"
+    # Self-serve sign-in magic links. Tighter TTL than admin invites.
+    signin_ttl_minutes: int = 15
+    # Minimum interval between self-serve sign-in requests for the same
+    # email. Prevents a single actor from spamming a user with links.
+    signin_throttle_seconds: int = 60
+
+    # Email delivery (Resend). If unset, the backend logs the sign-in URL
+    # to stdout instead of sending — dev-friendly, fail-closed for prod.
+    resend_api_key: str = ""
+    email_from: str = "Ravenhill <onboarding@resend.dev>"
 
     # env_file is a best-effort load: pydantic-settings v2 silently skips it
     # when the file doesn't exist (e.g. on Fly.io where secrets are injected

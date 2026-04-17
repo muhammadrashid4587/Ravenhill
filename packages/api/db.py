@@ -150,6 +150,10 @@ class AuthInviteRow(Base):
     name = Column(String(200), nullable=False)
     role = Column(String(200), nullable=False, default="Employee")
     department = Column(String(200), nullable=False, default="General")
+    # True when the invite is a self-serve sign-in token for an existing
+    # account. The consume step skips the profile update in that case so
+    # a re-login doesn't clobber user-edited fields.
+    is_login_only = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used_at = Column(DateTime(timezone=True), nullable=True)
@@ -321,6 +325,7 @@ async def alter_table_if_needed():
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS trust_level VARCHAR(20) DEFAULT 'auto'",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS role_description TEXT DEFAULT ''",
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_email_nonempty ON agents (LOWER(email)) WHERE email IS NOT NULL AND email <> ''",
+            "ALTER TABLE auth_invites ADD COLUMN IF NOT EXISTS is_login_only BOOLEAN NOT NULL DEFAULT FALSE",
         ]:
             try:
                 await conn.execute(text(col_def))

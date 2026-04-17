@@ -8,6 +8,7 @@ from config import settings
 from db import AgentRow
 
 from .deps import get_current_agent_optional, require_admin_token
+from .email import send_signin_email
 from .models import (
     AccessRequestPayload,
     AccessRequestResponse,
@@ -15,12 +16,16 @@ from .models import (
     InvitePayload,
     InviteResponse,
     MeResponse,
+    SignInRequestPayload,
+    SignInRequestResponse,
     VerifyPayload,
 )
 from .service import (
+    SignInError,
     consume_invite,
     create_dev_session_for_agent,
     create_invite,
+    create_signin_token,
     delete_session,
     record_access_request,
 )
@@ -106,6 +111,58 @@ async def issue_invite(payload: InvitePayload) -> InviteResponse:
         invite_url=invite_url,
         token=row.token,
         expires_at=row.expires_at,
+    )
+
+
+# ---------- Public: self-serve sign-in ----------
+
+
+@router.post("/sign-in-request", response_model=SignInRequestResponse)
+async def sign_in_request(payload: SignInRequestPayload) -> SignInRequestResponse:
+    """Self-serve sign-in: email us and, if you're on the allowlist, we
+    email you a fresh one-shot login link.
+
+    404 with `email_not_admitted` if the email isn't tied to an active
+    Agent — the frontend uses that to route the visitor to request-access.
+    429 with `too_frequent` if a link was issued in the last minute.
+    """
+    try:
+        agent, _invite, invite_url = await create_signin_token(payload.email)
+    except SignInError as e:
+        if e.code == "email_not_admitted":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="email_not_admitted",
+            )
+        if e.code == "too_frequent":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="too_frequent",
+            )
+        raise
+
+    try:
+        result = await send_signin_email(
+            to=agent.email or payload.email,
+            name=agent.name,
+            invite_url=invite_url,
+        )
+    except RuntimeError:
+        # Resend rejected the send. Treat as a 500 so the admin knows.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="email_send_failed",
+        )
+
+    # Only surface the URL in dev mode so the local user can test without
+    # a configured email provider.
+    dev_url = None
+    if (not result.sent) and settings.app_env == "development":
+        dev_url = result.dev_url
+
+    return SignInRequestResponse(
+        status="sent" if result.sent else "logged",
+        dev_url=dev_url,
     )
 
 

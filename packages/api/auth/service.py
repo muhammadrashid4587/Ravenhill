@@ -9,7 +9,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, select
 
 import db
 from config import settings
@@ -104,6 +104,70 @@ async def create_invite(
     return row, invite_url
 
 
+class SignInError(Exception):
+    """Raised by create_signin_token for a named failure state. `code`
+    is the machine-readable reason the router translates to user-facing
+    copy."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+async def create_signin_token(email: str) -> tuple[AgentRow, AuthInviteRow, str]:
+    """Self-serve sign-in. Validates the email is admitted, throttles,
+    and returns a short-lived login-only invite.
+
+    Raises SignInError('email_not_admitted') if no Agent exists for this
+    email. Raises SignInError('too_frequent') if a link was issued
+    recently — the caller should tell the user to check their email.
+    """
+    email_norm = _normalize_email(email)
+    now = _now()
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.email == email_norm)
+        )
+        agent = result.scalar_one_or_none()
+        if agent is None or not agent.is_active:
+            raise SignInError("email_not_admitted")
+
+        # Throttle: refuse if a login-only invite for this email was
+        # created in the last `signin_throttle_seconds`.
+        throttle_cutoff = now - timedelta(seconds=settings.signin_throttle_seconds)
+        recent = await session.execute(
+            select(AuthInviteRow).where(
+                and_(
+                    AuthInviteRow.email == email_norm,
+                    AuthInviteRow.is_login_only.is_(True),
+                    AuthInviteRow.created_at > throttle_cutoff,
+                )
+            )
+        )
+        if recent.scalars().first() is not None:
+            raise SignInError("too_frequent")
+
+        token = _generate_token()
+        row = AuthInviteRow(
+            token=token,
+            email=email_norm,
+            name=agent.name,
+            role=agent.role,
+            department=(agent.departments or ["General"])[0],
+            is_login_only=True,
+            expires_at=now + timedelta(minutes=settings.signin_ttl_minutes),
+        )
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+        await session.refresh(agent)
+
+    site_url = settings.site_url.rstrip("/")
+    invite_url = f"{site_url}/login/verify?token={token}"
+    return agent, row, invite_url
+
+
 async def consume_invite(token: str) -> tuple[AgentRow, AuthSessionRow]:
     """Mark an invite as used, create-or-update the Agent, create a session.
 
@@ -139,13 +203,16 @@ async def consume_invite(token: str) -> tuple[AgentRow, AuthSessionRow]:
             )
             session.add(agent)
             await session.flush()  # assign id
-        else:
-            # Update profile from the invite — the admin is authoritative
-            # about name/role/department at invite time.
+        elif not invite.is_login_only:
+            # Admin-issued invite — the admin is authoritative about
+            # name/role/department at invite time.
             agent.name = invite.name
             agent.role = invite.role
             if invite.department and invite.department not in (agent.departments or []):
                 agent.departments = [invite.department]
+        # Self-serve login tokens (is_login_only=True) never mutate the
+        # Agent profile — the user might have edited their own fields
+        # between login events.
 
         # Create the session.
         session_row = AuthSessionRow(
