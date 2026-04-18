@@ -20,6 +20,8 @@ import {
   Mail,
   Video,
   ExternalLink,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { fetchMeetings, fetchStats, fetchActivity, type Meeting } from "@/lib/api";
@@ -39,10 +41,20 @@ import {
 } from "@/lib/types";
 
 const PRIORITY_STYLES: Record<string, string> = {
-  high: "bg-[rgba(201,68,58,0.10)] text-[#E68A82] border-[rgba(201,68,58,0.28)]",
-  medium: "bg-[rgba(201,138,43,0.10)] text-[#E6BA75] border-[rgba(201,138,43,0.28)]",
+  high: "bg-[rgba(220,38,38,0.14)] text-[#F87171] border-[rgba(220,38,38,0.40)]",
+  medium: "bg-[rgba(234,179,8,0.14)] text-[#FACC15] border-[rgba(234,179,8,0.40)]",
   low: "bg-white/[0.04] text-parchment border-white/[0.08]",
+  done: "bg-[rgba(34,197,94,0.14)] text-[#4ADE80] border-[rgba(34,197,94,0.40)]",
 };
+
+function taskChipStyle(item: { status: TaskStatus; priority: string }) {
+  if (item.status === "done") return PRIORITY_STYLES.done;
+  return PRIORITY_STYLES[item.priority] ?? PRIORITY_STYLES.medium;
+}
+
+function taskChipLabel(item: { status: TaskStatus; priority: string }) {
+  return item.status === "done" ? "done" : item.priority;
+}
 
 const STATUS_ICONS: Record<TaskStatus, typeof Circle> = {
   todo: Circle,
@@ -92,6 +104,38 @@ export default function DashboardPage() {
   const [view, setView] = useState<"list" | "board">("list");
   const [dashTab, setDashTab] = useState<"overview" | "workspace">("overview");
   const [loading, setLoading] = useState(true);
+  const [showOverview, setShowOverview] = useState(true);
+  const [showActivity, setShowActivity] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const o = window.localStorage.getItem("dash.showOverview");
+    const a = window.localStorage.getItem("dash.showActivity");
+    if (o !== null) setShowOverview(o === "1");
+    if (a !== null) setShowActivity(a === "1");
+  }, []);
+
+  const toggleOverview = () => {
+    setShowOverview((v) => {
+      const next = !v;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("dash.showOverview", next ? "1" : "0");
+      }
+      return next;
+    });
+  };
+
+  const toggleActivity = () => {
+    setShowActivity((v) => {
+      const next = !v;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("dash.showActivity", next ? "1" : "0");
+      }
+      return next;
+    });
+  };
+
+  const sideVisible = showOverview || showActivity;
 
   useEffect(() => {
     Promise.all([
@@ -219,18 +263,43 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          {/* Two-column layout */}
-          <div className="grid grid-cols-5 gap-6">
+          {/* Two-column layout — side column collapses when both panels hidden */}
+          <div
+            className={
+              sideVisible
+                ? "grid grid-cols-5 gap-6"
+                : "grid grid-cols-1"
+            }
+          >
             {/* Left: Tasks */}
-            <div className="col-span-3 animate-fade-up" style={{ animationDelay: "200ms" }}>
-              <div className="flex items-center justify-between mb-3">
+            <div
+              className={`${sideVisible ? "col-span-3" : "col-span-1"} animate-fade-up`}
+              style={{ animationDelay: "200ms" }}
+            >
+              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
                 <h2 className="text-sm font-medium text-parchment">
                   Your Tasks
                   {openPending.length > 0 && (
                     <span className="ml-2 text-xs text-dusk">{openPending.length} open</span>
                   )}
                 </h2>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div
+                    role="group"
+                    aria-label="Panel visibility"
+                    className="flex items-center bg-ink border border-white/[0.06] rounded-lg p-0.5"
+                  >
+                    <PanelToggle
+                      label="Overview"
+                      on={showOverview}
+                      onClick={toggleOverview}
+                    />
+                    <PanelToggle
+                      label="Activity"
+                      on={showActivity}
+                      onClick={toggleActivity}
+                    />
+                  </div>
                   <div
                     role="tablist"
                     aria-label="Task view"
@@ -299,7 +368,7 @@ export default function DashboardPage() {
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-3 stagger">
+                <div className={`grid gap-3 stagger ${sideVisible ? "grid-cols-3" : "grid-cols-3 lg:grid-cols-3"}`}>
                   {BOARD_COLUMNS.map((col) => (
                     <BoardColumn key={col} status={col} items={byStatus[col]} />
                   ))}
@@ -308,8 +377,9 @@ export default function DashboardPage() {
             </div>
 
             {/* Right: Stats + Activity */}
+            {sideVisible && (
             <div className="col-span-2 space-y-6 animate-fade-up" style={{ animationDelay: "300ms" }}>
-              {stats && (
+              {showOverview && stats && (
                 <div>
                   <h2 className="text-sm font-medium text-parchment mb-3">Overview</h2>
                   <div className="grid grid-cols-2 gap-2 stagger">
@@ -333,49 +403,78 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-medium text-parchment">Recent Activity</h2>
-                  <Link
-                    href="/activity"
-                    className="text-[11px] text-smoke hover:text-parchment flex items-center gap-1 transition"
-                  >
-                    View all <ArrowRight className="w-3 h-3" />
-                  </Link>
-                </div>
-                {activity.length === 0 ? (
-                  <div className="bg-ink border border-white/[0.06] rounded-lg p-4 text-center">
-                    <p className="text-xs text-dusk">No recent activity</p>
+              {showActivity && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-sm font-medium text-parchment">Recent Activity</h2>
+                    <Link
+                      href="/activity"
+                      className="text-[11px] text-smoke hover:text-parchment flex items-center gap-1 transition"
+                    >
+                      View all <ArrowRight className="w-3 h-3" />
+                    </Link>
                   </div>
-                ) : (
-                  <div className="space-y-1 stagger">
-                    {activity.slice(0, 6).map((a) => (
-                      <div
-                        key={a.id}
-                        className="bg-ink border border-white/[0.06] rounded-lg px-3 py-2 card-lift animate-fade-up"
-                      >
-                        <p className="text-xs text-parchment truncate">{a.description}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-dusk">{a.from_agent}</span>
-                          {a.created_at && (
-                            <span className="text-[10px] text-dusk">
-                              {new Date(a.created_at).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          )}
+                  {activity.length === 0 ? (
+                    <div className="bg-ink border border-white/[0.06] rounded-lg p-4 text-center">
+                      <p className="text-xs text-dusk">No recent activity</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1 stagger">
+                      {activity.slice(0, 6).map((a) => (
+                        <div
+                          key={a.id}
+                          className="bg-ink border border-white/[0.06] rounded-lg px-3 py-2 card-lift animate-fade-up"
+                        >
+                          <p className="text-xs text-parchment truncate">{a.description}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[10px] text-dusk">{a.from_agent}</span>
+                            {a.created_at && (
+                              <span className="text-[10px] text-dusk">
+                                {new Date(a.created_at).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+            )}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function PanelToggle({
+  label,
+  on,
+  onClick,
+}: {
+  label: string;
+  on: boolean;
+  onClick: () => void;
+}) {
+  const Icon = on ? Eye : EyeOff;
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={on}
+      title={on ? `Hide ${label}` : `Show ${label}`}
+      className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md transition ${
+        on
+          ? "bg-white/[0.08] text-bone"
+          : "text-smoke hover:text-parchment"
+      }`}
+    >
+      <Icon className="w-3 h-3" /> {label}
+    </button>
   );
 }
 
@@ -390,16 +489,14 @@ function PendingRow({ item }: { item: PendingItem }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm text-bone truncate">{item.title}</span>
           <span
-            className={`text-[9px] px-1.5 py-0.5 rounded border ${
-              PRIORITY_STYLES[item.priority] ?? PRIORITY_STYLES.medium
-            }`}
+            className={`text-[9px] px-1.5 py-0.5 rounded border ${taskChipStyle(item)}`}
           >
-            {item.priority}
+            {taskChipLabel(item)}
           </span>
           {stale && (
             <span
               title="Lifespan exceeded"
-              className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(201,138,43,0.10)] text-[#E6BA75] border-[rgba(201,138,43,0.28)]"
+              className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(234,179,8,0.14)] text-[#FACC15] border-[rgba(234,179,8,0.40)]"
             >
               <AlertTriangle className="w-2.5 h-2.5" /> stale
             </span>
@@ -645,16 +742,14 @@ function BoardCard({ item }: { item: PendingItem }) {
       <p className="text-xs text-bone leading-snug line-clamp-2">{item.title}</p>
       <div className="flex items-center gap-1 mt-2 flex-wrap">
         <span
-          className={`text-[9px] px-1.5 py-0.5 rounded border ${
-            PRIORITY_STYLES[item.priority] ?? PRIORITY_STYLES.medium
-          }`}
+          className={`text-[9px] px-1.5 py-0.5 rounded border ${taskChipStyle(item)}`}
         >
-          {item.priority}
+          {taskChipLabel(item)}
         </span>
         {stale && (
           <span
             title="Lifespan exceeded"
-            className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(201,138,43,0.10)] text-[#E6BA75] border-[rgba(201,138,43,0.28)]"
+            className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(234,179,8,0.14)] text-[#FACC15] border-[rgba(234,179,8,0.40)]"
           >
             <AlertTriangle className="w-2.5 h-2.5" /> stale
           </span>

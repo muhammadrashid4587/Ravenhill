@@ -12,6 +12,7 @@ from approvals.router import router as approvals_router
 from events.router import router as events_router
 from graph.router import router as graph_router
 from integrations.slack.router import router as slack_router
+from integrations.workspace.router import router as workspace_router
 from meetings.router import router as meetings_router
 from orchestrator import router as orchestrator_router
 
@@ -58,6 +59,7 @@ app.include_router(approvals_router, prefix="/api/approvals", tags=["approvals"]
 app.include_router(events_router, prefix="/api/events", tags=["events"])
 app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
 app.include_router(slack_router, prefix="/api/integrations/slack", tags=["integrations"])
+app.include_router(workspace_router, prefix="/api/workspace", tags=["workspace"])
 app.include_router(meetings_router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(orchestrator_router, prefix="/api/orchestrate", tags=["orchestrator"])
 

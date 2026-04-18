@@ -147,6 +147,97 @@ export async function fetchHealth() {
   return res.json();
 }
 
+// ---- Google Workspace (Calendar / Drive / Gmail) ----
+
+export async function fetchWorkspaceCalendar(agentId?: string) {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await fetch(`${API_BASE}/api/workspace/calendar/events${params}`);
+  if (!res.ok) throw new Error(`calendar fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWorkspaceDriveFiles(agentId?: string) {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await fetch(`${API_BASE}/api/workspace/drive/files${params}`);
+  if (!res.ok) throw new Error(`drive files failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWorkspaceDriveFolders(agentId?: string) {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await fetch(`${API_BASE}/api/workspace/drive/folders${params}`);
+  if (!res.ok) throw new Error(`drive folders failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchGmailThreads(agentId?: string, limit = 25) {
+  const params = new URLSearchParams();
+  if (agentId) params.set("agent_id", agentId);
+  params.set("limit", String(limit));
+  const res = await fetch(`${API_BASE}/api/workspace/gmail/threads?${params}`);
+  if (!res.ok) throw new Error(`gmail threads failed: ${res.status}`);
+  return res.json();
+}
+
+export async function ingestGmailTopics(agentId?: string, limit = 25) {
+  const params = new URLSearchParams();
+  if (agentId) params.set("agent_id", agentId);
+  params.set("limit", String(limit));
+  const res = await fetch(`${API_BASE}/api/workspace/gmail/ingest?${params}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`gmail ingest failed: ${res.status}`);
+  return res.json();
+}
+
+// ---- Google OAuth ----
+
+export interface GoogleStatus {
+  configured: boolean;
+  connected: boolean;
+  agent_id: string;
+  scopes: string[];
+}
+
+export async function fetchGoogleStatus(agentId?: string): Promise<GoogleStatus> {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await fetch(`${API_BASE}/api/workspace/google/status${params}`);
+  if (!res.ok) throw new Error(`google status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchGoogleAuthUrl(): Promise<{ auth_url: string }> {
+  const res = await fetch(`${API_BASE}/api/workspace/google/auth-url`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `auth-url failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function submitGoogleCallback(code: string, agentId?: string) {
+  const params = new URLSearchParams();
+  params.set("code", code);
+  if (agentId) params.set("agent_id", agentId);
+  const res = await fetch(`${API_BASE}/api/workspace/google/callback?${params}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `callback failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function disconnectGoogle(agentId?: string) {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await fetch(`${API_BASE}/api/workspace/google/disconnect${params}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`disconnect failed: ${res.status}`);
+  return res.json();
+}
+
 /**
  * Subscribe to real-time activity events via SSE.
  * Returns a cleanup function to close the connection.

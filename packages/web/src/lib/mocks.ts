@@ -373,7 +373,69 @@ export const mockWorkspaceFiles: WorkspaceFile[] = [
     url: "#",
     source: "google_drive",
   },
+  {
+    id: "f4",
+    name: "Q2 Pricing Deck.gslides",
+    mime_type: "application/vnd.google-apps.presentation",
+    owner: "karen@e-agent.ai",
+    last_modified: daysAgo(0.4),
+    url: "#",
+    source: "google_drive",
+  },
+  {
+    id: "f5",
+    name: "Focus group raw export.csv",
+    mime_type: "text/csv",
+    owner: "marco@e-agent.ai",
+    last_modified: daysAgo(2.1),
+    url: "#",
+    source: "google_drive",
+  },
+  {
+    id: "f6",
+    name: "Board memo - April 2026.gdoc",
+    mime_type: "application/vnd.google-apps.document",
+    owner: "max@e-agent.ai",
+    last_modified: daysAgo(4),
+    url: "#",
+    source: "google_drive",
+  },
+  {
+    id: "f7",
+    name: "SLS Demo Recording.mp4",
+    mime_type: "video/mp4",
+    owner: "likitha@e-agent.ai",
+    last_modified: daysAgo(1.8),
+    url: "#",
+    source: "google_drive",
+  },
 ];
+
+export interface DriveFolder {
+  id: string;
+  name: string;
+  file_ids: string[];
+  shared_with?: string[];
+}
+
+export const mockDriveFolders: DriveFolder[] = [
+  { id: "root", name: "My Drive", file_ids: ["f1", "f2", "f3", "f4", "f5", "f6", "f7"] },
+  { id: "shared", name: "Shared with me", file_ids: ["f4", "f5"], shared_with: ["karen@e-agent.ai", "marco@e-agent.ai"] },
+  { id: "starred", name: "Starred", file_ids: ["f1", "f4"] },
+  { id: "recent", name: "Recent", file_ids: ["f1", "f7", "f2", "f3"] },
+  { id: "meet", name: "Meet Recordings", file_ids: ["f7"] },
+];
+
+export async function fetchDriveFolders(agentId?: string): Promise<DriveFolder[]> {
+  try {
+    const { fetchWorkspaceDriveFolders } = await import("./api");
+    const res = await fetchWorkspaceDriveFolders(agentId);
+    if (Array.isArray(res)) return res as DriveFolder[];
+  } catch {
+    /* fall through */
+  }
+  return mockDriveFolders;
+}
 
 export const mockWorkspaceEmails: WorkspaceEmail[] = [
   {
@@ -396,16 +458,40 @@ export const mockWorkspaceEmails: WorkspaceEmail[] = [
   },
 ];
 
-export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
-  return Promise.resolve(mockCalendarEvents);
+// These three prefer the live backend when it's up; fall back to the canned
+// fixtures above so the frontend never breaks mid-demo. Once every consumer
+// is ported to api.ts directly, the seed constants can be deleted.
+export async function fetchCalendarEvents(agentId?: string): Promise<CalendarEvent[]> {
+  try {
+    const { fetchWorkspaceCalendar } = await import("./api");
+    const res = await fetchWorkspaceCalendar(agentId);
+    if (Array.isArray(res)) return res as CalendarEvent[];
+  } catch {
+    /* fall through */
+  }
+  return mockCalendarEvents;
 }
 
-export async function fetchWorkspaceFiles(): Promise<WorkspaceFile[]> {
-  return Promise.resolve(mockWorkspaceFiles);
+export async function fetchWorkspaceFiles(agentId?: string): Promise<WorkspaceFile[]> {
+  try {
+    const { fetchWorkspaceDriveFiles } = await import("./api");
+    const res = await fetchWorkspaceDriveFiles(agentId);
+    if (Array.isArray(res)) return res as WorkspaceFile[];
+  } catch {
+    /* fall through */
+  }
+  return mockWorkspaceFiles;
 }
 
-export async function fetchWorkspaceEmails(): Promise<WorkspaceEmail[]> {
-  return Promise.resolve(mockWorkspaceEmails);
+export async function fetchWorkspaceEmails(agentId?: string): Promise<WorkspaceEmail[]> {
+  try {
+    const { fetchGmailThreads } = await import("./api");
+    const res = await fetchGmailThreads(agentId);
+    if (Array.isArray(res)) return res as WorkspaceEmail[];
+  } catch {
+    /* fall through */
+  }
+  return mockWorkspaceEmails;
 }
 
 // ------------------------------------------------------------
@@ -611,6 +697,176 @@ export async function fetchSlackThread(channelId: string): Promise<SlackMessage[
 // ------------------------------------------------------------
 // File summaries — what the receiving agent "reads" from an attachment
 // ------------------------------------------------------------
+
+// ------------------------------------------------------------
+// HRIS providers + roster import
+// ------------------------------------------------------------
+
+export type HRISProviderId =
+  | "rippling"
+  | "gusto"
+  | "bamboohr"
+  | "workday"
+  | "deel";
+
+export interface HRISProvider {
+  id: HRISProviderId;
+  name: string;
+  seat_count: number;
+  last_sync?: string;
+}
+
+export const mockHRISProviders: HRISProvider[] = [
+  { id: "rippling", name: "Rippling", seat_count: 61 },
+  { id: "gusto", name: "Gusto", seat_count: 42 },
+  { id: "bamboohr", name: "BambooHR", seat_count: 128 },
+  { id: "workday", name: "Workday", seat_count: 340 },
+  { id: "deel", name: "Deel", seat_count: 24 },
+];
+
+export interface HRISRosterRow {
+  name: string;
+  email: string;
+  role: string;
+  department: string;
+  manager?: string;
+  start_date?: string;
+  employment_type: "full_time" | "contractor" | "intern";
+}
+
+const SAMPLE_ROSTER: HRISRosterRow[] = [
+  {
+    name: "Max Ravenhill",
+    email: "max@e-agent.ai",
+    role: "Chief Executive Officer",
+    department: "Executive",
+    employment_type: "full_time",
+    start_date: "2025-11-01",
+  },
+  {
+    name: "Muhammad Rashid",
+    email: "muhammad@e-agent.ai",
+    role: "Chief Technology Officer",
+    department: "Engineering",
+    manager: "Max Ravenhill",
+    employment_type: "full_time",
+    start_date: "2025-12-01",
+  },
+  {
+    name: "Likitha Kamble",
+    email: "likitha@e-agent.ai",
+    role: "Chief Operating Officer",
+    department: "Product",
+    manager: "Max Ravenhill",
+    employment_type: "full_time",
+    start_date: "2025-12-01",
+  },
+  {
+    name: "Karen Park",
+    email: "karen@e-agent.ai",
+    role: "Head of Finance",
+    department: "Finance",
+    manager: "Max Ravenhill",
+    employment_type: "full_time",
+    start_date: "2026-01-15",
+  },
+  {
+    name: "Jordan Chen",
+    email: "jordan@e-agent.ai",
+    role: "Senior Account Executive",
+    department: "Sales",
+    manager: "Max Ravenhill",
+    employment_type: "full_time",
+    start_date: "2026-02-03",
+  },
+  {
+    name: "Priya Shah",
+    email: "priya@e-agent.ai",
+    role: "Staff Engineer",
+    department: "Engineering",
+    manager: "Muhammad Rashid",
+    employment_type: "full_time",
+    start_date: "2026-02-17",
+  },
+  {
+    name: "Marco Li",
+    email: "marco@e-agent.ai",
+    role: "Product Manager",
+    department: "Product",
+    manager: "Likitha Kamble",
+    employment_type: "full_time",
+    start_date: "2026-03-01",
+  },
+  {
+    name: "Amelia Ortiz",
+    email: "amelia@e-agent.ai",
+    role: "Design Lead",
+    department: "Product",
+    manager: "Likitha Kamble",
+    employment_type: "full_time",
+    start_date: "2026-03-17",
+  },
+  {
+    name: "Devon Ray",
+    email: "devon@e-agent.ai",
+    role: "Recruiter (Contract)",
+    department: "People",
+    manager: "Max Ravenhill",
+    employment_type: "contractor",
+    start_date: "2026-04-01",
+  },
+  {
+    name: "Noa Kim",
+    email: "noa@e-agent.ai",
+    role: "Software Engineering Intern",
+    department: "Engineering",
+    manager: "Priya Shah",
+    employment_type: "intern",
+    start_date: "2026-04-07",
+  },
+];
+
+export async function fetchHRISProviders(): Promise<HRISProvider[]> {
+  return Promise.resolve(mockHRISProviders);
+}
+
+export async function pullHRISRoster(
+  providerId: HRISProviderId,
+): Promise<HRISRosterRow[]> {
+  // Simulate a small network delay so the UI feels real.
+  await new Promise((r) => setTimeout(r, 700 + Math.random() * 600));
+  const seatCount =
+    mockHRISProviders.find((p) => p.id === providerId)?.seat_count ??
+    SAMPLE_ROSTER.length;
+  // Return the full sample roster regardless of provider — seat_count is a label.
+  void seatCount;
+  return SAMPLE_ROSTER;
+}
+
+export function parseHRISCsv(csv: string): HRISRosterRow[] {
+  const lines = csv
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const idx = (name: string) => headers.indexOf(name);
+  return lines.slice(1).map((line) => {
+    const cols = line.split(",").map((c) => c.trim());
+    const get = (name: string) => (idx(name) >= 0 ? cols[idx(name)] : "");
+    return {
+      name: get("name"),
+      email: get("email"),
+      role: get("role") || get("title"),
+      department: get("department") || get("team") || "Other",
+      manager: get("manager") || undefined,
+      start_date: get("start_date") || undefined,
+      employment_type:
+        (get("employment_type") as HRISRosterRow["employment_type"]) ||
+        "full_time",
+    };
+  });
+}
 
 export const sampleFileUrl = "/samples/q2-launch-prd.md";
 

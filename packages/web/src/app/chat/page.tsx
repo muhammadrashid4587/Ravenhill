@@ -13,6 +13,8 @@ import {
   Hash,
   Lock,
   MessageCircle,
+  Mic,
+  MicOff,
   X,
   FileText,
 } from "lucide-react";
@@ -43,6 +45,32 @@ import type {
 } from "@/lib/types";
 
 // ---- Types ----
+
+interface SpeechRecognitionResultItem {
+  transcript: string;
+}
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionResultItem;
+}
+interface SpeechRecognitionResultList {
+  length: number;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: SpeechRecognitionEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
 
 interface Message {
   id: string;
@@ -153,6 +181,10 @@ export default function ChatPage() {
   const { agent: myAgent } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [listening, setListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(true);
+  const recognitionRef = useRef<unknown>(null);
+  const voiceBaseRef = useRef<string>("");
   const [loading, setLoading] = useState(false);
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -382,6 +414,81 @@ export default function ChatPage() {
   };
 
   // ---- Streaming orchestration ----
+  const toggleVoice = () => {
+    if (typeof window === "undefined") return;
+    const w = window as typeof window & {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    };
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!SR) {
+      setVoiceSupported(false);
+      alert(
+        "Voice input isn't supported in this browser. Use Chrome, Edge, or Safari.",
+      );
+      return;
+    }
+
+    const current = recognitionRef.current as SpeechRecognitionLike | null;
+    if (listening && current) {
+      try {
+        current.stop();
+      } catch {
+        /* ignore */
+      }
+      setListening(false);
+      return;
+    }
+
+    const rec = new SR();
+    rec.lang = "en-US";
+    rec.interimResults = true;
+    rec.continuous = true;
+    voiceBaseRef.current = input ? input.replace(/\s+$/, "") + " " : "";
+
+    rec.onresult = (e: SpeechRecognitionEvent) => {
+      let finalText = "";
+      let interimText = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        const txt = r[0]?.transcript ?? "";
+        if (r.isFinal) finalText += txt;
+        else interimText += txt;
+      }
+      if (finalText) {
+        voiceBaseRef.current = (voiceBaseRef.current + finalText).replace(
+          /\s+/g,
+          " ",
+        );
+      }
+      const merged = (voiceBaseRef.current + interimText).trimStart();
+      setInput(merged);
+    };
+    rec.onerror = () => setListening(false);
+    rec.onend = () => setListening(false);
+
+    try {
+      rec.start();
+      recognitionRef.current = rec;
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      const current = recognitionRef.current as SpeechRecognitionLike | null;
+      if (current) {
+        try {
+          current.stop();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+  }, []);
+
   const handleSend = async (text?: string) => {
     const message = text || input.trim();
     const attachmentsToSend = pendingAttachments;
@@ -944,6 +1051,33 @@ export default function ChatPage() {
                   className="shrink-0 flex items-center justify-center w-10 h-10 rounded-xl bg-ink border border-white/[0.06] hover:border-white/[0.12] text-smoke hover:text-parchment transition disabled:opacity-40"
                 >
                   <Paperclip className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleVoice}
+                  disabled={loading || !voiceSupported}
+                  aria-pressed={listening}
+                  aria-label={listening ? "Stop dictation" : "Dictate"}
+                  title={
+                    !voiceSupported
+                      ? "Voice input not supported in this browser"
+                      : listening
+                        ? "Stop dictation"
+                        : "Dictate"
+                  }
+                  className={`shrink-0 flex items-center justify-center w-10 h-10 rounded-xl border transition disabled:opacity-40 ${
+                    listening
+                      ? "bg-[rgba(220,38,38,0.18)] border-[rgba(220,38,38,0.45)] text-[#F87171] animate-pulse"
+                      : "bg-ink border-white/[0.06] hover:border-white/[0.12] text-smoke hover:text-parchment"
+                  }`}
+                >
+                  {listening ? (
+                    <Mic className="w-4 h-4" />
+                  ) : voiceSupported ? (
+                    <Mic className="w-4 h-4" />
+                  ) : (
+                    <MicOff className="w-4 h-4" />
+                  )}
                 </button>
                 <input
                   ref={inputRef}

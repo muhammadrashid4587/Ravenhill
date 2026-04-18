@@ -24,10 +24,13 @@ log = logging.getLogger("integrations.google_meet")
 # Phase 1: simple dict. Phase 2: encrypted in Postgres.
 _token_store: dict[str, dict] = {}
 
-# Google OAuth scopes needed
+# Google OAuth scopes needed.
+# Single consent covers Calendar + Drive + Gmail so one OAuth flow unlocks
+# every workspace surface (Calendar, Drive, Inbox, Meet transcript fetch).
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
 

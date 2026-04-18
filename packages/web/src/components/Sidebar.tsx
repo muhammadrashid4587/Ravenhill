@@ -2,24 +2,38 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
   MessageSquare,
   Building2,
-  CalendarCheck,
+  CalendarDays,
   LogOut,
   ShieldCheck,
+  MoreHorizontal,
+  CalendarCheck,
+  HardDriveUpload,
+  Brain,
+  Inbox,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
 
-const NAV_ITEMS = [
+const PRIMARY_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/approvals", label: "Approvals", icon: ShieldCheck },
+  { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/organization", label: "Organization", icon: Building2 },
+];
+
+const SECONDARY_NAV = [
   { href: "/meetings", label: "Meetings", icon: CalendarCheck },
+  { href: "/inbox", label: "Inbox", icon: Inbox },
+  { href: "/drive", label: "Drive", icon: HardDriveUpload },
+  { href: "/knowledge", label: "Knowledge", icon: Brain },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export default function Sidebar() {
@@ -27,9 +41,13 @@ export default function Sidebar() {
   const { agent: myAgent, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
+
+  const secondaryActive = SECONDARY_NAV.some((n) => isActive(n.href));
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -47,11 +65,31 @@ export default function Sidebar() {
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
+
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
+
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-obsidian/80 backdrop-blur-xl">
       <div className="flex items-center justify-between h-12 px-4">
         {/* Left: logo + nav */}
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-8">
           <Link href="/home" className="flex items-center gap-2 group shrink-0">
             <div className="w-6 h-6 rounded-md bg-oxblood flex items-center justify-center group-hover:bg-claret transition">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
@@ -63,8 +101,8 @@ export default function Sidebar() {
             </span>
           </Link>
 
-          <div className="flex items-center gap-1">
-            {NAV_ITEMS.map((item) => {
+          <div className="flex items-center gap-0.5">
+            {PRIMARY_NAV.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               return (
@@ -88,6 +126,60 @@ export default function Sidebar() {
                 </Link>
               );
             })}
+
+            {/* More popover */}
+            <div className="relative" ref={moreRef}>
+              <button
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-medium transition-all duration-200 ${
+                  moreOpen || secondaryActive
+                    ? "text-bone bg-white/[0.06]"
+                    : "text-smoke hover:text-parchment hover:bg-white/[0.04]"
+                }`}
+              >
+                <MoreHorizontal
+                  className={`w-4 h-4 ${secondaryActive ? "text-claret" : ""}`}
+                  strokeWidth={1.75}
+                />
+                <span>More</span>
+                {secondaryActive && (
+                  <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-oxblood rounded-full" />
+                )}
+              </button>
+
+              {moreOpen && (
+                <div
+                  role="menu"
+                  className="absolute left-0 top-full mt-1.5 w-52 bg-obsidian border border-white/[0.08] rounded-lg shadow-[0_10px_40px_-12px_rgba(0,0,0,0.8)] py-1 animate-fade-up"
+                  style={{ animationDuration: "140ms" }}
+                >
+                  {SECONDARY_NAV.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        role="menuitem"
+                        className={`flex items-center gap-2.5 px-3 py-2 text-[13px] transition ${
+                          active
+                            ? "text-bone bg-white/[0.06]"
+                            : "text-smoke hover:text-parchment hover:bg-white/[0.04]"
+                        }`}
+                      >
+                        <Icon
+                          className={`w-4 h-4 ${active ? "text-claret" : "text-dusk"}`}
+                          strokeWidth={1.75}
+                        />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

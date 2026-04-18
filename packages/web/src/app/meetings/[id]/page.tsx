@@ -25,9 +25,10 @@ import {
 } from "@/lib/api";
 
 const PRIORITY_STYLES: Record<string, string> = {
-  high: "bg-red-500/10 text-red-400 border-red-500/20",
-  medium: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  high: "bg-red-600/15 text-red-400 border-red-500/40",
+  medium: "bg-yellow-500/15 text-yellow-300 border-yellow-500/40",
   low: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+  done: "bg-green-500/15 text-green-400 border-green-500/40",
 };
 
 const STATUS_ICONS: Record<string, typeof Circle> = {
@@ -275,10 +276,12 @@ export default function MeetingDetailPage() {
                       </span>
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                          PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium
+                          task.status === "done"
+                            ? PRIORITY_STYLES.done
+                            : PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium
                         }`}
                       >
-                        {task.priority}
+                        {task.status === "done" ? "done" : task.priority}
                       </span>
                     </div>
                     <p className="text-xs text-zinc-500 leading-relaxed">
