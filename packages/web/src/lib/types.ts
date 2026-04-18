@@ -259,6 +259,72 @@ export interface AdminOrgStats {
 }
 
 // ============================================================
+// Slack surface (STUB — frontend mocks; real OAuth pending)
+// ============================================================
+
+export type SlackChannelKind = "channel" | "dm" | "group_dm";
+
+export interface SlackChannel {
+  id: string;
+  name: string;
+  kind: SlackChannelKind;
+  members?: string[];
+  unread: number;
+  last_message_at?: string;
+  is_private?: boolean;
+}
+
+export interface SlackMessage {
+  id: string;
+  channel_id: string;
+  author: string;
+  author_avatar?: string;
+  text: string;
+  timestamp: string;
+  reactions?: Array<{ emoji: string; count: number }>;
+  thread_reply_count?: number;
+}
+
+// ============================================================
+// Chat attachments + file summaries (STUB)
+// Files can be attached to messages in either direction. The
+// receiving agent returns a structured summary; both directions
+// render as a small file card inside the message bubble.
+// ============================================================
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  url?: string;
+  source: "upload" | "agent_reply" | "drive" | "slack";
+}
+
+export interface FileSummary {
+  attachment_id: string;
+  title: string;
+  one_liner: string;
+  contributors: Array<{ name: string; did: string }>;
+  action_items: Array<{ owner: string; task: string; due?: string }>;
+  open_questions?: string[];
+  generated_at: string;
+}
+
+// ============================================================
+// Meeting providers (STUB — deep-link only, no API creation)
+// ============================================================
+
+export type MeetingProvider = "google_meet" | "zoom";
+
+export interface MeetingProviderLinks {
+  provider: MeetingProvider;
+  start_instant: string;
+  create_for_later: string;
+  join_root: string;
+}
+
+// ============================================================
 // Onboarding (STUB — inference-first, HRIS deferred)
 // ============================================================
 

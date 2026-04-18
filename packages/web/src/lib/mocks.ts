@@ -9,12 +9,16 @@ import type {
   AdminOrgStats,
   Approval,
   CalendarEvent,
+  ChatAttachment,
   ExpertiseGraph,
+  FileSummary,
   NotificationItem,
   OnboardingState,
   PendingItem,
   Permission,
   ShadowProfile,
+  SlackChannel,
+  SlackMessage,
   WorkspaceEmail,
   WorkspaceFile,
 } from "./types";
@@ -424,6 +428,245 @@ export const mockAdminStats: AdminOrgStats = {
 
 export async function fetchAdminStats(): Promise<AdminOrgStats> {
   return Promise.resolve(mockAdminStats);
+}
+
+// ------------------------------------------------------------
+// Slack (channels, DMs, threaded messages)
+// ------------------------------------------------------------
+
+export const mockSlackChannels: SlackChannel[] = [
+  {
+    id: "C_GENERAL",
+    name: "general",
+    kind: "channel",
+    unread: 0,
+    last_message_at: daysAgo(0.05),
+  },
+  {
+    id: "C_ENG",
+    name: "eng",
+    kind: "channel",
+    unread: 3,
+    last_message_at: daysAgo(0.02),
+  },
+  {
+    id: "C_PRICING",
+    name: "pricing",
+    kind: "channel",
+    unread: 1,
+    last_message_at: daysAgo(0.3),
+    is_private: true,
+  },
+  {
+    id: "C_SLS",
+    name: "sls-launch",
+    kind: "channel",
+    unread: 5,
+    last_message_at: daysAgo(0.01),
+  },
+  {
+    id: "DM_MUHAMMAD",
+    name: "Muhammad Rashid",
+    kind: "dm",
+    unread: 2,
+    last_message_at: daysAgo(0.04),
+  },
+  {
+    id: "DM_MAX",
+    name: "Max Ravenhill",
+    kind: "dm",
+    unread: 0,
+    last_message_at: daysAgo(0.6),
+  },
+  {
+    id: "DM_KAREN",
+    name: "Karen Park",
+    kind: "dm",
+    unread: 1,
+    last_message_at: daysAgo(0.9),
+  },
+];
+
+const slackThreads: Record<string, SlackMessage[]> = {
+  C_ENG: [
+    {
+      id: "sm1",
+      channel_id: "C_ENG",
+      author: "Muhammad Rashid",
+      text: "Just pushed the Alembic migration for `users` + `oauth_tokens`. Can someone review before I run it against the dev db?",
+      timestamp: daysAgo(0.1),
+      reactions: [{ emoji: "👀", count: 2 }],
+      thread_reply_count: 4,
+    },
+    {
+      id: "sm2",
+      channel_id: "C_ENG",
+      author: "Priya Shah",
+      text: "On it — give me 20m.",
+      timestamp: daysAgo(0.09),
+    },
+    {
+      id: "sm3",
+      channel_id: "C_ENG",
+      author: "Muhammad Rashid",
+      text: "Also: Slack adapter token encryption needs a decision on KMS vs. Fernet. Leaning Fernet for V1, KMS when we have more budget.",
+      timestamp: daysAgo(0.02),
+      reactions: [{ emoji: "✅", count: 1 }],
+    },
+  ],
+  C_SLS: [
+    {
+      id: "sm4",
+      channel_id: "C_SLS",
+      author: "Max Ravenhill",
+      text: "SLS admin just provisioned 30 seats. We're a go for the 2026-06-01 target.",
+      timestamp: daysAgo(0.5),
+      reactions: [{ emoji: "🎉", count: 4 }, { emoji: "🚀", count: 2 }],
+    },
+    {
+      id: "sm5",
+      channel_id: "C_SLS",
+      author: "Likitha Kamble",
+      text: "Three-panel chat is wired up with mocks. Slack tab + file upload going in next.",
+      timestamp: daysAgo(0.02),
+    },
+    {
+      id: "sm6",
+      channel_id: "C_SLS",
+      author: "Max Ravenhill",
+      text: "Love it. Make sure the file drop flow can handle the Q2 PRD — that's what I'll show the design partner first.",
+      timestamp: daysAgo(0.01),
+    },
+  ],
+  C_PRICING: [
+    {
+      id: "sm7",
+      channel_id: "C_PRICING",
+      author: "Jordan Chen",
+      text: "Who owns the Q2 pricing deck? Karen, is that still you?",
+      timestamp: daysAgo(0.4),
+    },
+    {
+      id: "sm8",
+      channel_id: "C_PRICING",
+      author: "Karen Park",
+      text: "Yes — I'll have a revised draft by EOW.",
+      timestamp: daysAgo(0.3),
+      reactions: [{ emoji: "🙏", count: 1 }],
+    },
+  ],
+  C_GENERAL: [
+    {
+      id: "sm9",
+      channel_id: "C_GENERAL",
+      author: "Max Ravenhill",
+      text: "Reminder: sprint demo Friday 3pm. Everyone ships something.",
+      timestamp: daysAgo(0.05),
+    },
+  ],
+  DM_MUHAMMAD: [
+    {
+      id: "sm10",
+      channel_id: "DM_MUHAMMAD",
+      author: "Muhammad Rashid",
+      text: "Hey — before you wire up the Slack tab, can we lock the channel schema? I want to make sure `unread` counts match what the adapter will actually emit.",
+      timestamp: daysAgo(0.05),
+    },
+    {
+      id: "sm11",
+      channel_id: "DM_MUHAMMAD",
+      author: "Muhammad Rashid",
+      text: "Also, the OAuth token rotation plan is in the shared doc — give it a skim when you get a sec.",
+      timestamp: daysAgo(0.04),
+    },
+  ],
+  DM_MAX: [
+    {
+      id: "sm12",
+      channel_id: "DM_MAX",
+      author: "Max Ravenhill",
+      text: "Can you make sure the file-drop demo uses the Q2 PRD sample? That's the one I'm walking SLS through.",
+      timestamp: daysAgo(0.6),
+    },
+  ],
+  DM_KAREN: [
+    {
+      id: "sm13",
+      channel_id: "DM_KAREN",
+      author: "Karen Park",
+      text: "Pricing deck is tracked — I'll ping you when the draft is ready.",
+      timestamp: daysAgo(0.9),
+    },
+  ],
+};
+
+export async function fetchSlackChannels(): Promise<SlackChannel[]> {
+  return Promise.resolve(mockSlackChannels);
+}
+
+export async function fetchSlackThread(channelId: string): Promise<SlackMessage[]> {
+  return Promise.resolve(slackThreads[channelId] ?? []);
+}
+
+// ------------------------------------------------------------
+// File summaries — what the receiving agent "reads" from an attachment
+// ------------------------------------------------------------
+
+export const sampleFileUrl = "/samples/q2-launch-prd.md";
+
+export const sampleAttachment: ChatAttachment = {
+  id: "att-sample-q2-prd",
+  name: "Q2 Launch PRD.md",
+  mime_type: "text/markdown",
+  size_bytes: 4320,
+  url: sampleFileUrl,
+  source: "upload",
+};
+
+const q2PrdSummary: FileSummary = {
+  attachment_id: sampleAttachment.id,
+  title: "Q2 Launch PRD — SideLineSwap Rollout",
+  one_liner:
+    "Plan to deploy E-Agent V1 inside SideLineSwap by 2026-06-01. Covers scope, owners, action items, and three open risks.",
+  contributors: [
+    { name: "Max Ravenhill", did: "Owner — wrote the PRD, booking case-study interviews, confirming 30-seat provisioning" },
+    { name: "Likitha Kamble", did: "Building the three-panel chat UI, Kanban board view, and Slack tab + file upload" },
+    { name: "Muhammad Rashid", did: "Shipped the Postgres foundation; next up is Slack OAuth encryption and permissions migration" },
+  ],
+  action_items: [
+    { owner: "Muhammad Rashid", task: "Finalize Slack OAuth token encryption", due: "2026-04-22" },
+    { owner: "Likitha Kamble", task: "Ship Slack tab + file upload in chat", due: "2026-04-25" },
+    { owner: "Max Ravenhill", task: "Confirm SLS admin provisioned 30 seats", due: "2026-04-30" },
+    { owner: "Muhammad Rashid", task: "Permissions schema migration", due: "2026-05-02" },
+    { owner: "Likitha Kamble", task: "Kanban board view off pending_items", due: "2026-05-05" },
+    { owner: "Max Ravenhill", task: "Book 8 case-study interviews", due: "2026-05-11 week" },
+    { owner: "Team", task: "Deployment dry-run rehearsal", due: "2026-05-25" },
+  ],
+  open_questions: [
+    "Will the Slack adapter hold up under SLS message volume? (load-test pending)",
+    "If the permissions schema changes after migration, how much mocks-first rework do we eat?",
+    "What's the fallback when comms-graph inference misses an obvious owner during onboarding?",
+  ],
+  generated_at: now,
+};
+
+export async function summarizeAttachment(
+  attachment: ChatAttachment,
+): Promise<FileSummary> {
+  if (attachment.id === sampleAttachment.id) {
+    return Promise.resolve(q2PrdSummary);
+  }
+  return Promise.resolve({
+    attachment_id: attachment.id,
+    title: attachment.name,
+    one_liner: `I scanned ${attachment.name} (${Math.round(attachment.size_bytes / 1024)} KB). No parser for this file type yet — real ingestion lands when the Drive adapter ships.`,
+    contributors: [],
+    action_items: [],
+    open_questions: [
+      "Upload-based parsing is mocked. Hook up Drive ingestion to pull real contributors and action items.",
+    ],
+    generated_at: new Date().toISOString(),
+  });
 }
 
 // ------------------------------------------------------------
