@@ -241,10 +241,10 @@ export default function TrustPage() {
             Security questions, data-handling questions, anything on this
             page you want to push on — email us at{" "}
             <a
-              href="mailto:security@ravenhill.app"
+              href="mailto:security@ravenhill.ai"
               className="text-claret hover:text-[#D6596C] transition underline-offset-4 hover:underline"
             >
-              security@ravenhill.app
+              security@ravenhill.ai
             </a>
             . A founder will answer.
           </p>

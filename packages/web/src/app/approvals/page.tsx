@@ -9,6 +9,8 @@ import {
   X,
   Inbox,
   ShieldCheck,
+  HelpCircle,
+  Send,
 } from "lucide-react";
 import { fetchApprovals } from "@/lib/mocks";
 import { submitApproval } from "@/lib/api";
@@ -77,6 +79,10 @@ export default function ApprovalsPage() {
   const [tab, setTab] = useState<FilterTab>("pending");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
+  // Request-more-info state — local only until a backend endpoint lands.
+  const [infoPromptFor, setInfoPromptFor] = useState<string | null>(null);
+  const [infoDraft, setInfoDraft] = useState("");
+  const [infoRequested, setInfoRequested] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchApprovals()
@@ -231,29 +237,99 @@ export default function ApprovalsPage() {
                       </p>
                     )}
                     {a.status === "pending" ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={deciding === a.id}
-                          onClick={() => decide(a, true)}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[rgba(63,164,106,0.14)] text-[#88D3A4] border border-[rgba(63,164,106,0.32)] hover:bg-[rgba(63,164,106,0.22)] transition disabled:opacity-50"
-                        >
-                          <Check className="w-3 h-3" /> Approve
-                        </button>
-                        <button
-                          type="button"
-                          disabled={deciding === a.id}
-                          onClick={() => decide(a, false)}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[rgba(201,68,58,0.12)] text-[#E68A82] border border-[rgba(201,68,58,0.32)] hover:bg-[rgba(201,68,58,0.2)] transition disabled:opacity-50"
-                        >
-                          <X className="w-3 h-3" /> Deny
-                        </button>
-                        {deciding === a.id && (
-                          <span className="text-[11px] text-dusk">
-                            Submitting…
-                          </span>
+                      <>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            disabled={deciding === a.id}
+                            onClick={() => decide(a, true)}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[rgba(63,164,106,0.14)] text-[#88D3A4] border border-[rgba(63,164,106,0.32)] hover:bg-[rgba(63,164,106,0.22)] transition disabled:opacity-50"
+                          >
+                            <Check className="w-3 h-3" /> Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deciding === a.id}
+                            onClick={() => decide(a, false)}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[rgba(201,68,58,0.12)] text-[#E68A82] border border-[rgba(201,68,58,0.32)] hover:bg-[rgba(201,68,58,0.2)] transition disabled:opacity-50"
+                          >
+                            <X className="w-3 h-3" /> Deny
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deciding === a.id}
+                            onClick={() => {
+                              setInfoPromptFor(
+                                infoPromptFor === a.id ? null : a.id,
+                              );
+                              setInfoDraft("");
+                            }}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] text-parchment border border-white/[0.08] hover:bg-white/[0.08] hover:border-white/[0.14] transition disabled:opacity-50"
+                          >
+                            <HelpCircle className="w-3 h-3" /> Request more info
+                          </button>
+                          {deciding === a.id && (
+                            <span className="text-[11px] text-dusk">
+                              Submitting…
+                            </span>
+                          )}
+                        </div>
+
+                        {infoPromptFor === a.id && (
+                          <div className="mt-2 rounded-lg border border-white/[0.08] bg-ink p-3 animate-fade-up">
+                            <label className="block text-[11px] text-smoke mb-1.5">
+                              What would you like {a.requester_name.split(" ")[0]} to clarify?
+                            </label>
+                            <textarea
+                              value={infoDraft}
+                              onChange={(e) => setInfoDraft(e.target.value)}
+                              placeholder="e.g. Can you confirm this is for the Q4 deck specifically, and which numbers you need?"
+                              rows={3}
+                              className="w-full bg-obsidian border border-white/[0.06] rounded-md px-2.5 py-2 text-[12px] text-parchment placeholder:text-dusk focus:outline-none focus:border-white/[0.14] transition resize-none"
+                            />
+                            <div className="flex items-center gap-2 mt-2">
+                              <button
+                                type="button"
+                                disabled={!infoDraft.trim()}
+                                onClick={() => {
+                                  setInfoRequested((prev) => ({
+                                    ...prev,
+                                    [a.id]: infoDraft.trim(),
+                                  }));
+                                  setInfoPromptFor(null);
+                                  setInfoDraft("");
+                                }}
+                                className="flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md bg-oxblood/80 text-bone hover:bg-oxblood transition disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Send className="w-3 h-3" />
+                                Send to {a.requester_name.split(" ")[0]}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setInfoPromptFor(null);
+                                  setInfoDraft("");
+                                }}
+                                className="text-[11px] text-dusk hover:text-smoke transition"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
                         )}
-                      </div>
+
+                        {infoRequested[a.id] && infoPromptFor !== a.id && (
+                          <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] text-smoke">
+                            <div className="flex items-center gap-1.5 text-dusk font-mono text-[10px] mb-1">
+                              <HelpCircle className="w-3 h-3" />
+                              You asked for more info — awaiting {a.requester_name.split(" ")[0]}
+                            </div>
+                            <p className="text-parchment">
+                              &ldquo;{infoRequested[a.id]}&rdquo;
+                            </p>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <p className="text-[11px] text-dusk">
                         Resolved {timeAgo(a.created_at)}
