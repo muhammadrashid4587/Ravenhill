@@ -2,7 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Send, Clock, FileText, ArrowRight } from "lucide-react";
+import {
+  Send,
+  Clock,
+  Users,
+  Inbox,
+  Activity as ActivityIcon,
+  GitBranch,
+} from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import ApprovalPopup from "@/components/ApprovalPopup";
 import { useAuth } from "@/lib/AuthContext";
@@ -11,7 +18,10 @@ import {
   submitApproval,
   completeDocRequest,
   resetDemo,
+  fetchAgents,
 } from "@/lib/api";
+import { fetchNotifications } from "@/lib/mocks";
+import type { NotificationItem, VerificationStatus } from "@/lib/types";
 
 // ---- Types ----
 
@@ -83,6 +93,29 @@ export default function ChatPage() {
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const [reachOuts, setReachOuts] = useState<AgentReachOut[]>([]);
   const [currentSources, setCurrentSources] = useState<string[]>([]);
+
+  // Panel tabs
+  const [leftTab, setLeftTab] = useState<"people" | "inbox">("people");
+  const [rightTab, setRightTab] = useState<"reasoning" | "activity">("reasoning");
+  const [people, setPeople] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  const [inbox, setInbox] = useState<NotificationItem[]>([]);
+
+  useEffect(() => {
+    fetchAgents()
+      .then((agents) => {
+        if (Array.isArray(agents)) {
+          setPeople(
+            agents.map((a: { id: string; name: string; role: string }) => ({
+              id: a.id,
+              name: a.name,
+              role: a.role,
+            })),
+          );
+        }
+      })
+      .catch(() => setPeople([]));
+    fetchNotifications().then(setInbox).catch(() => setInbox([]));
+  }, []);
 
   const endRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
@@ -349,48 +382,82 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full bg-obsidian text-parchment">
-      {/* ======== LEFT PANEL: Agent Conversations ======== */}
+      {/* ======== LEFT PANEL: People / Inbox ======== */}
       <div className="w-64 border-r border-white/[0.06] flex flex-col shrink-0">
-        <div className="px-4 py-3 border-b border-white/[0.06]">
-          <h2 className="eyebrow">Agent conversations</h2>
+        <div className="px-3 pt-3 pb-2 border-b border-white/[0.06]">
+          <div
+            role="tablist"
+            aria-label="People or inbox"
+            className="flex items-center bg-ink border border-white/[0.06] rounded-lg p-0.5"
+          >
+            <button
+              role="tab"
+              aria-selected={leftTab === "people"}
+              onClick={() => setLeftTab("people")}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-[11px] px-2 py-1 rounded-md transition ${
+                leftTab === "people"
+                  ? "bg-white/[0.08] text-bone"
+                  : "text-smoke hover:text-parchment"
+              }`}
+            >
+              <Users className="w-3 h-3" /> People
+            </button>
+            <button
+              role="tab"
+              aria-selected={leftTab === "inbox"}
+              onClick={() => setLeftTab("inbox")}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-[11px] px-2 py-1 rounded-md transition ${
+                leftTab === "inbox"
+                  ? "bg-white/[0.08] text-bone"
+                  : "text-smoke hover:text-parchment"
+              }`}
+            >
+              <Inbox className="w-3 h-3" />
+              Inbox
+              {inbox.filter((n) => !n.read).length > 0 && (
+                <span className="ml-0.5 text-[9px] bg-claret/20 text-claret border border-claret/30 rounded px-1">
+                  {inbox.filter((n) => !n.read).length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
-          {reachOuts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full px-4 text-center">
-              <div className="w-10 h-10 rounded-xl bg-ink border border-white/[0.06] flex items-center justify-center mb-3">
-                <ArrowRight className="w-4 h-4 text-dusk" />
+          {leftTab === "people" ? (
+            people.length === 0 ? (
+              <EmptyPanel
+                icon={<Users className="w-4 h-4 text-dusk" />}
+                label="No teammates surfaced yet"
+              />
+            ) : (
+              <div className="space-y-1">
+                {people.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-ink border border-white/[0.06] hover:border-white/[0.12] transition animate-fade-up"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
+                      {getInitials(p.name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium text-bone truncate">
+                        {p.name}
+                      </div>
+                      <div className="text-[10px] text-dusk truncate">{p.role}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <p className="text-[11px] text-dusk leading-relaxed">
-                When your agent reaches out to others, conversations will appear here
-              </p>
-            </div>
+            )
+          ) : inbox.length === 0 ? (
+            <EmptyPanel
+              icon={<Inbox className="w-4 h-4 text-dusk" />}
+              label="Inbox zero"
+            />
           ) : (
             <div className="space-y-1">
-              {reachOuts.map((r) => (
-                <div
-                  key={r.id}
-                  className="px-3 py-2.5 rounded-lg bg-ink border border-white/[0.06] hover:border-white/[0.12] transition animate-fade-up"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-6 h-6 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[8px] font-semibold text-parchment">
-                      {getInitials(r.agentName)}
-                    </div>
-                    <span className="text-xs font-medium text-parchment truncate">
-                      {r.agentName}
-                    </span>
-                    <span className="text-[10px] text-dusk ml-auto shrink-0">
-                      {r.timestamp}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 ml-8">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-oxblood/15 text-claret border border-oxblood/30">
-                      {r.direction === "outgoing" ? `You → ${r.agentName.split(" ")[0]}` : `${r.agentName.split(" ")[0]} → You`}
-                    </span>
-                    <span className="text-[10px] text-dusk truncate">
-                      {r.topic}
-                    </span>
-                  </div>
-                </div>
+              {inbox.map((n) => (
+                <InboxRow key={n.id} item={n} />
               ))}
             </div>
           )}
@@ -529,18 +596,60 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* ======== RIGHT PANEL: Agent Activity ======== */}
+      {/* ======== RIGHT PANEL: Reasoning / Activity ======== */}
       <div className="w-72 border-l border-white/[0.06] flex flex-col shrink-0">
-        <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-          <h2 className="eyebrow">Reasoning</h2>
-          {activitySteps.length > 0 && (
-            <span className="text-[10px] text-dusk font-mono">
-              {activitySteps.filter((s) => s.type === "step").length} steps
-            </span>
-          )}
+        <div className="px-3 pt-3 pb-2 border-b border-white/[0.06]">
+          <div
+            role="tablist"
+            aria-label="Reasoning or activity"
+            className="flex items-center bg-ink border border-white/[0.06] rounded-lg p-0.5"
+          >
+            <button
+              role="tab"
+              aria-selected={rightTab === "reasoning"}
+              onClick={() => setRightTab("reasoning")}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-[11px] px-2 py-1 rounded-md transition ${
+                rightTab === "reasoning"
+                  ? "bg-white/[0.08] text-bone"
+                  : "text-smoke hover:text-parchment"
+              }`}
+            >
+              <GitBranch className="w-3 h-3" /> Reasoning
+              {activitySteps.length > 0 && (
+                <span className="text-[9px] text-dusk font-mono ml-0.5">
+                  {activitySteps.filter((s) => s.type === "step").length}
+                </span>
+              )}
+            </button>
+            <button
+              role="tab"
+              aria-selected={rightTab === "activity"}
+              onClick={() => setRightTab("activity")}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-[11px] px-2 py-1 rounded-md transition ${
+                rightTab === "activity"
+                  ? "bg-white/[0.08] text-bone"
+                  : "text-smoke hover:text-parchment"
+              }`}
+            >
+              <ActivityIcon className="w-3 h-3" /> Activity
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
-          {activitySteps.length === 0 ? (
+          {rightTab === "activity" ? (
+            inbox.length === 0 ? (
+              <EmptyPanel
+                icon={<ActivityIcon className="w-4 h-4 text-dusk" />}
+                label="Nothing surfaced yet"
+              />
+            ) : (
+              <div className="space-y-2">
+                {inbox.map((n) => (
+                  <ActivityFeedRow key={n.id} item={n} />
+                ))}
+              </div>
+            )
+          ) : activitySteps.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-4 text-center">
               <div className="w-10 h-10 rounded-xl bg-ink border border-white/[0.06] flex items-center justify-center mb-3">
                 <Clock className="w-4 h-4 text-dusk" />
@@ -604,8 +713,8 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* Bottom stats */}
-        {activitySteps.some((s) => s.type === "done") && (
+        {/* Bottom stats — only in Reasoning tab */}
+        {rightTab === "reasoning" && activitySteps.some((s) => s.type === "done") && (
           <div className="border-t border-white/[0.06] px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
@@ -647,6 +756,99 @@ export default function ChatPage() {
           onDeny={() => handleApproval(false)}
         />
       )}
+    </div>
+  );
+}
+
+function EmptyPanel({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-4 text-center py-6">
+      <div className="w-10 h-10 rounded-xl bg-ink border border-white/[0.06] flex items-center justify-center mb-3">
+        {icon}
+      </div>
+      <p className="text-[11px] text-dusk leading-relaxed">{label}</p>
+    </div>
+  );
+}
+
+function VerificationBadge({ status }: { status: VerificationStatus }) {
+  const styles: Record<VerificationStatus, string> = {
+    verified: "bg-[rgba(63,164,106,0.12)] text-[#88D3A4] border-[rgba(63,164,106,0.32)]",
+    inferred: "bg-[rgba(201,138,43,0.10)] text-[#E6BA75] border-[rgba(201,138,43,0.28)]",
+    unverified: "bg-white/[0.04] text-smoke border-white/[0.08]",
+  };
+  const dot: Record<VerificationStatus, string> = {
+    verified: "bg-[#3FA46A]",
+    inferred: "bg-[#C98A2B]",
+    unverified: "bg-smoke",
+  };
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border ${styles[status]}`}
+      title={`Verification: ${status}`}
+    >
+      <span className={`w-1 h-1 rounded-full ${dot[status]}`} />
+      {status}
+    </span>
+  );
+}
+
+function InboxRow({ item }: { item: NotificationItem }) {
+  return (
+    <div
+      className={`px-3 py-2.5 rounded-lg border transition animate-fade-up ${
+        item.read
+          ? "bg-ink border-white/[0.06]"
+          : "bg-ink border-white/[0.12]"
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        {!item.read && (
+          <span className="w-1.5 h-1.5 rounded-full bg-claret mt-1.5 shrink-0" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-medium text-bone">{item.action}</span>
+            <VerificationBadge status={item.verification} />
+          </div>
+          <p className="text-[11px] text-smoke mt-0.5 line-clamp-2">
+            {item.change_summary}
+          </p>
+          {item.actor && (
+            <p className="text-[10px] text-dusk mt-0.5 truncate">{item.actor}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityFeedRow({ item }: { item: NotificationItem }) {
+  return (
+    <div className="flex gap-3 animate-fade-up">
+      <div className="flex flex-col items-center pt-1">
+        <span
+          className={`w-2 h-2 rounded-full shrink-0 ${
+            item.verification === "verified"
+              ? "bg-[#3FA46A]"
+              : item.verification === "inferred"
+                ? "bg-[#C98A2B]"
+                : "bg-smoke"
+          }`}
+        />
+      </div>
+      <div className="min-w-0 flex-1 pb-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] font-medium text-parchment">
+            {item.action}
+          </span>
+          <VerificationBadge status={item.verification} />
+        </div>
+        <p className="text-[11px] text-smoke mt-0.5">{item.change_summary}</p>
+        {item.actor && (
+          <p className="text-[10px] text-dusk mt-0.5">{item.actor}</p>
+        )}
+      </div>
     </div>
   );
 }

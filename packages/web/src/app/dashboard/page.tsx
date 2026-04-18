@@ -11,9 +11,32 @@ import {
   Building2,
   ArrowRight,
   Plus,
+  List,
+  LayoutGrid,
+  AlertTriangle,
+  LayoutDashboard,
+  Calendar as CalendarIcon,
+  FileText,
+  Mail,
+  Video,
+  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { fetchMeetings, fetchStats, fetchActivity, type Meeting } from "@/lib/api";
+import {
+  fetchPendingItems,
+  fetchCalendarEvents,
+  fetchWorkspaceFiles,
+  fetchWorkspaceEmails,
+} from "@/lib/mocks";
+import {
+  isStale,
+  type PendingItem,
+  type TaskStatus,
+  type CalendarEvent,
+  type WorkspaceFile,
+  type WorkspaceEmail,
+} from "@/lib/types";
 
 const PRIORITY_STYLES: Record<string, string> = {
   high: "bg-[rgba(201,68,58,0.10)] text-[#E68A82] border-[rgba(201,68,58,0.28)]",
@@ -21,17 +44,25 @@ const PRIORITY_STYLES: Record<string, string> = {
   low: "bg-white/[0.04] text-parchment border-white/[0.08]",
 };
 
-const STATUS_ICONS: Record<string, typeof Circle> = {
-  pending: Circle,
+const STATUS_ICONS: Record<TaskStatus, typeof Circle> = {
+  todo: Circle,
   in_progress: Clock,
   done: CheckCircle2,
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "text-smoke",
+const STATUS_COLORS: Record<TaskStatus, string> = {
+  todo: "text-smoke",
   in_progress: "text-claret",
   done: "text-[#3FA46A]",
 };
+
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: "To-do",
+  in_progress: "In progress",
+  done: "Done",
+};
+
+const BOARD_COLUMNS: TaskStatus[] = ["todo", "in_progress", "done"];
 
 interface ActivityItem {
   id: string;
@@ -54,6 +85,12 @@ export default function DashboardPage() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
+  const [workspaceEmails, setWorkspaceEmails] = useState<WorkspaceEmail[]>([]);
+  const [view, setView] = useState<"list" | "board">("list");
+  const [dashTab, setDashTab] = useState<"overview" | "workspace">("overview");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -61,25 +98,35 @@ export default function DashboardPage() {
       fetchStats().catch(() => null),
       fetchActivity(undefined, 8).then((r) => r.items || []).catch(() => []),
       myAgent ? fetchMeetings(myAgent.id).catch(() => []) : Promise.resolve([]),
-    ]).then(([s, a, m]) => {
+      fetchPendingItems().catch(() => []),
+      fetchCalendarEvents().catch(() => []),
+      fetchWorkspaceFiles().catch(() => []),
+      fetchWorkspaceEmails().catch(() => []),
+    ]).then(([s, a, m, p, ce, wf, we]) => {
       setStats(s);
       setActivity(a);
       setMeetings(m);
+      setPendingItems(p);
+      setCalendarEvents(ce);
+      setWorkspaceFiles(wf);
+      setWorkspaceEmails(we);
       setLoading(false);
     });
   }, [myAgent]);
 
-  // Collect all open tasks across meetings
-  const allTasks = meetings
-    .flatMap((m) =>
-      m.tasks
-        .filter((t) => t.status !== "done")
-        .map((t) => ({ ...t, meetingTitle: m.title })),
-    )
-    .sort((a, b) => {
-      const p: Record<string, number> = { high: 0, medium: 1, low: 2 };
-      return (p[a.priority] ?? 9) - (p[b.priority] ?? 9);
-    });
+  const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const sortedPending = [...pendingItems].sort(
+    (a, b) => (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9),
+  );
+  const openPending = sortedPending.filter((p) => p.status !== "done");
+  const byStatus: Record<TaskStatus, PendingItem[]> = {
+    todo: sortedPending.filter((p) => p.status === "todo"),
+    in_progress: sortedPending.filter((p) => p.status === "in_progress"),
+    done: sortedPending.filter((p) => p.status === "done"),
+  };
+  // Meetings link surface kept; full integration via pending items lands when
+  // Muhammad ships a unified endpoint.
+  void meetings;
 
   if (!myAgent) {
     return (
@@ -99,18 +146,58 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-obsidian text-parchment">
       {/* Header */}
       <header className="border-b border-white/[0.06] px-6 py-5 animate-fade-up">
-        <h1 className="text-lg font-semibold text-bone">
-          Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}, {myAgent.name.split(" ")[0]}
-        </h1>
-        <p className="text-xs text-smoke mt-0.5">
-          Here&apos;s what&apos;s on your plate
-        </p>
+        <div className="flex items-start justify-between gap-6 flex-wrap">
+          <div>
+            <h1 className="text-lg font-semibold text-bone">
+              Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 17 ? "afternoon" : "evening"}, {myAgent.name.split(" ")[0]}
+            </h1>
+            <p className="text-xs text-smoke mt-0.5">
+              Here&apos;s what&apos;s on your plate
+            </p>
+          </div>
+          <div
+            role="tablist"
+            aria-label="Dashboard view"
+            className="flex items-center bg-ink border border-white/[0.06] rounded-lg p-0.5"
+          >
+            <button
+              role="tab"
+              aria-selected={dashTab === "overview"}
+              onClick={() => setDashTab("overview")}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition ${
+                dashTab === "overview"
+                  ? "bg-white/[0.08] text-bone"
+                  : "text-smoke hover:text-parchment"
+              }`}
+            >
+              <LayoutDashboard className="w-3.5 h-3.5" /> Overview
+            </button>
+            <button
+              role="tab"
+              aria-selected={dashTab === "workspace"}
+              onClick={() => setDashTab("workspace")}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition ${
+                dashTab === "workspace"
+                  ? "bg-white/[0.08] text-bone"
+                  : "text-smoke hover:text-parchment"
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" /> Calendar &amp; Workspace
+            </button>
+          </div>
+        </div>
       </header>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
         </div>
+      ) : dashTab === "workspace" ? (
+        <WorkspacePanel
+          events={calendarEvents}
+          files={workspaceFiles}
+          emails={workspaceEmails}
+        />
       ) : (
         <div className="p-6 space-y-6">
           {/* Quick actions */}
@@ -139,19 +226,51 @@ export default function DashboardPage() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-medium text-parchment">
                   Your Tasks
-                  {allTasks.length > 0 && (
-                    <span className="ml-2 text-xs text-dusk">{allTasks.length} open</span>
+                  {openPending.length > 0 && (
+                    <span className="ml-2 text-xs text-dusk">{openPending.length} open</span>
                   )}
                 </h2>
-                <Link
-                  href="/meetings"
-                  className="text-[11px] text-smoke hover:text-parchment flex items-center gap-1 transition"
-                >
-                  All meetings <ArrowRight className="w-3 h-3" />
-                </Link>
+                <div className="flex items-center gap-3">
+                  <div
+                    role="tablist"
+                    aria-label="Task view"
+                    className="flex items-center bg-ink border border-white/[0.06] rounded-lg p-0.5"
+                  >
+                    <button
+                      role="tab"
+                      aria-selected={view === "list"}
+                      onClick={() => setView("list")}
+                      className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md transition ${
+                        view === "list"
+                          ? "bg-white/[0.08] text-bone"
+                          : "text-smoke hover:text-parchment"
+                      }`}
+                    >
+                      <List className="w-3 h-3" /> List
+                    </button>
+                    <button
+                      role="tab"
+                      aria-selected={view === "board"}
+                      onClick={() => setView("board")}
+                      className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md transition ${
+                        view === "board"
+                          ? "bg-white/[0.08] text-bone"
+                          : "text-smoke hover:text-parchment"
+                      }`}
+                    >
+                      <LayoutGrid className="w-3 h-3" /> Board
+                    </button>
+                  </div>
+                  <Link
+                    href="/meetings"
+                    className="text-[11px] text-smoke hover:text-parchment flex items-center gap-1 transition"
+                  >
+                    All meetings <ArrowRight className="w-3 h-3" />
+                  </Link>
+                </div>
               </div>
 
-              {allTasks.length === 0 ? (
+              {sortedPending.length === 0 ? (
                 <div className="bg-ink border border-white/[0.06] rounded-xl p-8 text-center">
                   <CalendarCheck className="w-8 h-8 text-dusk mx-auto mb-3" />
                   <p className="text-sm text-smoke mb-1">No open tasks</p>
@@ -165,42 +284,25 @@ export default function DashboardPage() {
                     <Plus className="w-3 h-3" /> Add a meeting
                   </Link>
                 </div>
-              ) : (
+              ) : view === "list" ? (
                 <div className="space-y-2 stagger">
-                  {allTasks.slice(0, 8).map((task) => {
-                    const StatusIcon = STATUS_ICONS[task.status] || Circle;
-                    const statusColor = STATUS_COLORS[task.status] || "text-smoke";
-                    return (
-                      <Link
-                        key={task.id}
-                        href={`/meetings/${task.meeting_id}`}
-                        className="flex items-start gap-3 bg-ink border border-white/[0.06] hover:border-white/[0.12] rounded-lg px-4 py-3 transition card-lift animate-fade-up"
-                      >
-                        <StatusIcon className={`w-4 h-4 mt-0.5 ${statusColor} shrink-0`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-bone truncate">{task.title}</span>
-                            <span
-                              className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                                PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium
-                              }`}
-                            >
-                              {task.priority}
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-dusk">from {task.meetingTitle}</span>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                  {allTasks.length > 8 && (
+                  {sortedPending.slice(0, 10).map((item) => (
+                    <PendingRow key={item.id} item={item} />
+                  ))}
+                  {sortedPending.length > 10 && (
                     <Link
                       href="/meetings"
                       className="block text-center text-xs text-smoke hover:text-parchment py-2 transition"
                     >
-                      +{allTasks.length - 8} more tasks
+                      +{sortedPending.length - 10} more tasks
                     </Link>
                   )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-3 stagger">
+                  {BOARD_COLUMNS.map((col) => (
+                    <BoardColumn key={col} status={col} items={byStatus[col]} />
+                  ))}
                 </div>
               )}
             </div>
@@ -273,6 +375,296 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PendingRow({ item }: { item: PendingItem }) {
+  const StatusIcon = STATUS_ICONS[item.status];
+  const statusColor = STATUS_COLORS[item.status];
+  const stale = isStale(item);
+  return (
+    <div className="flex items-start gap-3 bg-ink border border-white/[0.06] hover:border-white/[0.12] rounded-lg px-4 py-3 transition card-lift animate-fade-up">
+      <StatusIcon className={`w-4 h-4 mt-0.5 ${statusColor} shrink-0`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-bone truncate">{item.title}</span>
+          <span
+            className={`text-[9px] px-1.5 py-0.5 rounded border ${
+              PRIORITY_STYLES[item.priority] ?? PRIORITY_STYLES.medium
+            }`}
+          >
+            {item.priority}
+          </span>
+          {stale && (
+            <span
+              title="Lifespan exceeded"
+              className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(201,138,43,0.10)] text-[#E6BA75] border-[rgba(201,138,43,0.28)]"
+            >
+              <AlertTriangle className="w-2.5 h-2.5" /> stale
+            </span>
+          )}
+          {item.ready_state === "not_ready" && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded border bg-white/[0.02] text-smoke border-white/[0.08]">
+              not ready
+            </span>
+          )}
+        </div>
+        {item.description && (
+          <span className="text-[11px] text-dusk line-clamp-1">{item.description}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BoardColumn({ status, items }: { status: TaskStatus; items: PendingItem[] }) {
+  const StatusIcon = STATUS_ICONS[status];
+  const statusColor = STATUS_COLORS[status];
+  return (
+    <div className="bg-ink/60 border border-white/[0.06] rounded-xl p-3 min-h-[240px]">
+      <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex items-center gap-1.5">
+          <StatusIcon className={`w-3.5 h-3.5 ${statusColor}`} />
+          <span className="text-xs font-medium text-parchment">
+            {STATUS_LABELS[status]}
+          </span>
+        </div>
+        <span className="text-[10px] text-dusk">{items.length}</span>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-center py-6">
+          <p className="text-[10px] text-dusk">Empty</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <BoardCard key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorkspacePanel({
+  events,
+  files,
+  emails,
+}: {
+  events: CalendarEvent[];
+  files: WorkspaceFile[];
+  emails: WorkspaceEmail[];
+}) {
+  return (
+    <div className="p-6 grid grid-cols-5 gap-6">
+      <section
+        className="col-span-3 animate-fade-up"
+        style={{ animationDelay: "100ms" }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-medium text-parchment flex items-center gap-2">
+            <CalendarIcon className="w-3.5 h-3.5 text-smoke" /> Upcoming
+          </h2>
+          <span className="text-[11px] text-dusk">Google Calendar</span>
+        </div>
+        {events.length === 0 ? (
+          <EmptyCard
+            icon={<CalendarIcon className="w-6 h-6 text-dusk mx-auto mb-2" />}
+            label="No upcoming meetings"
+          />
+        ) : (
+          <div className="space-y-2 stagger">
+            {events.map((e) => (
+              <EventRow key={e.id} event={e} />
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between mt-8 mb-3">
+          <h2 className="text-sm font-medium text-parchment flex items-center gap-2">
+            <FileText className="w-3.5 h-3.5 text-smoke" /> Recent files
+          </h2>
+          <span className="text-[11px] text-dusk">Google Drive</span>
+        </div>
+        {files.length === 0 ? (
+          <EmptyCard
+            icon={<FileText className="w-6 h-6 text-dusk mx-auto mb-2" />}
+            label="No files surfaced yet"
+          />
+        ) : (
+          <div className="space-y-2 stagger">
+            {files.map((f) => (
+              <FileRow key={f.id} file={f} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <aside
+        className="col-span-2 animate-fade-up"
+        style={{ animationDelay: "200ms" }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-medium text-parchment flex items-center gap-2">
+            <Mail className="w-3.5 h-3.5 text-smoke" /> Inbox
+          </h2>
+          <span className="text-[11px] text-dusk">Gmail</span>
+        </div>
+        {emails.length === 0 ? (
+          <EmptyCard
+            icon={<Mail className="w-6 h-6 text-dusk mx-auto mb-2" />}
+            label="Inbox zero"
+          />
+        ) : (
+          <div className="space-y-2 stagger">
+            {emails.map((m) => (
+              <EmailRow key={m.id} email={m} />
+            ))}
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function EmptyCard({
+  icon,
+  label,
+}: {
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <div className="bg-ink border border-white/[0.06] rounded-xl p-6 text-center">
+      {icon}
+      <p className="text-xs text-smoke">{label}</p>
+    </div>
+  );
+}
+
+function EventRow({ event }: { event: CalendarEvent }) {
+  const start = new Date(event.start_time);
+  const end = new Date(event.end_time);
+  const dateLabel = start.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const timeLabel = `${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return (
+    <div className="bg-ink border border-white/[0.06] hover:border-white/[0.12] rounded-lg px-4 py-3 transition card-lift animate-fade-up">
+      <div className="flex items-start gap-3">
+        <div className="flex flex-col items-center justify-center bg-graphite rounded-md px-2 py-1.5 shrink-0 border border-white/[0.06]">
+          <span className="text-[9px] uppercase tracking-wide text-dusk">
+            {start.toLocaleDateString([], { month: "short" })}
+          </span>
+          <span className="text-sm font-semibold text-bone leading-none">
+            {start.getDate()}
+          </span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-bone truncate">{event.title}</span>
+            {event.has_transcript && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded border bg-white/[0.04] text-parchment border-white/[0.08]">
+                transcript
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-dusk mt-0.5">
+            <span>{dateLabel}</span>
+            <span>·</span>
+            <span>{timeLabel}</span>
+            <span>·</span>
+            <span className="truncate">{event.attendees.length} attendees</span>
+          </div>
+        </div>
+        {event.meeting_url && (
+          <a
+            href={event.meeting_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[11px] text-smoke hover:text-parchment transition shrink-0"
+          >
+            <Video className="w-3 h-3" /> Join
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FileRow({ file }: { file: WorkspaceFile }) {
+  return (
+    <a
+      href={file.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-start gap-3 bg-ink border border-white/[0.06] hover:border-white/[0.12] rounded-lg px-4 py-3 transition card-lift animate-fade-up"
+    >
+      <FileText className="w-4 h-4 mt-0.5 text-smoke shrink-0" />
+      <div className="min-w-0 flex-1">
+        <span className="text-sm text-bone truncate block">{file.name}</span>
+        <span className="text-[11px] text-dusk">
+          {file.owner} · {new Date(file.last_modified).toLocaleDateString()}
+        </span>
+      </div>
+      <ExternalLink className="w-3 h-3 text-dusk shrink-0 mt-1" />
+    </a>
+  );
+}
+
+function EmailRow({ email }: { email: WorkspaceEmail }) {
+  return (
+    <a
+      href={email.thread_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block bg-ink border border-white/[0.06] hover:border-white/[0.12] rounded-lg px-3 py-2.5 transition card-lift animate-fade-up"
+    >
+      <div className="flex items-center gap-2">
+        {email.unread && (
+          <span className="w-1.5 h-1.5 rounded-full bg-claret shrink-0" />
+        )}
+        <span className="text-xs text-bone truncate flex-1">
+          {email.subject}
+        </span>
+      </div>
+      <p className="text-[11px] text-dusk line-clamp-1 mt-0.5">
+        {email.from} — {email.snippet}
+      </p>
+    </a>
+  );
+}
+
+function BoardCard({ item }: { item: PendingItem }) {
+  const stale = isStale(item);
+  return (
+    <div className="bg-graphite border border-white/[0.06] hover:border-white/[0.14] rounded-lg px-3 py-2.5 transition card-lift">
+      <p className="text-xs text-bone leading-snug line-clamp-2">{item.title}</p>
+      <div className="flex items-center gap-1 mt-2 flex-wrap">
+        <span
+          className={`text-[9px] px-1.5 py-0.5 rounded border ${
+            PRIORITY_STYLES[item.priority] ?? PRIORITY_STYLES.medium
+          }`}
+        >
+          {item.priority}
+        </span>
+        {stale && (
+          <span
+            title="Lifespan exceeded"
+            className="flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(201,138,43,0.10)] text-[#E6BA75] border-[rgba(201,138,43,0.28)]"
+          >
+            <AlertTriangle className="w-2.5 h-2.5" /> stale
+          </span>
+        )}
+        {item.ready_state === "not_ready" && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded border bg-white/[0.02] text-smoke border-white/[0.08]">
+            not ready
+          </span>
+        )}
+      </div>
     </div>
   );
 }

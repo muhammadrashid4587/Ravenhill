@@ -9,6 +9,7 @@ import {
   Building2,
   CalendarCheck,
   LogOut,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
@@ -16,6 +17,7 @@ import DeptAvatar from "@/components/ui/DeptAvatar";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/organization", label: "Organization", icon: Building2 },
   { href: "/meetings", label: "Meetings", icon: CalendarCheck },
 ];

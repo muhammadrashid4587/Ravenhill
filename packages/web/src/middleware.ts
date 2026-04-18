@@ -25,6 +25,7 @@ const PROTECTED_PREFIXES = [
   "/audit",
   "/settings",
   "/approval",
+  "/approvals",
   "/demo",
 ];
 
