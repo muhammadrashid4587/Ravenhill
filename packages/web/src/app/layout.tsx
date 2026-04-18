@@ -16,7 +16,7 @@ const jetbrainsMono = JetBrains_Mono({
   weight: ["400", "500"],
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ravenhill.ai";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://raven-hill.org";
 const SITE_NAME = "Ravenhill";
 const DESCRIPTION =
   "An AI agent for every person at your company. The agents talk to each other — so the coordination happens without you.";

@@ -174,7 +174,7 @@ export default async function Image() {
               display: "flex",
             }}
           >
-            ravenhill.ai
+            raven-hill.org
           </div>
         </div>
       </div>
