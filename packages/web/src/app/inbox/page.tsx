@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   Circle,
 } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import {
   fetchGmailThreads,
   ingestGmailTopics,
@@ -38,7 +38,7 @@ function formatReceived(iso: string) {
 }
 
 export default function InboxPage() {
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [threads, setThreads] = useState<WorkspaceEmail[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");

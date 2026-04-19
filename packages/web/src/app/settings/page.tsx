@@ -18,10 +18,10 @@ import {
   fetchHealth,
   type GoogleStatus,
 } from "@/lib/api";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 
 export default function SettingsPage() {
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [apiUrl, setApiUrl] = useState("http://localhost:8000");
   const [approvalRequired, setApprovalRequired] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);

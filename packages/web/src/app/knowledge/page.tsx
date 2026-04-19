@@ -13,7 +13,7 @@ import {
   Sparkles,
   Lock,
 } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import { fetchShadowProfile, fetchExpertiseGraph } from "@/lib/mocks";
 import type { ExpertiseGraph, ShadowProfile } from "@/lib/types";
 
@@ -24,7 +24,7 @@ const CHANNEL_ICONS: Record<string, typeof MessageSquare> = {
 };
 
 export default function KnowledgePage() {
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [profile, setProfile] = useState<ShadowProfile | null>(null);
   const [graph, setGraph] = useState<ExpertiseGraph | null>(null);
   const [loading, setLoading] = useState(true);

@@ -4,13 +4,13 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2, ArrowLeft } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import { submitGoogleCallback } from "@/lib/api";
 
 function CallbackInner() {
   const router = useRouter();
   const search = useSearchParams();
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [status, setStatus] = useState<"working" | "ok" | "fail">("working");
   const [detail, setDetail] = useState<string>("");
 

@@ -14,7 +14,7 @@ import {
   Flag,
   CheckCircle2,
 } from "lucide-react";
-import { useAgent } from "@/lib/AgentContext";
+import { useAuth } from "@/lib/AuthContext";
 import { fetchMeetings, type Meeting } from "@/lib/api";
 import { fetchCalendarEvents, fetchPendingItems } from "@/lib/mocks";
 import type { CalendarEvent, PendingItem } from "@/lib/types";
@@ -103,7 +103,7 @@ function formatDay(d: Date) {
 }
 
 export default function CalendarPage() {
-  const { myAgent } = useAgent();
+  const { agent: myAgent } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [pending, setPending] = useState<PendingItem[]>([]);
