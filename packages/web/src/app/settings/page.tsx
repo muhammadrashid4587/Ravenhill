@@ -11,6 +11,7 @@ import {
   LogOut,
   ExternalLink,
   ShieldAlert,
+  CreditCard,
 } from "lucide-react";
 import {
   disconnectGoogle,
@@ -94,6 +95,29 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-8">
+        {/* Plan & billing — pick your tier (Stripe not live yet) */}
+        <Link
+          href="/settings/billing"
+          className="block bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-6 transition group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
+                <CreditCard className="w-4 h-4 text-[#E6BA75]" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-gray-100">
+                  Plan &amp; billing
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Free, Team, Business, Enterprise — pick what fits.
+                </div>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition" />
+          </div>
+        </Link>
+
         {/* Permissions — who your agent can share with, on its own */}
         <Link
           href="/settings/permissions"

@@ -204,7 +204,35 @@ export const mockNotifications: NotificationItem[] = [
 ];
 
 export async function fetchNotifications(): Promise<NotificationItem[]> {
-  return Promise.resolve(mockNotifications);
+  return Promise.resolve([...mockNotifications]);
+}
+
+export async function markNotificationRead(
+  id: string,
+  read = true,
+): Promise<NotificationItem | null> {
+  const idx = mockNotifications.findIndex((n) => n.id === id);
+  if (idx === -1) return null;
+  mockNotifications[idx] = { ...mockNotifications[idx], read };
+  return Promise.resolve(mockNotifications[idx]);
+}
+
+export async function markAllNotificationsRead(): Promise<number> {
+  let count = 0;
+  mockNotifications.forEach((n) => {
+    if (!n.read) {
+      n.read = true;
+      count += 1;
+    }
+  });
+  return Promise.resolve(count);
+}
+
+export async function setOnboardingState(
+  next: Partial<OnboardingState>,
+): Promise<OnboardingState> {
+  Object.assign(mockOnboardingState, next);
+  return Promise.resolve({ ...mockOnboardingState });
 }
 
 // ------------------------------------------------------------
