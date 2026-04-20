@@ -391,6 +391,23 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+.input-dark {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+  outline: none;
+  transition: border-color 120ms;
+}
+.input-dark:focus {
+  border-color: var(--brand-hover);
+}
+.input-dark::placeholder {
+  color: var(--text-tertiary);
+}
+
 /* ============================================================
    EDITORIAL ACCENTS — section labels, eyebrow text
    ============================================================ */

@@ -309,7 +309,46 @@ export const mockPermissions: Permission[] = [
 ];
 
 export async function fetchPermissions(): Promise<Permission[]> {
-  return Promise.resolve(mockPermissions);
+  return Promise.resolve([...mockPermissions]);
+}
+
+// Mock persistence — replace with real POST/PATCH/DELETE when Muhammad's
+// migration lands. Contract to coordinate on:
+//   POST   /api/permissions         body: Omit<Permission, "id"|"created_at">
+//   PATCH  /api/permissions/:id     body: Partial<Permission>
+//   DELETE /api/permissions/:id
+
+export async function createPermission(
+  draft: Omit<Permission, "id" | "created_at">,
+): Promise<Permission> {
+  const row: Permission = {
+    ...draft,
+    id: `perm_${Math.random().toString(36).slice(2, 8)}`,
+    created_at: new Date().toISOString(),
+  };
+  mockPermissions.push(row);
+  return Promise.resolve(row);
+}
+
+export async function updatePermission(
+  id: string,
+  patch: Partial<Omit<Permission, "id" | "user_id" | "created_at">>,
+): Promise<Permission | null> {
+  const idx = mockPermissions.findIndex((p) => p.id === id);
+  if (idx === -1) return null;
+  mockPermissions[idx] = {
+    ...mockPermissions[idx],
+    ...patch,
+    updated_at: new Date().toISOString(),
+  };
+  return Promise.resolve(mockPermissions[idx]);
+}
+
+export async function deletePermission(id: string): Promise<boolean> {
+  const idx = mockPermissions.findIndex((p) => p.id === id);
+  if (idx === -1) return false;
+  mockPermissions.splice(idx, 1);
+  return Promise.resolve(true);
 }
 
 // ------------------------------------------------------------

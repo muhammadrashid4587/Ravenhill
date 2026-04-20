@@ -16,6 +16,7 @@ import {
   Brain,
   Inbox,
   Settings,
+  Network,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
@@ -33,6 +34,7 @@ const SECONDARY_NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/drive", label: "Drive", icon: HardDriveUpload },
   { href: "/knowledge", label: "Knowledge", icon: Brain },
+  { href: "/expertise", label: "Expertise map", icon: Network },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
