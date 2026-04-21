@@ -7,11 +7,30 @@
  * origins.
  */
 
-// Trim any whitespace/trailing slash so a stray space in the env var
-// doesn't produce URLs like `https://api.example.com%20/foo`.
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
-  .trim()
-  .replace(/\/+$/, "");
+// API base resolution.
+//   1. In the browser on a known production host, hardcode the prod API so a
+//      mis-configured env var can never break the site.
+//   2. Otherwise read NEXT_PUBLIC_API_URL (build-time inlined) and trim
+//      whitespace + trailing slashes.
+//   3. Fall back to local dev.
+const PROD_API = "https://ravenhill-api.fly.dev";
+function resolveApiBase(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host === "raven-hill.org" ||
+      host === "www.raven-hill.org" ||
+      host.endsWith(".vercel.app")
+    ) {
+      return PROD_API;
+    }
+  }
+  const fromEnv = (process.env.NEXT_PUBLIC_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  return fromEnv || "http://localhost:8000";
+}
+const API_BASE = resolveApiBase();
 
 // Default init for every request — always include credentials.
 const defaultInit: RequestInit = { credentials: "include" };
