@@ -52,7 +52,18 @@ def _engine_connect_args(url: str) -> dict:
 
 
 _url = _ensure_async_url(settings.database_url)
-engine = create_async_engine(_url, echo=False, connect_args=_engine_connect_args(_url))
+# pool_pre_ping: Fly Postgres / pgbouncer drops idle connections, which
+# otherwise surface as `asyncpg.InterfaceError: connection is closed` on
+# the next request. Pre-ping validates + transparently replaces dead ones.
+# pool_recycle: hard cap so no pooled connection outlives the server's
+# idle timeout (~5 min on Fly).
+engine = create_async_engine(
+    _url,
+    echo=False,
+    connect_args=_engine_connect_args(_url),
+    pool_pre_ping=True,
+    pool_recycle=240,
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
