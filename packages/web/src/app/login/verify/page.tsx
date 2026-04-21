@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/AuthContext";
+import { setSessionToken } from "@/lib/session";
 
 const PROD_API = "https://ravenhill-api.fly.dev";
 function resolveApiBase(): string {
@@ -22,22 +23,6 @@ function resolveApiBase(): string {
     .replace(/\/+$/, "");
   return fromEnv || "http://localhost:8000";
 }
-const SESSION_COOKIE = "ravenhill_session";
-function setMiddlewareCookie(token: string) {
-  if (typeof document === "undefined") return;
-  const onHttps = window.location.protocol === "https:";
-  const attrs = [
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
-    "Path=/",
-    `Max-Age=${60 * 60 * 24 * 30}`,
-    "SameSite=Lax",
-    onHttps ? "Secure" : "",
-  ]
-    .filter(Boolean)
-    .join("; ");
-  document.cookie = attrs;
-}
-
 type Status = "verifying" | "success" | "error";
 
 const ERROR_COPY: Record<string, string> = {
@@ -82,7 +67,6 @@ function VerifyInvitePageInner() {
         const apiBase = resolveApiBase();
         const res = await fetch(`${apiBase}/api/auth/verify`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
         });
@@ -101,7 +85,7 @@ function VerifyInvitePageInner() {
           // Mirror on the frontend domain so the Next middleware
           // presence-check can see a cookie (the HttpOnly cross-site
           // cookie set by the API is invisible to middleware).
-          setMiddlewareCookie(body.session_token);
+          setSessionToken(body.session_token);
         }
         await refresh();
         setStatus("success");

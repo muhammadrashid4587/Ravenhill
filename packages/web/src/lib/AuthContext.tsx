@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { clearSessionToken, readSessionToken } from "@/lib/session";
 
 const PROD_API = "https://ravenhill-api.fly.dev";
 function resolveApiBase(): string {
@@ -27,12 +28,6 @@ function resolveApiBase(): string {
     .replace(/\/+$/, "");
   return fromEnv || "http://localhost:8000";
 }
-const SESSION_COOKIE = "ravenhill_session";
-function clearMiddlewareCookie() {
-  if (typeof document === "undefined") return;
-  document.cookie = `${SESSION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
-}
-
 /**
  * Agent shape used across the app.
  *
@@ -80,9 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
+      const sessionToken = readSessionToken();
       const res = await fetch(`${resolveApiBase()}/api/auth/me`, {
-        credentials: "include",
+        credentials: sessionToken ? "omit" : "include",
         cache: "no-store",
+        headers: sessionToken ? { "X-Session-Token": sessionToken } : undefined,
       });
       if (!mountedRef.current) return;
       if (res.ok) {
@@ -101,14 +98,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
+      const sessionToken = readSessionToken();
       await fetch(`${resolveApiBase()}/api/auth/logout`, {
         method: "POST",
-        credentials: "include",
+        credentials: sessionToken ? "omit" : "include",
+        headers: sessionToken ? { "X-Session-Token": sessionToken } : undefined,
       });
     } catch {
       // ignore — worst case the cookie stays until expiry
     }
-    clearMiddlewareCookie();
+    clearSessionToken();
     setAgent(null);
     // Full navigation so any in-memory state tied to the session is dropped.
     if (typeof window !== "undefined") {

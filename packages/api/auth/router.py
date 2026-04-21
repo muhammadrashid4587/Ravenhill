@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from config import settings
 from db import AgentRow
 
-from .deps import get_current_agent_optional, require_admin_token
+from .deps import extract_session_token, get_current_agent_optional, require_admin_token
 from .email import send_signin_email
 from .models import (
     AccessRequestPayload,
@@ -274,7 +274,7 @@ async def me(request: Request) -> MeResponse:
     # Recover the session row to surface expiry — validate_session was
     # already called by the dependency, so we need one more round-trip.
     from .service import validate_session
-    token = request.cookies.get(settings.session_cookie_name, "")
+    token = extract_session_token(request)
     result = await validate_session(token)
     if result is None:
         raise HTTPException(
@@ -294,7 +294,7 @@ async def me(request: Request) -> MeResponse:
 @router.post("/logout")
 async def logout(request: Request, response: Response) -> dict:
     """Invalidate the current session and clear the cookie. Idempotent."""
-    token = request.cookies.get(settings.session_cookie_name, "")
+    token = extract_session_token(request)
     if token:
         await delete_session(token)
     _clear_session_cookie(response)
@@ -317,4 +317,8 @@ async def dev_login(agent_id: UUID, response: Response) -> dict:
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="agent_not_found")
     _set_session_cookie(response, session.session_token)
-    return {"status": "ok", "agent_id": str(session.agent_id)}
+    return {
+        "status": "ok",
+        "agent_id": str(session.agent_id),
+        "session_token": session.session_token,
+    }

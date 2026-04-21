@@ -6,6 +6,7 @@
  * already configured with allow_credentials=true for the configured
  * origins.
  */
+import { readSessionToken } from "@/lib/session";
 
 // API base resolution.
 //   1. In the browser on a known production host, hardcode the prod API so a
@@ -36,11 +37,14 @@ const API_BASE = resolveApiBase();
 const defaultInit: RequestInit = { credentials: "include" };
 
 function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const sessionToken =
+    typeof document !== "undefined" ? readSessionToken() : "";
   return fetch(`${API_BASE}${path}`, {
     ...defaultInit,
     ...init,
-    credentials: "include",
+    credentials: sessionToken ? "omit" : "include",
     headers: {
+      ...(sessionToken ? { "X-Session-Token": sessionToken } : {}),
       ...(init.headers || {}),
     },
   });

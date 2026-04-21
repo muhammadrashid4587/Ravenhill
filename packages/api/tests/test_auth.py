@@ -156,6 +156,45 @@ async def test_verify_issues_session_cookie_and_me_returns_agent():
 
 
 @pytest.mark.asyncio
+async def test_me_and_logout_accept_session_token_header():
+    async with await _client() as c:
+        invite_res = await c.post(
+            "/api/auth/invite",
+            headers={"X-Admin-Token": "test-admin-token"},
+            json={
+                "email": "header@example.com",
+                "name": "Header User",
+                "role": "Ops",
+                "department": "Operations",
+            },
+        )
+        token = invite_res.json()["token"]
+        verify_res = await c.post("/api/auth/verify", json={"token": token})
+        assert verify_res.status_code == 200
+        session_token = verify_res.json()["session_token"]
+
+    async with await _client() as c2:
+        me_res = await c2.get(
+            "/api/auth/me",
+            headers={"X-Session-Token": session_token},
+        )
+        assert me_res.status_code == 200
+        assert me_res.json()["agent"]["email"] == "header@example.com"
+
+        logout_res = await c2.post(
+            "/api/auth/logout",
+            headers={"X-Session-Token": session_token},
+        )
+        assert logout_res.status_code == 200
+
+        me_res2 = await c2.get(
+            "/api/auth/me",
+            headers={"X-Session-Token": session_token},
+        )
+        assert me_res2.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_verify_rejects_invalid_token():
     async with await _client() as c:
         r = await c.post("/api/auth/verify", json={"token": "does-not-exist"})
