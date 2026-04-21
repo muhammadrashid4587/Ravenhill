@@ -10,7 +10,28 @@ import {
   type ReactNode,
 } from "react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const PROD_API = "https://ravenhill-api.fly.dev";
+function resolveApiBase(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host === "raven-hill.org" ||
+      host === "www.raven-hill.org" ||
+      host.endsWith(".vercel.app")
+    ) {
+      return PROD_API;
+    }
+  }
+  const fromEnv = (process.env.NEXT_PUBLIC_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  return fromEnv || "http://localhost:8000";
+}
+const SESSION_COOKIE = "ravenhill_session";
+function clearMiddlewareCookie() {
+  if (typeof document === "undefined") return;
+  document.cookie = `${SESSION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
 
 /**
  * Agent shape used across the app.
@@ -59,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/me`, {
+      const res = await fetch(`${resolveApiBase()}/api/auth/me`, {
         credentials: "include",
         cache: "no-store",
       });
@@ -80,13 +101,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
+      await fetch(`${resolveApiBase()}/api/auth/logout`, {
         method: "POST",
         credentials: "include",
       });
     } catch {
       // ignore — worst case the cookie stays until expiry
     }
+    clearMiddlewareCookie();
     setAgent(null);
     // Full navigation so any in-memory state tied to the session is dropped.
     if (typeof window !== "undefined") {

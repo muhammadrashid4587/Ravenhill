@@ -5,7 +5,38 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/AuthContext";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const PROD_API = "https://ravenhill-api.fly.dev";
+function resolveApiBase(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host === "raven-hill.org" ||
+      host === "www.raven-hill.org" ||
+      host.endsWith(".vercel.app")
+    ) {
+      return PROD_API;
+    }
+  }
+  const fromEnv = (process.env.NEXT_PUBLIC_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  return fromEnv || "http://localhost:8000";
+}
+const SESSION_COOKIE = "ravenhill_session";
+function setMiddlewareCookie(token: string) {
+  if (typeof document === "undefined") return;
+  const onHttps = window.location.protocol === "https:";
+  const attrs = [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    `Max-Age=${60 * 60 * 24 * 30}`,
+    "SameSite=Lax",
+    onHttps ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+  document.cookie = attrs;
+}
 
 type Status = "verifying" | "success" | "error";
 
@@ -48,7 +79,8 @@ function VerifyInvitePageInner() {
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/auth/verify`, {
+        const apiBase = resolveApiBase();
+        const res = await fetch(`${apiBase}/api/auth/verify`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -63,6 +95,13 @@ function VerifyInvitePageInner() {
           );
           setStatus("error");
           return;
+        }
+        const body = await res.json().catch(() => ({}));
+        if (body && typeof body.session_token === "string") {
+          // Mirror on the frontend domain so the Next middleware
+          // presence-check can see a cookie (the HttpOnly cross-site
+          // cookie set by the API is invisible to middleware).
+          setMiddlewareCookie(body.session_token);
         }
         await refresh();
         setStatus("success");

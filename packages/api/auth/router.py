@@ -35,26 +35,30 @@ router = APIRouter()
 
 def _set_session_cookie(response: Response, token: str) -> None:
     secure = settings.site_url.startswith("https://")
+    # SameSite=None required for cross-site cookie (frontend on vercel.app,
+    # API on fly.dev). Browsers only accept SameSite=None when Secure=True.
+    samesite = "none" if secure else "lax"
     response.set_cookie(
         key=settings.session_cookie_name,
         value=token,
         max_age=settings.session_ttl_days * 24 * 60 * 60,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=samesite,
         path="/",
     )
 
 
 def _clear_session_cookie(response: Response) -> None:
     secure = settings.site_url.startswith("https://")
+    samesite = "none" if secure else "lax"
     response.set_cookie(
         key=settings.session_cookie_name,
         value="",
         max_age=0,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=samesite,
         path="/",
     )
 
@@ -188,6 +192,10 @@ async def verify_invite(payload: VerifyPayload, response: Response) -> dict:
     return {
         "agent": _agent_to_current_user(agent).model_dump(),
         "expires_at": session.expires_at.isoformat(),
+        # Returned so the frontend can mirror the token as a same-domain
+        # cookie for its middleware presence-check. The API-domain cookie
+        # (HttpOnly, SameSite=None) is still the real credential.
+        "session_token": session.session_token,
     }
 
 
