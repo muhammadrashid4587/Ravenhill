@@ -47,6 +47,9 @@ app.add_middleware(
         "https://www.raven-hill.org",
         "https://ravenhill-api.fly.dev",
     ],
+    # Match every Vercel preview/production URL on this project so the
+    # frontend can talk to the API regardless of which preview it's on.
+    allow_origin_regex=r"https://raven-hill(-[a-z0-9]+)?(-muhammad-rashids-projects-[a-z0-9]+)?\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
