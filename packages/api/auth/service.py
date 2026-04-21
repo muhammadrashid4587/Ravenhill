@@ -38,6 +38,18 @@ def _normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def _display_name_from_email(email: str) -> str:
+    """Derive a human-ish name from the local-part so a new signup has
+    something to show until they edit their profile."""
+    local = email.split("@", 1)[0]
+    parts = (
+        local.replace(".", " ").replace("_", " ").replace("-", " ").split()
+    )
+    if not parts:
+        return local
+    return " ".join(p.capitalize() for p in parts)
+
+
 def _generate_token(nbytes: int = 32) -> str:
     """URL-safe random token. 32 bytes ≈ 43 chars, 256-bit entropy."""
     return secrets.token_urlsafe(nbytes)
@@ -115,12 +127,12 @@ class SignInError(Exception):
 
 
 async def create_signin_token(email: str) -> tuple[AgentRow, AuthInviteRow, str]:
-    """Self-serve sign-in. Validates the email is admitted, throttles,
-    and returns a short-lived login-only invite.
+    """Self-serve sign-in. Auto-creates an Agent on first sign-in, throttles
+    repeat requests, and returns a short-lived login-only invite.
 
-    Raises SignInError('email_not_admitted') if no Agent exists for this
-    email. Raises SignInError('too_frequent') if a link was issued
-    recently — the caller should tell the user to check their email.
+    Raises SignInError('account_deactivated') if the email matches a
+    disabled Agent (admin-managed). Raises SignInError('too_frequent') if
+    a link was issued recently — the caller tells the user to check email.
     """
     email_norm = _normalize_email(email)
     now = _now()
@@ -130,8 +142,21 @@ async def create_signin_token(email: str) -> tuple[AgentRow, AuthInviteRow, str]
             select(AgentRow).where(AgentRow.email == email_norm)
         )
         agent = result.scalar_one_or_none()
-        if agent is None or not agent.is_active:
-            raise SignInError("email_not_admitted")
+
+        if agent is None:
+            # Self-serve signup: create an agent with sensible placeholders.
+            # The user refines their profile after first sign-in.
+            agent = AgentRow(
+                email=email_norm,
+                name=_display_name_from_email(email_norm),
+                role="Member",
+                departments=["General"],
+                is_active=True,
+            )
+            session.add(agent)
+            await session.flush()
+        elif not agent.is_active:
+            raise SignInError("account_deactivated")
 
         # Throttle: refuse if a login-only invite for this email was
         # created in the last `signin_throttle_seconds`.

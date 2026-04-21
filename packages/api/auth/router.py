@@ -119,20 +119,20 @@ async def issue_invite(payload: InvitePayload) -> InviteResponse:
 
 @router.post("/sign-in-request", response_model=SignInRequestResponse)
 async def sign_in_request(payload: SignInRequestPayload) -> SignInRequestResponse:
-    """Self-serve sign-in: email us and, if you're on the allowlist, we
-    email you a fresh one-shot login link.
+    """Self-serve sign-in. If no Agent exists for this email we create one
+    on the fly with sensible defaults; either way we email a fresh one-shot
+    login link.
 
-    404 with `email_not_admitted` if the email isn't tied to an active
-    Agent — the frontend uses that to route the visitor to request-access.
-    429 with `too_frequent` if a link was issued in the last minute.
+    403 with `account_deactivated` if the email matches an admin-disabled
+    Agent. 429 with `too_frequent` if a link was issued in the last minute.
     """
     try:
         agent, _invite, invite_url = await create_signin_token(payload.email)
     except SignInError as e:
-        if e.code == "email_not_admitted":
+        if e.code == "account_deactivated":
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="email_not_admitted",
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="account_deactivated",
             )
         if e.code == "too_frequent":
             raise HTTPException(
