@@ -186,6 +186,57 @@ export async function fetchWorkspaceCalendar(agentId?: string) {
   return res.json();
 }
 
+export interface TriageItem {
+  thread_id: string;
+  subject: string;
+  from: string;
+  urgency: "now" | "today" | "this_week";
+  reason: string;
+  thread_url?: string | null;
+}
+
+export async function fetchInboxTriage(agentId?: string): Promise<{
+  agent_id: string;
+  items: TriageItem[];
+  source: string;
+}> {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await fetch(`${API_BASE}/api/workspace/gmail/triage${params}`);
+  if (!res.ok) throw new Error(`triage fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export interface PreMeetingBrief {
+  event: {
+    id: string;
+    title: string;
+    start_time: string;
+    attendees: string[];
+    meeting_url?: string | null;
+  };
+  bullets: string[];
+  related_threads: Array<{
+    id: string;
+    subject: string;
+    from: string;
+    thread_url?: string | null;
+  }>;
+  source: string;
+}
+
+export async function fetchPreMeetingBrief(
+  eventId: string,
+  agentId?: string,
+): Promise<PreMeetingBrief> {
+  const params = new URLSearchParams({ event_id: eventId });
+  if (agentId) params.set("agent_id", agentId);
+  const res = await fetch(
+    `${API_BASE}/api/workspace/calendar/brief?${params}`,
+  );
+  if (!res.ok) throw new Error(`brief fetch failed: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchWorkspaceDriveFiles(agentId?: string) {
   const params = agentId ? `?agent_id=${agentId}` : "";
   const res = await fetch(`${API_BASE}/api/workspace/drive/files${params}`);

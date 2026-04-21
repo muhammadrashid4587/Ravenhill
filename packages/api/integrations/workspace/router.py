@@ -15,6 +15,10 @@ from integrations.workspace.adapters import (
     list_drive_folders,
     list_gmail_threads,
 )
+from integrations.workspace.agent_surfaces import (
+    build_pre_meeting_brief,
+    triage_inbox,
+)
 
 router = APIRouter()
 
@@ -66,6 +70,36 @@ async def gmail_ingest(
     """Pull recent Gmail threads and forward topic signals to the graph."""
     try:
         return await ingest_gmail_topics(agent_id, limit=limit)
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---- Agent surfaces: triage + pre-meeting brief ----
+
+
+@router.get("/gmail/triage")
+async def gmail_triage(agent_id: str = Query(default="demo")):
+    """Agent picks the top-3 threads that need the user's attention and
+    returns why + urgency. Falls back to heuristic ranking when the LLM
+    is unavailable."""
+    try:
+        return await triage_inbox(agent_id)
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/calendar/brief")
+async def calendar_brief(
+    agent_id: str = Query(default="demo"),
+    event_id: str = Query(...),
+):
+    """Pre-meeting brief for a calendar event. Pulls attendees + recent
+    Gmail threads mentioning them and asks the agent for a 3-bullet
+    brief (context / what's at stake / suggested opening)."""
+    try:
+        return await build_pre_meeting_brief(agent_id, event_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="event_not_found")
     except Exception as e:  # pragma: no cover
         raise HTTPException(status_code=500, detail=str(e))
 

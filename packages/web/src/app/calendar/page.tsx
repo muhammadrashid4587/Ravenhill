@@ -116,7 +116,7 @@ export default function CalendarPage() {
 
   useEffect(() => {
     Promise.all([
-      fetchCalendarEvents().catch(() => []),
+      fetchCalendarEvents(myAgent?.id).catch(() => []),
       fetchPendingItems().catch(() => []),
       myAgent ? fetchMeetings(myAgent.id).catch(() => []) : Promise.resolve([]),
     ]).then(([ev, p, m]) => {
@@ -793,8 +793,8 @@ function DayDetailPanel({
       <p className="text-[11px] text-dusk mt-5 flex items-center gap-1.5">
         <Bell className="w-3 h-3" />
         Reminders fire {REMINDER_MINUTES.join(" / ")} minutes before each
-        meeting. Enable them from the header. Calendar + Drive sync lands when
-        Muhammad ships OAuth — meetings shown here come from mocks + imported
+        meeting. Enable them from the header. Connect Google from settings to
+        pull live calendar events; otherwise we show seed data + your imported
         transcripts.{" "}
         <Link href="/meetings/new" className="text-claret hover:text-[#D6596C] ml-1">
           Import a transcript
