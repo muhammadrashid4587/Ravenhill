@@ -19,6 +19,7 @@ from db import (
     AuthInviteRow,
     AuthSessionRow,
 )
+from .password import hash_password, verify_password
 
 
 def _now() -> datetime:
@@ -293,6 +294,101 @@ async def delete_session(session_token: str) -> None:
             delete(AuthSessionRow).where(AuthSessionRow.session_token == session_token)
         )
         await session.commit()
+
+
+# ---------- Password auth (signup + login) ----------
+
+
+async def signup_with_password(
+    email: str, password: str, name: str | None
+) -> tuple[AgentRow, AuthSessionRow]:
+    """Create an Agent with a password hash and issue a session.
+
+    Raises SignInError('email_taken') if the email already has an account
+    with a password set. If an Agent exists without a password_hash (e.g.
+    was created via magic-link earlier), we attach the password to it —
+    this lets the same email flow seamlessly from the old UX to the new.
+    """
+    email_norm = _normalize_email(email)
+    now = _now()
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.email == email_norm)
+        )
+        agent = result.scalar_one_or_none()
+
+        if agent is not None:
+            if agent.password_hash:
+                raise SignInError("email_taken")
+            if not agent.is_active:
+                raise SignInError("account_deactivated")
+            agent.password_hash = hash_password(password)
+            if name and not agent.name:
+                agent.name = name
+        else:
+            display = (name or "").strip() or _display_name_from_email(email_norm)
+            agent = AgentRow(
+                email=email_norm,
+                name=display,
+                role="Member",
+                departments=["General"],
+                is_active=True,
+                password_hash=hash_password(password),
+            )
+            session.add(agent)
+            await session.flush()
+
+        session_row = AuthSessionRow(
+            session_token=_generate_token(),
+            agent_id=agent.id,
+            email=email_norm,
+            expires_at=now + timedelta(days=settings.session_ttl_days),
+        )
+        session.add(session_row)
+        await session.commit()
+        await session.refresh(agent)
+        await session.refresh(session_row)
+        return agent, session_row
+
+
+async def login_with_password(
+    email: str, password: str
+) -> tuple[AgentRow, AuthSessionRow]:
+    """Verify a password and issue a session.
+
+    Raises SignInError('invalid_credentials') on any failure (missing
+    agent, wrong password, no password set) — deliberately opaque so we
+    don't leak which emails are registered. Raises 'account_deactivated'
+    on a disabled-admin'd account.
+    """
+    email_norm = _normalize_email(email)
+    now = _now()
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.email == email_norm)
+        )
+        agent = result.scalar_one_or_none()
+
+        if agent is None or not agent.password_hash:
+            raise SignInError("invalid_credentials")
+        if not agent.is_active:
+            raise SignInError("account_deactivated")
+        if not verify_password(password, agent.password_hash):
+            raise SignInError("invalid_credentials")
+
+        session_row = AuthSessionRow(
+            session_token=_generate_token(),
+            agent_id=agent.id,
+            email=email_norm,
+            expires_at=now + timedelta(days=settings.session_ttl_days),
+        )
+        session.add(session_row)
+        await session.commit()
+        await session.refresh(agent)
+        await session.refresh(session_row)
+        return agent, session_row
 
 
 # ---------- Dev-only convenience: sign in as a seed agent ----------

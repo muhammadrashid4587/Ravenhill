@@ -77,6 +77,7 @@ class AgentRow(Base):
     trust_level = Column(String(20), default="auto")
     scopes = Column(JSON, default=list)
     is_active = Column(Boolean, default=True)
+    password_hash = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -343,6 +344,7 @@ async def alter_table_if_needed():
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS role_description TEXT DEFAULT ''",
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_email_nonempty ON agents (LOWER(email)) WHERE email IS NOT NULL AND email <> ''",
             "ALTER TABLE auth_invites ADD COLUMN IF NOT EXISTS is_login_only BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS password_hash VARCHAR(500)",
         ]:
             try:
                 await conn.execute(text(col_def))

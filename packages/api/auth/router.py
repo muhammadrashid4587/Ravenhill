@@ -15,9 +15,11 @@ from .models import (
     CurrentUserAgent,
     InvitePayload,
     InviteResponse,
+    LoginPayload,
     MeResponse,
     SignInRequestPayload,
     SignInRequestResponse,
+    SignupPayload,
     VerifyPayload,
 )
 from .service import (
@@ -27,7 +29,9 @@ from .service import (
     create_invite,
     create_signin_token,
     delete_session,
+    login_with_password,
     record_access_request,
+    signup_with_password,
 )
 
 router = APIRouter()
@@ -168,6 +172,58 @@ async def sign_in_request(payload: SignInRequestPayload) -> SignInRequestRespons
         status="sent" if result.sent else "logged",
         dev_url=dev_url,
     )
+
+
+# ---------- Public: password signup + login ----------
+
+
+@router.post("/signup")
+async def signup(payload: SignupPayload, response: Response) -> dict:
+    """Create an account with email + password. Returns the current user
+    and sets the session cookie. 409 if email is already registered."""
+    try:
+        agent, session = await signup_with_password(
+            payload.email, payload.password, payload.name
+        )
+    except SignInError as e:
+        if e.code == "email_taken":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="email_taken")
+        if e.code == "account_deactivated":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="account_deactivated"
+            )
+        raise
+
+    _set_session_cookie(response, session.session_token)
+    return {
+        "agent": _agent_to_current_user(agent).model_dump(),
+        "expires_at": session.expires_at.isoformat(),
+        "session_token": session.session_token,
+    }
+
+
+@router.post("/login")
+async def login(payload: LoginPayload, response: Response) -> dict:
+    """Verify email + password, set the session cookie, return the user.
+    401 invalid_credentials on any failure; 403 account_deactivated if
+    the account is disabled."""
+    try:
+        agent, session = await login_with_password(payload.email, payload.password)
+    except SignInError as e:
+        if e.code == "account_deactivated":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="account_deactivated"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials"
+        )
+
+    _set_session_cookie(response, session.session_token)
+    return {
+        "agent": _agent_to_current_user(agent).model_dump(),
+        "expires_at": session.expires_at.isoformat(),
+        "session_token": session.session_token,
+    }
 
 
 # ---------- Public: verify an invite, set session cookie ----------

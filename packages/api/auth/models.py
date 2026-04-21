@@ -58,6 +58,20 @@ class VerifyPayload(BaseModel):
     token: str
 
 
+# ---------- Password signup / login ----------
+
+
+class SignupPayload(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    name: str | None = None
+
+
+class LoginPayload(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=200)
+
+
 # ---------- /me response ----------
 
 
