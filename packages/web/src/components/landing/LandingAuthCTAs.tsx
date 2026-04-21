@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/AuthContext";
  */
 
 export function LandingNavCTAs() {
-  const { agent, loading } = useAuth();
+  const { agent, loading, logout } = useAuth();
 
   if (loading) {
     return <div className="w-[140px] h-[30px]" aria-hidden="true" />;
@@ -28,6 +28,15 @@ export function LandingNavCTAs() {
         >
           Home
         </Link>
+        <button
+          type="button"
+          onClick={() => {
+            void logout();
+          }}
+          className="btn btn-ghost text-[13px] px-3 py-1.5"
+        >
+          Sign out
+        </button>
         <Link
           href="/chat"
           className="btn btn-primary text-[13px] px-3.5 py-1.5"
