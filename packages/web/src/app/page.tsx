@@ -1,9 +1,14 @@
 import Link from "next/link";
-import { ArrowUpRight, Shield, GitBranch, ScrollText, Plug } from "lucide-react";
+import { Shield, GitBranch, ScrollText, Plug } from "lucide-react";
 import HeroLive from "@/components/landing/HeroLive";
 import ProductMoment from "@/components/landing/ProductMoment";
 import InfrastructurePlane from "@/components/landing/InfrastructurePlane";
 import RoutingMesh from "@/components/landing/RoutingMesh";
+import {
+  LandingFooterAuthLink,
+  LandingNavCTAs,
+  LandingPrimaryCTA,
+} from "@/components/landing/LandingAuthCTAs";
 
 // -----------------------------------------------------------------------------
 // Landing — Ravenhill V1
@@ -53,18 +58,7 @@ export default function LandingPage() {
             Trust
           </Link>
           <span className="hidden sm:block w-px h-4 bg-white/[0.08] mx-1" />
-          <Link
-            href="/login"
-            className="btn btn-ghost text-[13px] px-3 py-1.5"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/login"
-            className="btn btn-primary text-[13px] px-3.5 py-1.5"
-          >
-            Request access
-          </Link>
+          <LandingNavCTAs />
         </div>
       </nav>
 
@@ -102,13 +96,7 @@ export default function LandingPage() {
             className="hero-parallax flex items-center justify-center gap-3 animate-fade-up"
             style={{ animationDelay: "300ms" }}
           >
-            <Link
-              href="/login"
-              className="btn btn-primary text-sm px-5 py-2.5"
-            >
-              Request access
-              <ArrowUpRight className="w-4 h-4" />
-            </Link>
+            <LandingPrimaryCTA className="btn btn-primary text-sm px-5 py-2.5" />
             <Link
               href="#how"
               className="btn btn-secondary text-sm px-5 py-2.5"
@@ -261,10 +249,7 @@ export default function LandingPage() {
           Ravenhill is in early access. We&apos;re onboarding our first design
           partners this quarter.
         </p>
-        <Link href="/login" className="btn btn-primary text-sm px-6 py-3 inline-flex">
-          Request access
-          <ArrowUpRight className="w-4 h-4" />
-        </Link>
+        <LandingPrimaryCTA className="btn btn-primary text-sm px-6 py-3 inline-flex" />
       </section>
 
       {/* ============================================================
@@ -279,9 +264,7 @@ export default function LandingPage() {
           <Link href="/trust" className="text-smoke hover:text-parchment transition">
             Trust
           </Link>
-          <Link href="/login" className="text-smoke hover:text-parchment transition">
-            Sign in
-          </Link>
+          <LandingFooterAuthLink />
           <span className="text-[11px] text-dusk font-mono">© 2026 Ravenhill</span>
         </div>
       </footer>
