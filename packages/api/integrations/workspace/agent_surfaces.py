@@ -35,15 +35,25 @@ log = logging.getLogger("integrations.workspace.surfaces")
 
 _TRIAGE_SYSTEM = (
     "You are the user's personal work agent. You triage their inbox. "
-    "Given the 10 most recent threads, pick the three that most need the "
-    "user's attention and explain each in one short sentence.\n\n"
+    "Given recent threads, pick the three that most need the user's "
+    "attention and explain each in one short sentence.\n\n"
     "Rules:\n"
-    "- Prefer unread, recent, or threads that clearly ask the user a "
+    "- Prefer unread threads, or threads that clearly ask the user a "
     "question or for a decision.\n"
     "- Skip newsletters, automated notifications, and receipts unless "
     "they need action.\n"
-    "- Urgency must be 'now', 'today', or 'this_week'.\n"
-    "- 'reason' is one plain-English sentence, max 15 words, no hedging."
+    "- Urgency must be exactly 'now', 'today', or 'this_week'.\n"
+    "- 'reason' is ONE plain-English sentence, max 15 words, no hedging. "
+    "Never leave it blank.\n"
+    "- thread_id must be the exact id= value from the input.\n"
+    "- subject must be the exact subject from the input.\n"
+    "- from must be the exact from= value from the input.\n\n"
+    "Return JSON in exactly this shape (fill every field with real "
+    "content — never return empty strings):\n"
+    '{"items":[{"thread_id":"<id>","subject":"<subject>",'
+    '"from":"<from>","urgency":"today","reason":"<one-sentence why>"}]}\n\n'
+    "Example of a good reason: \"Max pushed the deadline — confirm the "
+    "new date before the SLS kickoff call.\""
 )
 
 
@@ -152,35 +162,40 @@ async def triage_inbox(agent_id: str) -> dict[str, Any]:
         "that most need attention and return JSON per the schema.\n\n"
         f"{_summarize_threads_for_llm(threads)}"
     )
+    # Use the reasoning tier — the fast 8B model returned empty items.
     result = await call_llm_structured(
         _TRIAGE_SYSTEM,
         user_msg,
         _TRIAGE_SCHEMA,
-        model_tier="fast",
-        max_tokens=800,
+        model_tier="reasoning",
+        max_tokens=900,
     )
 
     if isinstance(result, dict) and isinstance(result.get("items"), list):
-        # Join back thread_url + from from the thread list so the UI can
-        # deep-link to Gmail.
         by_id = {t.get("id"): t for t in threads}
         items: list[dict[str, Any]] = []
         for it in result["items"][:3]:
+            # Skip skeleton responses where the model filled in nothing —
+            # they're worse than the heuristic.
+            reason = (it.get("reason") or "").strip()
             tid = it.get("thread_id")
+            if not reason or not tid:
+                continue
             src = by_id.get(tid) or {}
             items.append(
                 {
                     "thread_id": tid,
-                    "subject": it.get("subject") or src.get("subject", ""),
-                    "from": it.get("from") or src.get("from", ""),
+                    "subject": (it.get("subject") or src.get("subject", "")).strip(),
+                    "from": (it.get("from") or src.get("from", "")).strip(),
                     "urgency": it.get("urgency", "today"),
-                    "reason": it.get("reason", ""),
+                    "reason": reason,
                     "thread_url": src.get("thread_url"),
                 }
             )
-        return {"agent_id": agent_id, "items": items, "source": "llm"}
+        if items:
+            return {"agent_id": agent_id, "items": items, "source": "llm"}
+        log.info("[triage] LLM returned empty items, using heuristic")
 
-    # Fallback.
     return {
         "agent_id": agent_id,
         "items": _heuristic_triage(threads),
