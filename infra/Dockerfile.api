@@ -2,18 +2,12 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-# 1. Copy pyproject.toml and create stub package dirs so setuptools'
-#    find_packages can discover them during install.  This layer is
-#    cached until pyproject.toml changes, keeping rebuilds fast.
-COPY packages/api/pyproject.toml .
-RUN mkdir -p agents messaging registry approvals permissions admin integrations \
-    && touch agents/__init__.py messaging/__init__.py registry/__init__.py \
-             approvals/__init__.py permissions/__init__.py admin/__init__.py \
-             integrations/__init__.py
-RUN pip install --no-cache-dir .
-
-# 2. Copy the real source code (overwrites the stubs above).
+# Copy the entire api package first so setuptools' find_packages discovers
+# every module at install time. Trades some build-cache granularity for
+# resilience when modules are added/renamed.
 COPY packages/api/ .
+
+RUN pip install --no-cache-dir .
 
 EXPOSE 8000
 
