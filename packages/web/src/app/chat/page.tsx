@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { Suspense, useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Send,
   Clock,
@@ -27,6 +28,7 @@ import {
   completeDocRequest,
   resetDemo,
   fetchAgents,
+  chatWithAgent,
 } from "@/lib/api";
 import {
   fetchNotifications,
@@ -177,8 +179,16 @@ function summaryToMarkdown(summary: FileSummary): string {
 
 // ---- Main Component ----
 
-export default function ChatPage() {
+function ChatInner() {
   const { agent: myAgent } = useAuth();
+  const searchParams = useSearchParams();
+  const urlToAgentId = searchParams.get("to");
+  const targetedForRef = useRef<string | null>(null);
+  const [targetAgent, setTargetAgent] = useState<{
+    id: string;
+    name: string;
+    role: string;
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
@@ -290,6 +300,34 @@ export default function ChatPage() {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Start a direct conversation with a teammate's agent. The send handler
+  // will route messages to POST /api/agents/{id}/chat so responses come back
+  // in that agent's voice, not routed through the orchestrator.
+  const reachOutTo = useCallback(
+    (person: { id: string; name: string; role: string }) => {
+      setTargetAgent(person);
+      targetedForRef.current = person.id;
+      setMessages([]);
+      setActivitySteps([]);
+      setCurrentSources([]);
+      queueMicrotask(() => inputRef.current?.focus());
+    },
+    [],
+  );
+
+  const clearTarget = useCallback(() => {
+    setTargetAgent(null);
+    targetedForRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!urlToAgentId || people.length === 0) return;
+    if (targetedForRef.current === urlToAgentId) return;
+    const target = people.find((p) => p.id === urlToAgentId);
+    if (!target) return;
+    reachOutTo(target);
+  }, [urlToAgentId, people, reachOutTo]);
 
   // ---- Slack handlers ----
   const openSlackChannel = async (channel: SlackChannel) => {
@@ -516,6 +554,32 @@ export default function ChatPage() {
     pushMsg("You", message, "user", {
       attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
     });
+
+    // Direct-agent conversation: talk straight to the target's agent,
+    // skipping the orchestrator/routing flow.
+    if (targetAgent) {
+      const thinkId = pushMsg(targetAgent.name, "Thinking...", "thinking");
+      pushActivity(
+        `Reaching out to ${targetAgent.name}`,
+        targetAgent.role,
+        "step",
+      );
+      try {
+        const res = await chatWithAgent(targetAgent.id, message);
+        removeMsg(thinkId);
+        pushMsg(res.agent_name, res.content, "agent");
+      } catch {
+        removeMsg(thinkId);
+        pushMsg(
+          "System",
+          `Couldn't reach ${targetAgent.name}'s agent. Is the backend running?`,
+          "system",
+        );
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     const thinkingId = pushMsg(myAgent.name, "Thinking...", "thinking");
     const startTime = Date.now();
@@ -802,9 +866,11 @@ export default function ChatPage() {
             ) : (
               <div className="space-y-1">
                 {people.map((p) => (
-                  <div
+                  <button
                     key={p.id}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-ink border border-white/[0.06] hover:border-white/[0.12] transition animate-fade-up"
+                    type="button"
+                    onClick={() => reachOutTo(p)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-ink border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02] transition animate-fade-up text-left press-scale"
                   >
                     <div className="w-7 h-7 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
                       {getInitials(p.name)}
@@ -815,7 +881,7 @@ export default function ChatPage() {
                       </div>
                       <div className="text-[10px] text-dusk truncate">{p.role}</div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )
@@ -917,27 +983,65 @@ export default function ChatPage() {
               </button>
             </header>
 
+            {targetAgent && (
+              <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-white/[0.06] bg-[rgba(139,30,47,0.07)]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-6 h-6 rounded-full bg-graphite border border-claret/40 flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
+                    {getInitials(targetAgent.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-bone truncate">
+                      Direct line to{" "}
+                      <span className="text-claret font-medium">
+                        {targetAgent.name}
+                      </span>
+                      ’s agent
+                    </div>
+                    <div className="text-[10px] text-dusk truncate">
+                      {targetAgent.role}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearTarget}
+                  className="flex items-center gap-1 text-[10px] text-smoke hover:text-parchment px-2 py-1 rounded hover:bg-white/[0.04] transition shrink-0"
+                  aria-label="Close direct conversation"
+                >
+                  <X className="w-3 h-3" /> Close
+                </button>
+              </div>
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-1">
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-dusk">
                   <div
-                    className={`w-12 h-12 rounded-2xl ${agentColor} flex items-center justify-center text-base font-semibold mb-4`}
+                    className={`w-12 h-12 rounded-2xl ${targetAgent ? "bg-graphite border border-claret/40 text-bone" : agentColor} flex items-center justify-center text-base font-semibold mb-4`}
                   >
-                    {getInitials(myAgent.name)}
+                    {getInitials(targetAgent ? targetAgent.name : myAgent.name)}
                   </div>
-                  <p className="text-sm text-parchment mb-1">Your personal agent</p>
-                  <p className="text-xs text-smoke max-w-xs text-center">
-                    Ask anything — it knows your tasks and meetings, and reaches out to other agents when needed.
+                  <p className="text-sm text-parchment mb-1">
+                    {targetAgent
+                      ? `${targetAgent.name}'s agent`
+                      : "Your personal agent"}
                   </p>
-                  <button
-                    type="button"
-                    onClick={attachSampleFile}
-                    className="mt-4 flex items-center gap-2 text-[11px] text-smoke hover:text-parchment px-3 py-1.5 rounded-lg bg-ink border border-white/[0.08] hover:border-white/[0.15] transition"
-                  >
-                    <FileText className="w-3 h-3" />
-                    Try the sample file
-                  </button>
+                  <p className="text-xs text-smoke max-w-xs text-center">
+                    {targetAgent
+                      ? `Ask anything — you're talking to ${targetAgent.name.split(" ")[0]}'s agent, which answers in their voice from their knowledge.`
+                      : "Ask anything — it knows your tasks and meetings, and reaches out to other agents when needed."}
+                  </p>
+                  {!targetAgent && (
+                    <button
+                      type="button"
+                      onClick={attachSampleFile}
+                      className="mt-4 flex items-center gap-2 text-[11px] text-smoke hover:text-parchment px-3 py-1.5 rounded-lg bg-ink border border-white/[0.08] hover:border-white/[0.15] transition"
+                    >
+                      <FileText className="w-3 h-3" />
+                      Try the sample file
+                    </button>
+                  )}
                 </div>
               )}
               {messages.map((msg) => {
@@ -1270,6 +1374,14 @@ export default function ChatPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatInner />
+    </Suspense>
   );
 }
 

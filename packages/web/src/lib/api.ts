@@ -74,12 +74,19 @@ export async function deleteAgent(agentId: string) {
   return res.json();
 }
 
-export async function chatWithAgent(agentId: string, message: string) {
+export async function chatWithAgent(
+  agentId: string,
+  message: string,
+): Promise<{ agent_id: string; agent_name: string; content: string }> {
   const res = await apiFetch(`/api/agents/${agentId}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content: message, agent_id: agentId }),
   });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `chat failed: ${res.status}`);
+  }
   return res.json();
 }
 

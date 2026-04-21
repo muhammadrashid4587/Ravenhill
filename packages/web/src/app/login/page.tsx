@@ -104,14 +104,11 @@ function LoginPageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: signinEmail.trim() }),
       });
-      if (res.status === 404) {
-        // Not on the allowlist — route to request-access with the email
-        // pre-filled and an explanatory notice.
-        setReqEmail(signinEmail.trim());
-        setNotice(
-          `We don't have ${signinEmail.trim()} on our design-partner list yet. Tell us a bit about yourself and we'll be in touch.`,
+      if (res.status === 403) {
+        // Account admin-disabled.
+        setSigninError(
+          "This account has been deactivated. Reach out to your admin to restore access.",
         );
-        setMode("request");
         return;
       }
       if (res.status === 429) {
@@ -267,8 +264,8 @@ function LoginPageInner() {
                 Sign in
               </h1>
               <p className="text-sm text-smoke mb-8">
-                Enter your work email. If you&apos;re on our design-partner
-                list, we&apos;ll email you a one-time sign-in link.
+                Enter your email and we&apos;ll send you a one-time sign-in
+                link. New accounts are created automatically.
               </p>
               <form onSubmit={handleSignIn} className="space-y-3">
                 <div>
@@ -296,7 +293,8 @@ function LoginPageInner() {
                 </button>
               </form>
               <p className="text-[11px] text-dusk mt-6 leading-relaxed">
-                Don&apos;t have access yet?{" "}
+                New here? Just enter your email — we&apos;ll set up your
+                agent on first sign-in. Piloting for a team?{" "}
                 <button
                   type="button"
                   onClick={() => {
@@ -347,13 +345,17 @@ function LoginPageInner() {
                 <span className="text-parchment">{signinEmail}</span>.
               </p>
               {signinResult.devUrl && (
-                <div className="rounded-lg border border-oxblood/40 bg-oxblood/10 px-3 py-2.5 text-[11px] leading-relaxed">
-                  <div className="text-dusk font-mono uppercase tracking-wider mb-1">
-                    Dev mode · no email provider configured
+                <div className="rounded-lg border border-oxblood/40 bg-oxblood/10 px-3 py-3 text-[12px] leading-relaxed">
+                  <div className="text-bone font-medium mb-1.5">
+                    👇 Click this link to sign in
+                  </div>
+                  <div className="text-dusk text-[10px] mb-2">
+                    Dev mode — email not configured, so we&apos;re showing the
+                    magic link inline. Production sends this to your inbox.
                   </div>
                   <a
                     href={signinResult.devUrl}
-                    className="text-claret hover:text-[#D6596C] underline-offset-4 hover:underline font-mono break-all"
+                    className="text-claret hover:text-[#D6596C] underline-offset-4 underline font-mono break-all"
                   >
                     {signinResult.devUrl}
                   </a>
