@@ -29,13 +29,30 @@ from config import settings
 
 
 def _ensure_async_url(url: str) -> str:
-    """Convert postgresql:// to postgresql+asyncpg:// if needed."""
-    if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    """Convert postgres://, postgresql:// to postgresql+asyncpg:// and strip
+    psycopg-style query args asyncpg doesn't understand."""
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # asyncpg rejects `sslmode=...` — it uses its own `ssl` kwarg. Strip it
+    # from the URL; the caller sets ssl via connect_args below.
+    for bad in ("?sslmode=disable", "&sslmode=disable", "?sslmode=require", "&sslmode=require"):
+        url = url.replace(bad, "")
     return url
 
 
-engine = create_async_engine(_ensure_async_url(settings.database_url), echo=False)
+def _engine_connect_args(url: str) -> dict:
+    """Disable SSL when talking to Fly's internal .flycast network — the
+    Fly Postgres listens on plaintext there and resets on TLS handshake.
+    Everything else defaults to SSL via asyncpg."""
+    if ".flycast" in url or ".internal" in url:
+        return {"ssl": False}
+    return {}
+
+
+_url = _ensure_async_url(settings.database_url)
+engine = create_async_engine(_url, echo=False, connect_args=_engine_connect_args(_url))
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
