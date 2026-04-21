@@ -7,7 +7,11 @@
  * origins.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Trim any whitespace/trailing slash so a stray space in the env var
+// doesn't produce URLs like `https://api.example.com%20/foo`.
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000")
+  .trim()
+  .replace(/\/+$/, "");
 
 // Default init for every request — always include credentials.
 const defaultInit: RequestInit = { credentials: "include" };
