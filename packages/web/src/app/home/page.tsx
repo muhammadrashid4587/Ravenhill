@@ -35,7 +35,7 @@ const DESTINATIONS = [
 
 export default function HomePage() {
   const router = useRouter();
-  const { agent: myAgent, loading } = useAuth();
+  const { agent: myAgent, loading, logout } = useAuth();
 
   if (loading) {
     return (
@@ -76,6 +76,16 @@ export default function HomePage() {
           <DeptAvatar name={myAgent.name} size="xs" />
           <span className="text-xs text-parchment">{myAgent.name}</span>
           <span className="w-1.5 h-1.5 rounded-full bg-[#3FA46A]" />
+          <span className="w-px h-4 bg-white/[0.08] mx-1" />
+          <button
+            type="button"
+            onClick={() => {
+              void logout();
+            }}
+            className="text-[11px] text-smoke hover:text-parchment transition px-2 py-1"
+          >
+            Sign out
+          </button>
         </div>
       </nav>
 
