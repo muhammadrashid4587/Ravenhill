@@ -15,14 +15,17 @@ so the frontend can show "Connect Google" instead of crashing.
 """
 
 import logging
+from uuid import UUID
 
 from config import settings
+from integrations.google_tokens import (
+    GoogleTokenBundle,
+    is_connected,
+    load_tokens,
+    save_tokens,
+)
 
 log = logging.getLogger("integrations.google_meet")
-
-# In-memory token store — maps agent_id to Google OAuth tokens.
-# Phase 1: simple dict. Phase 2: encrypted in Postgres.
-_token_store: dict[str, dict] = {}
 
 # Google OAuth scopes needed.
 # Single consent covers Calendar + Drive + Gmail so one OAuth flow unlocks
@@ -39,9 +42,40 @@ def _is_configured() -> bool:
     return bool(settings.google_client_id and settings.google_client_secret)
 
 
-def _get_tokens(agent_id: str) -> dict | None:
-    """Get stored OAuth tokens for an agent."""
-    return _token_store.get(agent_id)
+def _coerce_agent_uuid(agent_id: str | UUID) -> UUID | None:
+    """Turn the loose `agent_id` used in query params into a real UUID.
+
+    Returns None for the seed-mode sentinels ("demo", empty) so callers can
+    skip the DB entirely — there's no user to link tokens to.
+    """
+    if not agent_id or agent_id == "demo":
+        return None
+    if isinstance(agent_id, UUID):
+        return agent_id
+    try:
+        return UUID(agent_id)
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _get_tokens(agent_id: str | UUID) -> GoogleTokenBundle | None:
+    """Load the stored Google tokens for an agent, decrypted.
+
+    Accepts either a UUID or a string (query-param ergonomics). Returns
+    None for seed/unauth callers so the adapters can fall back to mock data.
+    """
+    uid = _coerce_agent_uuid(agent_id)
+    if uid is None:
+        return None
+    return await load_tokens(uid)
+
+
+async def _has_tokens(agent_id: str | UUID) -> bool:
+    """Cheap existence check that avoids decrypting the bundle."""
+    uid = _coerce_agent_uuid(agent_id)
+    if uid is None:
+        return False
+    return await is_connected(uid)
 
 
 async def get_auth_url() -> str:
@@ -81,9 +115,21 @@ async def get_auth_url() -> str:
 
 
 async def handle_auth_callback(code: str, agent_id: str) -> dict:
-    """Exchange authorization code for tokens and store them."""
+    """Exchange authorization code for tokens and persist them encrypted.
+
+    The `agent_id` must resolve to a real AgentRow (with an `org_id`) —
+    otherwise we refuse to store tokens, since a row without a tenant
+    would leak across orgs on any join-less lookup.
+    """
     if not _is_configured():
         raise ValueError("Google OAuth not configured.")
+
+    uid = _coerce_agent_uuid(agent_id)
+    if uid is None:
+        raise ValueError(
+            "Connect requires a signed-in agent. "
+            "Seed / demo sessions cannot store Google tokens."
+        )
 
     from google_auth_oauthlib.flow import Flow
 
@@ -100,26 +146,36 @@ async def handle_auth_callback(code: str, agent_id: str) -> dict:
         scopes=SCOPES,
     )
     flow.redirect_uri = settings.google_redirect_uri
-    flow.fetch_token(code=code)
+
+    # fetch_token is a blocking HTTP call; punt to a thread so the event
+    # loop stays responsive for concurrent requests.
+    import asyncio
+
+    await asyncio.to_thread(flow.fetch_token, code=code)
 
     creds = flow.credentials
-    _token_store[agent_id] = {
-        "token": creds.token,
-        "refresh_token": creds.refresh_token,
-        "token_uri": creds.token_uri,
-        "client_id": creds.client_id,
-        "client_secret": creds.client_secret,
-        "scopes": list(creds.scopes),
-    }
+    try:
+        await save_tokens(
+            uid,
+            access_token=creds.token,
+            refresh_token=creds.refresh_token,
+            token_uri=creds.token_uri,
+            client_id=creds.client_id,
+            client_secret=creds.client_secret,
+            scopes=list(creds.scopes or SCOPES),
+            expiry=creds.expiry,
+        )
+    except LookupError as exc:
+        raise ValueError(str(exc))
 
-    log.info(f"Google OAuth tokens stored for agent {agent_id}")
-    return {"status": "connected", "agent_id": agent_id}
+    log.info("Google OAuth tokens stored for agent %s", uid)
+    return {"status": "connected", "agent_id": str(uid)}
 
 
-def _build_credentials(agent_id: str):
-    """Build Google credentials object from stored tokens."""
-    tokens = _get_tokens(agent_id)
-    if not tokens:
+async def _build_credentials(agent_id: str | UUID):
+    """Build Google credentials object from the stored (encrypted) tokens."""
+    tokens = await _get_tokens(agent_id)
+    if tokens is None:
         raise ValueError(
             "Not authenticated with Google. Connect your Google account first."
         )
@@ -127,12 +183,12 @@ def _build_credentials(agent_id: str):
     from google.oauth2.credentials import Credentials
 
     return Credentials(
-        token=tokens["token"],
-        refresh_token=tokens.get("refresh_token"),
-        token_uri=tokens.get("token_uri", "https://oauth2.googleapis.com/token"),
-        client_id=tokens.get("client_id", settings.google_client_id),
-        client_secret=tokens.get("client_secret", settings.google_client_secret),
-        scopes=tokens.get("scopes", SCOPES),
+        token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+        token_uri=tokens.token_uri,
+        client_id=tokens.client_id,
+        client_secret=tokens.client_secret,
+        scopes=tokens.scopes or SCOPES,
     )
 
 
@@ -146,8 +202,7 @@ async def list_recent_meetings(agent_id: str) -> list[dict]:
         # Return mock data when Google isn't configured
         return _mock_recent_meetings()
 
-    tokens = _get_tokens(agent_id)
-    if not tokens:
+    if not await _has_tokens(agent_id):
         # Return mock data when not authenticated
         return _mock_recent_meetings()
 
@@ -155,7 +210,7 @@ async def list_recent_meetings(agent_id: str) -> list[dict]:
     from datetime import datetime, timedelta, timezone
     from googleapiclient.discovery import build
 
-    creds = _build_credentials(agent_id)
+    creds = await _build_credentials(agent_id)
 
     def _fetch():
         service = build("calendar", "v3", credentials=creds)
@@ -197,14 +252,14 @@ async def fetch_meeting_transcript(agent_id: str, calendar_event_id: str) -> dic
     Google Meet saves transcripts as Google Docs in the user's Drive.
     We search for them by the meeting/event reference.
     """
-    if not _is_configured() or not _get_tokens(agent_id):
+    if not _is_configured() or not await _has_tokens(agent_id):
         # Return mock transcript
         return _mock_transcript(calendar_event_id)
 
     import asyncio
     from googleapiclient.discovery import build
 
-    creds = _build_credentials(agent_id)
+    creds = await _build_credentials(agent_id)
 
     def _fetch():
         # First, get the calendar event to find the meeting title

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from config import settings
-from integrations.google_meet import _get_tokens, _build_credentials
+from integrations.google_meet import _build_credentials, _has_tokens
 
 log = logging.getLogger("integrations.workspace")
 
@@ -28,8 +28,10 @@ def _is_configured() -> bool:
     return bool(settings.google_client_id and settings.google_client_secret)
 
 
-def _use_seed(agent_id: str) -> bool:
-    return not (_is_configured() and _get_tokens(agent_id))
+async def _use_seed(agent_id: str) -> bool:
+    if not _is_configured():
+        return True
+    return not await _has_tokens(agent_id)
 
 
 # ---------------------------------------------------------------------------
@@ -39,13 +41,13 @@ def _use_seed(agent_id: str) -> bool:
 
 async def list_calendar_events(agent_id: str) -> list[dict[str, Any]]:
     """Upcoming + recently-past events from the user's primary calendar."""
-    if _use_seed(agent_id):
+    if await _use_seed(agent_id):
         return _seed_calendar_events()
 
     import asyncio
     from googleapiclient.discovery import build
 
-    creds = _build_credentials(agent_id)
+    creds = await _build_credentials(agent_id)
 
     def _fetch() -> list[dict[str, Any]]:
         service = build("calendar", "v3", credentials=creds)
@@ -216,13 +218,13 @@ _DRIVE_SEED_FOLDERS: list[dict[str, Any]] = [
 
 
 async def list_drive_files(agent_id: str) -> list[dict[str, Any]]:
-    if _use_seed(agent_id):
+    if await _use_seed(agent_id):
         return list(_DRIVE_SEED_FILES)
 
     import asyncio
     from googleapiclient.discovery import build
 
-    creds = _build_credentials(agent_id)
+    creds = await _build_credentials(agent_id)
 
     def _fetch() -> list[dict[str, Any]]:
         service = build("drive", "v3", credentials=creds)
@@ -257,7 +259,7 @@ async def list_drive_folders(agent_id: str) -> list[dict[str, Any]]:
     Drive's native folder model doesn't map 1:1 to these buckets, so we
     derive them from the file list. This gives the frontend a stable shape.
     """
-    if _use_seed(agent_id):
+    if await _use_seed(agent_id):
         return list(_DRIVE_SEED_FOLDERS)
 
     files = await list_drive_files(agent_id)
@@ -335,13 +337,13 @@ _GMAIL_SEED: list[dict[str, Any]] = [
 
 
 async def list_gmail_threads(agent_id: str, limit: int = 25) -> list[dict[str, Any]]:
-    if _use_seed(agent_id):
+    if await _use_seed(agent_id):
         return list(_GMAIL_SEED[:limit])
 
     import asyncio
     from googleapiclient.discovery import build
 
-    creds = _build_credentials(agent_id)
+    creds = await _build_credentials(agent_id)
 
     def _fetch() -> list[dict[str, Any]]:
         service = build("gmail", "v1", credentials=creds)
@@ -499,5 +501,5 @@ async def ingest_gmail_topics(agent_id: str, limit: int = 25) -> dict[str, Any]:
         "topics_detected": unique_topics[:20],
         "persisted": persisted,
         "deduplicated": deduplicated,
-        "connected": not _use_seed(agent_id),
+        "connected": not await _use_seed(agent_id),
     }

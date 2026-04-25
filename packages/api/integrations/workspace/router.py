@@ -3,11 +3,13 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from integrations.google_meet import (
-    _get_tokens,
+    _coerce_agent_uuid,
+    _has_tokens,
     _is_configured,
     get_auth_url,
     handle_auth_callback,
 )
+from integrations.google_tokens import delete_tokens
 from integrations.workspace.adapters import (
     ingest_gmail_topics,
     list_calendar_events,
@@ -111,10 +113,10 @@ async def calendar_brief(
 async def google_status(agent_id: str = Query(default="demo")):
     """Per-agent Google connection status. Scopes cover Calendar + Drive + Gmail."""
     configured = _is_configured()
-    tokens = _get_tokens(agent_id) if configured else None
+    connected = await _has_tokens(agent_id) if configured else False
     return {
         "configured": configured,
-        "connected": bool(tokens),
+        "connected": connected,
         "agent_id": agent_id,
         "scopes": [
             "calendar.readonly",
@@ -148,8 +150,7 @@ async def google_callback(
 
 @router.post("/google/disconnect")
 async def google_disconnect(agent_id: str = Query(default="demo")):
-    """Clear the agent's stored Google tokens (local in-memory store for Phase 1)."""
-    from integrations.google_meet import _token_store
-
-    _token_store.pop(agent_id, None)
-    return {"status": "disconnected", "agent_id": agent_id}
+    """Drop the agent's stored Google tokens from Postgres."""
+    uid = _coerce_agent_uuid(agent_id)
+    deleted = await delete_tokens(uid) if uid is not None else False
+    return {"status": "disconnected", "agent_id": agent_id, "deleted": deleted}

@@ -27,6 +27,11 @@ class DocumentRef(BaseModel):
 
 class Agent(BaseModel):
     id: UUID = Field(default_factory=uuid4)
+    # Tenant anchor carried everywhere the agent goes. Used by the
+    # orchestrator to scope registry search, message routing, and
+    # activity log writes to the agent's own org.
+    org_id: UUID | None = None
+    org_role: Literal["admin", "member"] = "member"
     name: str
     email: str = ""
     role: str

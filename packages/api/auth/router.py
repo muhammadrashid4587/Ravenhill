@@ -17,6 +17,7 @@ from .models import (
     InviteResponse,
     LoginPayload,
     MeResponse,
+    ShareLinkSignupPayload,
     SignInRequestPayload,
     SignInRequestResponse,
     SignupPayload,
@@ -31,6 +32,7 @@ from .service import (
     delete_session,
     login_with_password,
     record_access_request,
+    signup_via_share_link,
     signup_with_password,
 )
 
@@ -217,6 +219,46 @@ async def login(payload: LoginPayload, response: Response) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials"
         )
+
+    _set_session_cookie(response, session.session_token)
+    return {
+        "agent": _agent_to_current_user(agent).model_dump(),
+        "expires_at": session.expires_at.isoformat(),
+        "session_token": session.session_token,
+    }
+
+
+# ---------- Public: signup via org share-link ----------
+
+
+@router.post("/share-link-signup")
+async def share_link_signup(
+    payload: ShareLinkSignupPayload, response: Response
+) -> dict:
+    """Create an account that joins an org via its share-link invite_code.
+
+    On success: agent lands as a `member` of that org and receives a
+    session cookie. 404 `invite_invalid` for unknown/expired codes, 409
+    `email_taken` if the email already has a password-backed account.
+    """
+    try:
+        agent, session = await signup_via_share_link(
+            payload.invite_code, payload.email, payload.password, payload.name
+        )
+    except SignInError as e:
+        if e.code == "invite_invalid":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="invite_invalid"
+            )
+        if e.code == "email_taken":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="email_taken"
+            )
+        if e.code == "account_deactivated":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="account_deactivated"
+            )
+        raise
 
     _set_session_cookie(response, session.session_token)
     return {

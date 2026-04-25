@@ -28,10 +28,12 @@ import {
   completeDocRequest,
   resetDemo,
   fetchAgents,
-  chatWithAgent,
+  sendAgentMessage,
+  fetchAgentInbox,
+  fetchAgentThread,
+  type AgentLedgerMessage,
 } from "@/lib/api";
 import {
-  fetchNotifications,
   fetchSlackChannels,
   fetchSlackThread,
   sampleAttachment,
@@ -45,6 +47,23 @@ import type {
   SlackMessage,
   VerificationStatus,
 } from "@/lib/types";
+
+// Adapt an inter-agent ledger row to the existing notification UI shape.
+// Read state is derived from the ledger row's `status`: `delivered` counts
+// as unread; `read` and `replied` count as read.
+function ledgerToNotification(m: AgentLedgerMessage): NotificationItem {
+  return {
+    id: m.id,
+    action: `${m.from_name || "Someone"}'s agent reached out`,
+    change_summary: m.content,
+    actor: m.from_name || undefined,
+    source: m.intent || "agent",
+    verification: "verified" as VerificationStatus,
+    read: m.status === "read" || m.status === "replied",
+    timestamp: m.created_at,
+    href: `/chat?to=${m.from_agent_id}`,
+  };
+}
 
 // ---- Types ----
 
@@ -213,7 +232,12 @@ function ChatInner() {
   const [leftTab, setLeftTab] = useState<"people" | "inbox" | "slack">("people");
   const [rightTab, setRightTab] = useState<"reasoning" | "activity">("reasoning");
   const [people, setPeople] = useState<Array<{ id: string; name: string; role: string }>>([]);
-  const [inbox, setInbox] = useState<NotificationItem[]>([]);
+  // Real inter-agent inbox (rows from /api/messages/inbox). The displayed
+  // `inbox` is derived from this — keeping the raw form lets us reply by id.
+  const [rawInbox, setRawInbox] = useState<AgentLedgerMessage[]>([]);
+  const inbox: NotificationItem[] = rawInbox.map(ledgerToNotification);
+  // Persisted thread between you and the current targetAgent (both directions).
+  const [threadMessages, setThreadMessages] = useState<AgentLedgerMessage[]>([]);
 
   // Slack state
   const [slackChannels, setSlackChannels] = useState<SlackChannel[]>([]);
@@ -225,19 +249,64 @@ function ChatInner() {
     fetchAgents()
       .then((agents) => {
         if (Array.isArray(agents)) {
+          // Hide the caller from the People list — there's no value in
+          // letting someone "reach out" to themselves through the
+          // direct-line UI (we already have a self-chat surface).
           setPeople(
-            agents.map((a: { id: string; name: string; role: string }) => ({
-              id: a.id,
-              name: a.name,
-              role: a.role,
-            })),
+            agents
+              .filter((a: { id: string }) => !myAgent || a.id !== myAgent.id)
+              .map((a: { id: string; name: string; role: string }) => ({
+                id: a.id,
+                name: a.name,
+                role: a.role,
+              })),
           );
         }
       })
       .catch(() => setPeople([]));
-    fetchNotifications().then(setInbox).catch(() => setInbox([]));
+    fetchAgentInbox().then(setRawInbox).catch(() => setRawInbox([]));
     fetchSlackChannels().then(setSlackChannels).catch(() => setSlackChannels([]));
-  }, []);
+  }, [myAgent]);
+
+  // Poll the inbox every 5s so incoming messages from other agents land
+  // without a refresh. Cheap GET; replace with SSE when we wire it.
+  useEffect(() => {
+    if (!myAgent) return;
+    const tick = () => {
+      fetchAgentInbox()
+        .then(setRawInbox)
+        .catch(() => {
+          /* swallow — keep last good inbox */
+        });
+    };
+    const id = window.setInterval(tick, 5000);
+    return () => window.clearInterval(id);
+  }, [myAgent]);
+
+  // Poll the open direct-line thread every 3s. Faster than the inbox poll
+  // because the user is actively waiting on this exchange.
+  useEffect(() => {
+    if (!myAgent || !targetAgent) {
+      setThreadMessages([]);
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      fetchAgentThread(targetAgent.id)
+        .then((msgs) => {
+          if (!cancelled) setThreadMessages(msgs);
+        })
+        .catch(() => {
+          /* swallow */
+        });
+    };
+    tick();
+    const id = window.setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [myAgent, targetAgent]);
 
   const endRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
@@ -301,20 +370,42 @@ function ChatInner() {
     inputRef.current?.focus();
   }, []);
 
-  // Start a direct conversation with a teammate's agent. The send handler
-  // will route messages to POST /api/agents/{id}/chat so responses come back
-  // in that agent's voice, not routed through the orchestrator.
+  // Start a direct conversation with a teammate's agent. Sends go through
+  // POST /api/messages/agent so they're persisted real messages — the
+  // recipient sees them in their inbox, no LLM fabrication.
   const reachOutTo = useCallback(
     (person: { id: string; name: string; role: string }) => {
       setTargetAgent(person);
       targetedForRef.current = person.id;
       setMessages([]);
+      setThreadMessages([]);
       setActivitySteps([]);
       setCurrentSources([]);
       queueMicrotask(() => inputRef.current?.focus());
     },
     [],
   );
+
+  // Sync the displayed messages from the persisted thread whenever the
+  // poll updates. In direct-line mode the DB is the source of truth.
+  useEffect(() => {
+    if (!targetAgent || !myAgent) return;
+    const synced: Message[] = threadMessages.map((m) => {
+      const mine = m.from_agent_id === myAgent.id;
+      return {
+        id: m.id,
+        sender: mine ? "You" : m.from_name || targetAgent.name,
+        content: m.content,
+        isAgent: !mine,
+        timestamp: new Date(m.created_at).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        type: mine ? "user" : "agent",
+      };
+    });
+    setMessages(synced);
+  }, [threadMessages, targetAgent, myAgent]);
 
   const clearTarget = useCallback(() => {
     setTargetAgent(null);
@@ -551,28 +642,37 @@ function ChatInner() {
     setActivitySteps([]);
     setCurrentSources([]);
 
-    pushMsg("You", message, "user", {
-      attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
-    });
-
-    // Direct-agent conversation: talk straight to the target's agent,
-    // skipping the orchestrator/routing flow.
+    // Direct-line: real inter-agent message, persisted to the ledger.
+    // No fabricated LLM reply on the sender's screen — the recipient
+    // sees this on their next inbox poll and can reply in their own
+    // voice.
     if (targetAgent) {
-      const thinkId = pushMsg(targetAgent.name, "Thinking...", "thinking");
+      // Optimistic render so the typed message lands immediately.
+      pushMsg("You", message, "user", {
+        attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
+      });
       pushActivity(
-        `Reaching out to ${targetAgent.name}`,
+        `Sent to ${targetAgent.name}`,
         targetAgent.role,
         "step",
       );
       try {
-        const res = await chatWithAgent(targetAgent.id, message);
-        removeMsg(thinkId);
-        pushMsg(res.agent_name, res.content, "agent");
-      } catch {
-        removeMsg(thinkId);
+        await sendAgentMessage(targetAgent.id, message);
+        // Pull the canonical thread immediately so the optimistic
+        // message is replaced by the persisted row and any incoming
+        // reply from a fast recipient lands without waiting for the
+        // 3s poll.
+        const fresh = await fetchAgentThread(targetAgent.id);
+        setThreadMessages(fresh);
+        pushActivity(
+          "Awaiting reply",
+          `${targetAgent.name} will see this in their inbox`,
+          "done",
+        );
+      } catch (err) {
         pushMsg(
           "System",
-          `Couldn't reach ${targetAgent.name}'s agent. Is the backend running?`,
+          `Couldn't send to ${targetAgent.name}'s agent: ${(err as Error).message || "unknown error"}`,
           "system",
         );
       } finally {
@@ -580,6 +680,10 @@ function ChatInner() {
       }
       return;
     }
+
+    pushMsg("You", message, "user", {
+      attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
+    });
 
     const thinkingId = pushMsg(myAgent.name, "Thinking...", "thinking");
     const startTime = Date.now();
@@ -886,16 +990,37 @@ function ChatInner() {
               </div>
             )
           ) : leftTab === "inbox" ? (
-            inbox.length === 0 ? (
+            rawInbox.length === 0 ? (
               <EmptyPanel
                 icon={<Inbox className="w-4 h-4 text-dusk" />}
                 label="Inbox zero"
               />
             ) : (
               <div className="space-y-1">
-                {inbox.map((n) => (
-                  <InboxRow key={n.id} item={n} />
-                ))}
+                {rawInbox.map((m) => {
+                  // Open the persisted thread with whoever sent the
+                  // message — clicking is the user's "I'm answering this"
+                  // signal. The recipient (us) becomes the sender of the
+                  // reply once they type.
+                  const senderRole =
+                    people.find((p) => p.id === m.from_agent_id)?.role || "Member";
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() =>
+                        reachOutTo({
+                          id: m.from_agent_id,
+                          name: m.from_name || "Teammate",
+                          role: senderRole,
+                        })
+                      }
+                      className="w-full text-left"
+                    >
+                      <InboxRow item={ledgerToNotification(m)} />
+                    </button>
+                  );
+                })}
               </div>
             )
           ) : slackChannels.length === 0 ? (

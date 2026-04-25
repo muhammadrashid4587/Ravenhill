@@ -131,6 +131,79 @@ export async function sendInterAgentMessage(message: {
   return res.json();
 }
 
+export interface AgentLedgerMessage {
+  id: string;
+  from_agent_id: string;
+  to_agent_id: string;
+  from_name: string;
+  to_name: string;
+  content: string;
+  intent: string | null;
+  in_reply_to: string | null;
+  status: string;
+  created_at: string;
+}
+
+export async function sendAgentMessage(
+  toAgentId: string,
+  content: string,
+  intent?: string,
+): Promise<AgentLedgerMessage> {
+  const res = await apiFetch(`/api/messages/agent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to_agent_id: toAgentId, content, intent }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `send failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchAgentInbox(): Promise<AgentLedgerMessage[]> {
+  const res = await apiFetch(`/api/messages/inbox`);
+  if (!res.ok) throw new Error(`inbox fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAgentSent(): Promise<AgentLedgerMessage[]> {
+  const res = await apiFetch(`/api/messages/sent`);
+  if (!res.ok) throw new Error(`sent fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAgentThread(
+  otherAgentId: string,
+): Promise<AgentLedgerMessage[]> {
+  const res = await apiFetch(`/api/messages/thread/${otherAgentId}`);
+  if (!res.ok) throw new Error(`thread fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function replyToAgentMessage(
+  ledgerId: string,
+  content: string,
+): Promise<AgentLedgerMessage> {
+  const res = await apiFetch(`/api/messages/${ledgerId}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `reply failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function markAgentMessageRead(ledgerId: string) {
+  const res = await apiFetch(`/api/messages/${ledgerId}/read`, {
+    method: "POST",
+  });
+  return res.json();
+}
+
 export async function submitApproval(approvalId: string, approved: boolean) {
   const res = await apiFetch(`/api/approvals/${approvalId}/decide`, {
     method: "POST",

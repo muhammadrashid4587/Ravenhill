@@ -15,14 +15,29 @@ from integrations.slack.router import router as slack_router
 from integrations.workspace.router import router as workspace_router
 from meetings.router import router as meetings_router
 from orchestrator import router as orchestrator_router
+from orgs.router import router as orgs_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from db import init_db, alter_table_if_needed, seed_demo_agents, close_db
+    from db import (
+        alter_table_if_needed,
+        close_db,
+        init_db,
+        seed_default_org,
+        seed_demo_agents,
+    )
 
     print("Starting Ravenhill API...")
+    # Order matters:
+    #   1. init_db()           — create tables (organizations, agents, ...).
+    #   2. seed_default_org()  — insert the default-org row so step 3's
+    #      UPDATE ... SET org_id = DEFAULT_ORG_ID has a valid FK target.
+    #   3. alter_table_if_needed() — add org_id columns on existing prod
+    #      tables, backfill NULLs to the default org, swap constraints.
+    #   4. seed_demo_agents()  — upsert demo personas (now org-scoped).
     await init_db()
+    await seed_default_org()
     await alter_table_if_needed()
     await seed_demo_agents()
     yield
@@ -67,6 +82,7 @@ app.include_router(slack_router, prefix="/api/integrations/slack", tags=["integr
 app.include_router(workspace_router, prefix="/api/workspace", tags=["workspace"])
 app.include_router(meetings_router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(orchestrator_router, prefix="/api/orchestrate", tags=["orchestrator"])
+app.include_router(orgs_router, prefix="/api/orgs", tags=["orgs"])
 
 
 @app.get("/health")
