@@ -60,7 +60,7 @@ function ledgerToNotification(m: AgentLedgerMessage): NotificationItem {
     source: m.intent || "agent",
     verification: "verified" as VerificationStatus,
     read: m.status === "read" || m.status === "replied",
-    timestamp: m.created_at,
+    created_at: m.created_at,
     href: `/chat?to=${m.from_agent_id}`,
   };
 }
