@@ -34,6 +34,97 @@ async def process_message(agent: Agent, message: str) -> str:
     return _mock_process_message(agent, message)
 
 
+# Sentinel the agent emits when it can't ground an answer in its knowledge.
+# Kept as a magic string so the model's instruction is unambiguous — any
+# substring match means "defer to human", any other reply is taken as
+# grounded and posted as the agent's answer.
+AGENT_DEFER_TOKEN = "<DEFER_TO_HUMAN>"
+
+
+async def attempt_auto_reply(
+    recipient: Agent,
+    sender_name: str,
+    incoming: str,
+) -> str | None:
+    """Try to auto-respond on behalf of `recipient` from their persona + knowledge.
+
+    Returns the reply text if the agent confidently answered from grounded
+    knowledge; returns None when the agent should defer to its human (no
+    knowledge, judgment call, decision authority, or anything ambiguous).
+
+    The defer path is the *only* safety net against hallucinated replies —
+    we'd rather surface the message in the human's inbox than ship a
+    fabricated answer in their voice. The system prompt is tuned to err
+    toward deferring; tighten the rule, not loosen it, when iterating.
+    """
+    if get_active_provider() == "mock":
+        # Mock mode has canned per-role responses but they leak demo
+        # personas (Riley/Jordan/Sam/Alex). For a real user's agent
+        # without a configured LLM, deferring is correct — the human
+        # answers in their inbox.
+        return None
+
+    entries = recipient.knowledge_entries or []
+    kb_lines: list[str] = []
+    for e in entries:
+        if isinstance(e, dict):
+            topic = e.get("topic", "?")
+            content = e.get("content", "")
+            updated = e.get("last_updated", "")
+            kb_lines.append(f"- [{topic}] {content} (updated: {updated})")
+        else:
+            topic = getattr(e, "topic", "?")
+            content = getattr(e, "content", "")
+            updated = getattr(e, "last_updated", "")
+            kb_lines.append(f"- [{topic}] {content} (updated: {updated})")
+    if recipient.knowledge_base:
+        kb_lines.append(f"- {recipient.knowledge_base}")
+    kb_text = "\n".join(kb_lines).strip() or "(no knowledge available — defer to human)"
+
+    system = f"""You are {recipient.name}'s personal AI agent. You speak in their voice and answer on their behalf, but ONLY from the knowledge below.
+
+ABOUT {recipient.name.upper()}:
+- Role: {recipient.role}
+- {recipient.role_description or ""}
+- Departments: {", ".join(recipient.departments or [])}
+
+KNOWLEDGE YOU CAN DRAW ON:
+{kb_text}
+
+A message has just arrived from {sender_name}'s agent. Decide what to do:
+
+1. If you can answer the question fully and accurately from the knowledge above — reply directly in {recipient.name}'s voice. Be concise (under 80 words), specific, and ground every claim in the knowledge.
+
+2. If the question requires {recipient.name}'s personal judgment, a decision only they can make, opinion, or information NOT in the knowledge above — emit EXACTLY this token and nothing else: {AGENT_DEFER_TOKEN}
+
+NEVER fabricate facts, names, dates, numbers, or events. NEVER guess. When in doubt, defer.
+
+Reply now with either a grounded answer OR the defer token. No preamble. No 'I am the AI agent for...' framing — just answer as if you were {recipient.name} replying."""
+
+    try:
+        result = await call_llm(
+            system=system,
+            user_message=incoming,
+            model_tier="reasoning",
+            max_tokens=300,
+        )
+    except Exception:
+        log.exception("attempt_auto_reply: LLM error — deferring")
+        return None
+
+    if not result:
+        return None
+
+    text = result.strip()
+    if AGENT_DEFER_TOKEN in text:
+        return None
+    # Defensive: strip the model accidentally including the token in
+    # quoted form, or returning a near-empty answer that can't be useful.
+    if len(text) < 5:
+        return None
+    return text
+
+
 async def stream_message(agent: Agent, message: str) -> AsyncGenerator[str, None]:
     """Stream a response from the agent's LLM, yielding text chunks.
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { Suspense, useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Send,
   Clock,
@@ -17,32 +18,69 @@ import {
   MicOff,
   X,
   FileText,
+  Search,
+  Sparkles,
+  CheckCircle2,
 } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import ApprovalPopup from "@/components/ApprovalPopup";
 import { useAuth } from "@/lib/AuthContext";
 import {
+  orchestrate,
   orchestrateStream,
   submitApproval,
   completeDocRequest,
   resetDemo,
   fetchAgents,
+  sendAgentMessage,
+  sendFileToAgent,
+  fetchAgentInbox,
+  fetchAgentThread,
+  parseFileMarker,
+  type AgentLedgerMessage,
 } from "@/lib/api";
 import {
-  fetchNotifications,
   fetchSlackChannels,
   fetchSlackThread,
-  sampleAttachment,
-  summarizeAttachment,
 } from "@/lib/mocks";
 import type {
   ChatAttachment,
-  FileSummary,
   NotificationItem,
   SlackChannel,
   SlackMessage,
   VerificationStatus,
 } from "@/lib/types";
+
+function formatBytesShort(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Adapt an inter-agent ledger row to the existing notification UI shape.
+// Read state is derived from the ledger row's `status`: `delivered` counts
+// as unread; `read` and `replied` count as read. File-share rows get a
+// dedicated label so the inbox preview doesn't leak the encoded marker.
+function ledgerToNotification(m: AgentLedgerMessage): NotificationItem {
+  const parsed = parseFileMarker(m.content);
+  const action = parsed
+    ? `${m.from_name || "Someone"} shared a file`
+    : `${m.from_name || "Someone"}'s agent reached out`;
+  const summary = parsed
+    ? `${parsed.attachment.name} · ${formatBytesShort(parsed.attachment.size_bytes)}`
+    : m.content;
+  return {
+    id: m.id,
+    action,
+    change_summary: summary,
+    actor: m.from_name || undefined,
+    source: m.intent || "agent",
+    verification: "verified" as VerificationStatus,
+    read: m.status === "read" || m.status === "replied",
+    created_at: m.created_at,
+    href: `/chat?to=${m.from_agent_id}`,
+  };
+}
 
 // ---- Types ----
 
@@ -78,7 +116,13 @@ interface Message {
   content: string;
   isAgent: boolean;
   timestamp: string;
-  type: "user" | "agent" | "system" | "thinking";
+  type:
+    | "user"
+    | "agent"
+    | "system"
+    | "thinking"
+    | "file_choice"
+    | "team_picker";
   attachments?: ChatAttachment[];
   channel?: string;
 }
@@ -142,43 +186,114 @@ function fileToAttachment(file: File): ChatAttachment {
   };
 }
 
-function summaryToMarkdown(summary: FileSummary): string {
-  const lines: string[] = [];
-  lines.push(`**${summary.title}**`);
-  lines.push("");
-  lines.push(summary.one_liner);
+// File types we can read as text on the client. Anything else falls back to
+// the heuristic mock summary below until Drive ingestion ships server-side.
+const TEXTUAL_MIME_PREFIXES = ["text/"];
+const TEXTUAL_MIME_EXACT = new Set([
+  "application/json",
+  "application/xml",
+  "application/javascript",
+  "application/x-yaml",
+  "application/x-typescript",
+  "application/sql",
+]);
+const TEXTUAL_EXTENSIONS = new Set([
+  "md", "txt", "csv", "tsv", "json", "yaml", "yml", "xml", "html", "htm",
+  "css", "scss", "js", "jsx", "ts", "tsx", "py", "rb", "go", "rs", "java",
+  "kt", "swift", "c", "h", "cpp", "hpp", "sh", "bash", "zsh", "sql",
+  "ini", "cfg", "toml", "log", "rst", "tex",
+]);
+const MAX_TEXT_BYTES = 64 * 1024; // 64 KB ceiling on the prompt content.
 
-  if (summary.contributors.length > 0) {
-    lines.push("");
-    lines.push("**Who did what**");
-    for (const c of summary.contributors) {
-      lines.push(`• ${c.name} — ${c.did}`);
-    }
-  }
-
-  if (summary.action_items.length > 0) {
-    lines.push("");
-    lines.push("**Action items**");
-    for (const a of summary.action_items) {
-      const due = a.due ? ` (due ${a.due})` : "";
-      lines.push(`• ${a.owner}: ${a.task}${due}`);
-    }
-  }
-
-  if (summary.open_questions && summary.open_questions.length > 0) {
-    lines.push("");
-    lines.push("**Open questions**");
-    for (const q of summary.open_questions) {
-      lines.push(`• ${q}`);
-    }
-  }
-  return lines.join("\n");
+function isTextual(att: ChatAttachment): boolean {
+  const mime = (att.mime_type || "").toLowerCase();
+  if (TEXTUAL_MIME_PREFIXES.some((p) => mime.startsWith(p))) return true;
+  if (TEXTUAL_MIME_EXACT.has(mime)) return true;
+  const ext = att.name.split(".").pop()?.toLowerCase() || "";
+  return TEXTUAL_EXTENSIONS.has(ext);
 }
+
+async function readAttachmentAsText(att: ChatAttachment): Promise<string> {
+  if (!att.url || !att.url.startsWith("blob:")) {
+    throw new Error("attachment has no readable blob");
+  }
+  const res = await fetch(att.url);
+  const blob = await res.blob();
+  // Trim the blob first so we don't pull megabytes of text into memory.
+  const trimmed =
+    blob.size > MAX_TEXT_BYTES ? blob.slice(0, MAX_TEXT_BYTES) : blob;
+  return trimmed.text();
+}
+
+function smartMockSummary(att: ChatAttachment): string {
+  const sizeKB = Math.max(1, Math.round(att.size_bytes / 1024));
+  const ext = att.name.split(".").pop()?.toLowerCase() || "";
+  const lower = att.name.toLowerCase();
+
+  let kind: string;
+  if (ext === "pdf") kind = "PDF";
+  else if (["xlsx", "xls", "csv"].includes(ext)) kind = "spreadsheet";
+  else if (["pptx", "ppt", "key"].includes(ext)) kind = "slide deck";
+  else if (["docx", "doc", "pages"].includes(ext)) kind = "Word document";
+  else if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext))
+    kind = "image";
+  else if (["mp4", "mov", "webm", "mkv"].includes(ext)) kind = "video";
+  else if (["zip", "tar", "gz", "rar", "7z"].includes(ext)) kind = "archive";
+  else kind = att.mime_type || "binary file";
+
+  let topic = "";
+  if (lower.includes("prd") || lower.includes("spec"))
+    topic = " Filename suggests a product spec or PRD.";
+  else if (lower.includes("report"))
+    topic = " Filename suggests a report.";
+  else if (lower.includes("budget") || lower.includes("forecast"))
+    topic = " Filename suggests a financial document.";
+  else if (lower.includes("deck") || lower.includes("pitch"))
+    topic = " Filename suggests a slide deck or pitch.";
+  else if (lower.includes("contract") || lower.includes("msa"))
+    topic = " Filename suggests a contract.";
+  else if (lower.includes("notes") || lower.includes("minutes"))
+    topic = " Filename suggests meeting notes.";
+
+  return [
+    `**${att.name}** — ${kind}, ${sizeKB} KB.`,
+    "",
+    `I can't read this file type directly yet, so I can't give you an accurate content summary.${topic}`,
+    "",
+    "Real parsing of non-text uploads lands when the Drive ingestion adapter ships. For now, share a `.md`, `.txt`, `.csv`, `.json`, or code file and I'll summarize the actual contents.",
+  ].join("\n");
+}
+
+const SUMMARY_PROMPT = (att: ChatAttachment, content: string) =>
+  `You are summarizing a file the user just uploaded. Read the content carefully and produce a SPECIFIC summary that names actual people, dates, decisions, numbers, and action items found in the file. Do not give a generic "this document discusses…" summary.
+
+File name: ${att.name}
+MIME type: ${att.mime_type || "unknown"}
+Size: ${Math.round(att.size_bytes / 1024)} KB
+
+----- BEGIN FILE CONTENT -----
+${content}
+----- END FILE CONTENT -----
+
+Reply in markdown with:
+- A one-line gist (be specific to this file)
+- 3–6 bullets covering the concrete things actually in the file (people, dates, decisions, action items, numbers)
+- An "Open questions" line only if the file has unresolved items
+
+If the content is truncated or unintelligible, say so plainly instead of inventing details.`;
 
 // ---- Main Component ----
 
-export default function ChatPage() {
+function ChatInner() {
   const { agent: myAgent } = useAuth();
+  const searchParams = useSearchParams();
+  const urlToAgentId = searchParams.get("to");
+  const targetedForRef = useRef<string | null>(null);
+  const [targetAgent, setTargetAgent] = useState<{
+    id: string;
+    name: string;
+    role: string;
+  } | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
@@ -194,6 +309,24 @@ export default function ChatPage() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Top-right toast for share confirmations.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 3500);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
   // Three-panel state
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const [reachOuts, setReachOuts] = useState<AgentReachOut[]>([]);
@@ -203,7 +336,12 @@ export default function ChatPage() {
   const [leftTab, setLeftTab] = useState<"people" | "inbox" | "slack">("people");
   const [rightTab, setRightTab] = useState<"reasoning" | "activity">("reasoning");
   const [people, setPeople] = useState<Array<{ id: string; name: string; role: string }>>([]);
-  const [inbox, setInbox] = useState<NotificationItem[]>([]);
+  // Real inter-agent inbox (rows from /api/messages/inbox). The displayed
+  // `inbox` is derived from this — keeping the raw form lets us reply by id.
+  const [rawInbox, setRawInbox] = useState<AgentLedgerMessage[]>([]);
+  const inbox: NotificationItem[] = rawInbox.map(ledgerToNotification);
+  // Persisted thread between you and the current targetAgent (both directions).
+  const [threadMessages, setThreadMessages] = useState<AgentLedgerMessage[]>([]);
 
   // Slack state
   const [slackChannels, setSlackChannels] = useState<SlackChannel[]>([]);
@@ -211,23 +349,109 @@ export default function ChatPage() {
   const [slackThread, setSlackThread] = useState<SlackMessage[]>([]);
   const [slackLoading, setSlackLoading] = useState(false);
 
+  // Tracks file_share inbox row IDs we've already toasted for, so the
+  // 5-second poll doesn't re-fire the toast on every tick. Initialised
+  // from the first inbox fetch so existing shares don't toast on mount.
+  const seenFileMsgIdsRef = useRef<Set<string> | null>(null);
+
   useEffect(() => {
+    if (!myAgent) return;
     fetchAgents()
       .then((agents) => {
         if (Array.isArray(agents)) {
+          // Hide the caller from the People list — there's no value in
+          // letting someone "reach out" to themselves through the
+          // direct-line UI (we already have a self-chat surface).
           setPeople(
-            agents.map((a: { id: string; name: string; role: string }) => ({
-              id: a.id,
-              name: a.name,
-              role: a.role,
-            })),
+            agents
+              .filter((a: { id: string }) => a.id !== myAgent.id)
+              .map((a: { id: string; name: string; role: string }) => ({
+                id: a.id,
+                name: a.name,
+                role: a.role,
+              })),
           );
         }
       })
       .catch(() => setPeople([]));
-    fetchNotifications().then(setInbox).catch(() => setInbox([]));
+    fetchAgentInbox()
+      .then((rows) => {
+        setRawInbox(rows);
+        // Prime the seen-file set on mount so we don't toast for shares
+        // that landed while the user was offline.
+        seenFileMsgIdsRef.current = new Set(
+          rows
+            .filter(
+              (r) =>
+                r.intent === "file_share" && r.from_agent_id !== myAgent.id,
+            )
+            .map((r) => r.id),
+        );
+      })
+      .catch(() => setRawInbox([]));
     fetchSlackChannels().then(setSlackChannels).catch(() => setSlackChannels([]));
-  }, []);
+  }, [myAgent]);
+
+  // Poll the inbox every 5s so incoming messages from other agents land
+  // without a refresh. Cheap GET; replace with SSE when we wire it. New
+  // file_share rows fire a top-right toast so the recipient sees an
+  // immediate confirmation regardless of which tab they're viewing.
+  useEffect(() => {
+    if (!myAgent) return;
+    const tick = () => {
+      fetchAgentInbox()
+        .then((rows) => {
+          setRawInbox(rows);
+          if (seenFileMsgIdsRef.current === null) {
+            seenFileMsgIdsRef.current = new Set();
+          }
+          for (const r of rows) {
+            if (
+              r.intent !== "file_share" ||
+              r.from_agent_id === myAgent.id ||
+              seenFileMsgIdsRef.current.has(r.id)
+            ) {
+              continue;
+            }
+            seenFileMsgIdsRef.current.add(r.id);
+            const parsed = parseFileMarker(r.content);
+            const fname = parsed?.attachment.name || "a file";
+            const sender = r.from_name || "A teammate";
+            showToast(`${sender} shared ${fname} with you`);
+          }
+        })
+        .catch(() => {
+          /* swallow — keep last good inbox */
+        });
+    };
+    const id = window.setInterval(tick, 5000);
+    return () => window.clearInterval(id);
+  }, [myAgent, showToast]);
+
+  // Poll the open direct-line thread every 3s. Faster than the inbox poll
+  // because the user is actively waiting on this exchange.
+  useEffect(() => {
+    if (!myAgent || !targetAgent) {
+      setThreadMessages([]);
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      fetchAgentThread(targetAgent.id)
+        .then((msgs) => {
+          if (!cancelled) setThreadMessages(msgs);
+        })
+        .catch(() => {
+          /* swallow */
+        });
+    };
+    tick();
+    const id = window.setInterval(tick, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [myAgent, targetAgent]);
 
   const endRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
@@ -291,6 +515,61 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, []);
 
+  // Start a direct conversation with a teammate's agent. Sends go through
+  // POST /api/messages/agent so they're persisted real messages — the
+  // recipient sees them in their inbox, no LLM fabrication.
+  const reachOutTo = useCallback(
+    (person: { id: string; name: string; role: string }) => {
+      setTargetAgent(person);
+      targetedForRef.current = person.id;
+      setMessages([]);
+      setThreadMessages([]);
+      setActivitySteps([]);
+      setCurrentSources([]);
+      queueMicrotask(() => inputRef.current?.focus());
+    },
+    [],
+  );
+
+  // Sync the displayed messages from the persisted thread whenever the
+  // poll updates. In direct-line mode the DB is the source of truth.
+  // File shares (intent === "file_share") arrive as text bodies with an
+  // embedded marker — decode them so the recipient sees a real file card.
+  useEffect(() => {
+    if (!targetAgent || !myAgent) return;
+    const synced: Message[] = threadMessages.map((m) => {
+      const mine = m.from_agent_id === myAgent.id;
+      const parsed = parseFileMarker(m.content);
+      const baseContent = parsed ? parsed.preamble : m.content;
+      return {
+        id: m.id,
+        sender: mine ? "You" : m.from_name || targetAgent.name,
+        content: baseContent,
+        isAgent: !mine,
+        timestamp: new Date(m.created_at).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        type: mine ? "user" : "agent",
+        attachments: parsed ? [parsed.attachment] : undefined,
+      };
+    });
+    setMessages(synced);
+  }, [threadMessages, targetAgent, myAgent]);
+
+  const clearTarget = useCallback(() => {
+    setTargetAgent(null);
+    targetedForRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!urlToAgentId || people.length === 0) return;
+    if (targetedForRef.current === urlToAgentId) return;
+    const target = people.find((p) => p.id === urlToAgentId);
+    if (!target) return;
+    reachOutTo(target);
+  }, [urlToAgentId, people, reachOutTo]);
+
   // ---- Slack handlers ----
   const openSlackChannel = async (channel: SlackChannel) => {
     setActiveSlackChannel(channel);
@@ -338,76 +617,145 @@ export default function ChatPage() {
     });
   };
 
-  const attachSampleFile = () => {
-    if (pendingAttachments.some((a) => a.id === sampleAttachment.id)) return;
-    if (pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE) return;
-    setPendingAttachments((prev) => [...prev, sampleAttachment]);
-    setAttachmentError(null);
-  };
-
-  // When user sends only files (no text), run the file-summary flow locally.
-  const runFileSummaryFlow = async (attachments: ChatAttachment[]) => {
+  // When user sends only files (no text), surface two choices in chat:
+  // summarize the file, or send it to a teammate.
+  const offerPostUploadChoices = (attachments: ChatAttachment[]) => {
     if (!myAgent) return;
-    setLoading(true);
-    setActivitySteps([]);
-
     pushMsg("You", "", "user", { attachments });
-
-    const startTime = Date.now();
     pushActivity(
       `Received ${attachments.length} file${attachments.length > 1 ? "s" : ""}`,
       attachments.map((a) => a.name).join(", "),
       "step",
     );
+    pushMsg(
+      myAgent.name,
+      `Got ${attachments.length === 1 ? "your file" : "your files"}. What would you like to do?`,
+      "file_choice",
+      { attachments },
+    );
+  };
 
-    const thinkingId = pushMsg(myAgent.name, "Reading the file...", "thinking");
+  // Real summary path: read text-readable files via FileReader and ask the
+  // orchestrator to summarize the actual content. Non-text files fall back
+  // to a heuristic mock that's honest about not parsing the bytes.
+  const runFileSummary = async (
+    attachments: ChatAttachment[],
+    choiceMessageId: string,
+  ) => {
+    if (!myAgent) return;
+    removeMsg(choiceMessageId);
+    setLoading(true);
+    const startTime = Date.now();
+    const thinkingId = pushMsg(myAgent.name, "Reading the file…", "thinking");
 
     try {
       for (const att of attachments) {
-        await wait(400);
-        pushActivity(`Parsing ${att.name}`, `${Math.round(att.size_bytes / 1024)} KB`, "step", {
+        const sizeKB = Math.max(1, Math.round(att.size_bytes / 1024));
+        pushActivity(`Reading ${att.name}`, `${sizeKB} KB`, "step", {
           elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
         });
-        const summary = await summarizeAttachment(att);
 
-        await wait(300);
-        pushActivity("Identified contributors", `${summary.contributors.length} people`, "source", {
-          elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
-        });
-        pushActivity("Extracted action items", `${summary.action_items.length} items`, "step", {
-          elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
-        });
+        let summaryText: string;
+        if (isTextual(att)) {
+          try {
+            const content = await readAttachmentAsText(att);
+            pushActivity(
+              "Asking the model to summarize",
+              `${content.length.toLocaleString()} chars`,
+              "step",
+              {
+                elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+              },
+            );
+            const res = await orchestrate(myAgent.id, SUMMARY_PROMPT(att, content));
+            const answer =
+              typeof res?.answer === "string" && res.answer.trim().length > 0
+                ? res.answer
+                : null;
+            summaryText = answer ?? smartMockSummary(att);
+          } catch {
+            // Reading or model call failed — fall back to the honest mock.
+            summaryText = smartMockSummary(att);
+          }
+        } else {
+          summaryText = smartMockSummary(att);
+        }
 
         removeMsg(thinkingId);
-        pushMsg(myAgent.name, summaryToMarkdown(summary), "agent");
+        pushMsg(myAgent.name, summaryText, "agent");
       }
 
-      // Round-trip: agent sends a file back.
-      await wait(500);
-      pushActivity("Sending file back", "Updated spec attached", "step", {
-        elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
-      });
-      pushMsg(
-        myAgent.name,
-        "I've added my notes to a follow-up version of the spec — sending it back so you can diff against the original.",
-        "agent",
-        {
-          attachments: [
-            {
-              ...sampleAttachment,
-              id: crypto.randomUUID(),
-              name: "Q2 Launch PRD — agent notes.md",
-              source: "agent_reply",
-            },
-          ],
-        },
-      );
-
       const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-      pushActivity("Done", `Total: ${totalTime}s`, "done", { elapsed: `${totalTime}s` });
+      pushActivity("Done", `Total: ${totalTime}s`, "done", {
+        elapsed: `${totalTime}s`,
+      });
     } catch {
       removeMsg(thinkingId);
       pushMsg("System", "Could not summarize the file.", "system");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // "Send to teammate" path: replace the choice message with an inline
+  // searchable picker. Selection in the picker triggers `sendFilesToPerson`.
+  const promptForRecipient = (
+    attachments: ChatAttachment[],
+    choiceMessageId: string,
+  ) => {
+    if (!myAgent) return;
+    removeMsg(choiceMessageId);
+    pushMsg(
+      myAgent.name,
+      "Who should I send this to?",
+      "team_picker",
+      { attachments },
+    );
+  };
+
+  const cancelPicker = (pickerMessageId: string) => {
+    removeMsg(pickerMessageId);
+  };
+
+  const sendFilesToPerson = async (
+    attachments: ChatAttachment[],
+    person: { id: string; name: string },
+    pickerMessageId: string,
+  ) => {
+    if (!myAgent) return;
+    removeMsg(pickerMessageId);
+    setLoading(true);
+    const startTime = Date.now();
+    pushActivity(
+      `Sending to ${person.name}`,
+      attachments.map((a) => a.name).join(", "),
+      "step",
+    );
+
+    try {
+      for (const att of attachments) {
+        await sendFileToAgent(person.id, att);
+        showToast(`This ${att.name} was sent to ${person.name}`);
+        pushMsg(
+          "System",
+          `${att.name} was sent to ${person.name}`,
+          "system",
+        );
+      }
+      pushActivity(
+        "Sent",
+        `${attachments.length === 1 ? "1 file" : `${attachments.length} files`} to ${person.name}`,
+        "done",
+        {
+          elapsed: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+        },
+      );
+    } catch (err) {
+      pushMsg(
+        "System",
+        `Couldn't send to ${person.name}: ${(err as Error).message || "unknown error"}`,
+        "system",
+      );
     } finally {
       setLoading(false);
     }
@@ -501,9 +849,9 @@ export default function ChatPage() {
     setPendingAttachments([]);
     setAttachmentError(null);
 
-    // Pure file drop → run local summary flow (no backend call).
+    // Pure file drop → present the two choices in chat (summarize / send).
     if (!message && attachmentsToSend.length > 0) {
-      await runFileSummaryFlow(attachmentsToSend);
+      offerPostUploadChoices(attachmentsToSend);
       return;
     }
 
@@ -512,6 +860,45 @@ export default function ChatPage() {
     // Clear activity for new query
     setActivitySteps([]);
     setCurrentSources([]);
+
+    // Direct-line: real inter-agent message, persisted to the ledger.
+    // No fabricated LLM reply on the sender's screen — the recipient
+    // sees this on their next inbox poll and can reply in their own
+    // voice.
+    if (targetAgent) {
+      // Optimistic render so the typed message lands immediately.
+      pushMsg("You", message, "user", {
+        attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
+      });
+      pushActivity(
+        `Sent to ${targetAgent.name}`,
+        targetAgent.role,
+        "step",
+      );
+      try {
+        await sendAgentMessage(targetAgent.id, message);
+        // Pull the canonical thread immediately so the optimistic
+        // message is replaced by the persisted row and any incoming
+        // reply from a fast recipient lands without waiting for the
+        // 3s poll.
+        const fresh = await fetchAgentThread(targetAgent.id);
+        setThreadMessages(fresh);
+        pushActivity(
+          "Awaiting reply",
+          `${targetAgent.name} will see this in their inbox`,
+          "done",
+        );
+      } catch (err) {
+        pushMsg(
+          "System",
+          `Couldn't send to ${targetAgent.name}'s agent: ${(err as Error).message || "unknown error"}`,
+          "system",
+        );
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     pushMsg("You", message, "user", {
       attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
@@ -802,9 +1189,11 @@ export default function ChatPage() {
             ) : (
               <div className="space-y-1">
                 {people.map((p) => (
-                  <div
+                  <button
                     key={p.id}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-ink border border-white/[0.06] hover:border-white/[0.12] transition animate-fade-up"
+                    type="button"
+                    onClick={() => reachOutTo(p)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-ink border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02] transition animate-fade-up text-left press-scale"
                   >
                     <div className="w-7 h-7 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
                       {getInitials(p.name)}
@@ -815,21 +1204,42 @@ export default function ChatPage() {
                       </div>
                       <div className="text-[10px] text-dusk truncate">{p.role}</div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )
           ) : leftTab === "inbox" ? (
-            inbox.length === 0 ? (
+            rawInbox.length === 0 ? (
               <EmptyPanel
                 icon={<Inbox className="w-4 h-4 text-dusk" />}
                 label="Inbox zero"
               />
             ) : (
               <div className="space-y-1">
-                {inbox.map((n) => (
-                  <InboxRow key={n.id} item={n} />
-                ))}
+                {rawInbox.map((m) => {
+                  // Open the persisted thread with whoever sent the
+                  // message — clicking is the user's "I'm answering this"
+                  // signal. The recipient (us) becomes the sender of the
+                  // reply once they type.
+                  const senderRole =
+                    people.find((p) => p.id === m.from_agent_id)?.role || "Member";
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() =>
+                        reachOutTo({
+                          id: m.from_agent_id,
+                          name: m.from_name || "Teammate",
+                          role: senderRole,
+                        })
+                      }
+                      className="w-full text-left"
+                    >
+                      <InboxRow item={ledgerToNotification(m)} />
+                    </button>
+                  );
+                })}
               </div>
             )
           ) : slackChannels.length === 0 ? (
@@ -917,27 +1327,55 @@ export default function ChatPage() {
               </button>
             </header>
 
+            {targetAgent && (
+              <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-white/[0.06] bg-[rgba(139,30,47,0.07)]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-6 h-6 rounded-full bg-graphite border border-claret/40 flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
+                    {getInitials(targetAgent.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-bone truncate">
+                      Direct line to{" "}
+                      <span className="text-claret font-medium">
+                        {targetAgent.name}
+                      </span>
+                      ’s agent
+                    </div>
+                    <div className="text-[10px] text-dusk truncate">
+                      {targetAgent.role}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearTarget}
+                  className="flex items-center gap-1 text-[10px] text-smoke hover:text-parchment px-2 py-1 rounded hover:bg-white/[0.04] transition shrink-0"
+                  aria-label="Close direct conversation"
+                >
+                  <X className="w-3 h-3" /> Close
+                </button>
+              </div>
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-1">
               {messages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-dusk">
                   <div
-                    className={`w-12 h-12 rounded-2xl ${agentColor} flex items-center justify-center text-base font-semibold mb-4`}
+                    className={`w-12 h-12 rounded-2xl ${targetAgent ? "bg-graphite border border-claret/40 text-bone" : agentColor} flex items-center justify-center text-base font-semibold mb-4`}
                   >
-                    {getInitials(myAgent.name)}
+                    {getInitials(targetAgent ? targetAgent.name : myAgent.name)}
                   </div>
-                  <p className="text-sm text-parchment mb-1">Your personal agent</p>
-                  <p className="text-xs text-smoke max-w-xs text-center">
-                    Ask anything — it knows your tasks and meetings, and reaches out to other agents when needed.
+                  <p className="text-sm text-parchment mb-1">
+                    {targetAgent
+                      ? `${targetAgent.name}'s agent`
+                      : "Your personal agent"}
                   </p>
-                  <button
-                    type="button"
-                    onClick={attachSampleFile}
-                    className="mt-4 flex items-center gap-2 text-[11px] text-smoke hover:text-parchment px-3 py-1.5 rounded-lg bg-ink border border-white/[0.08] hover:border-white/[0.15] transition"
-                  >
-                    <FileText className="w-3 h-3" />
-                    Try the sample file
-                  </button>
+                  <p className="text-xs text-smoke max-w-xs text-center">
+                    {targetAgent
+                      ? `Ask anything — you're talking to ${targetAgent.name.split(" ")[0]}'s agent, which answers in their voice from their knowledge.`
+                      : "Ask anything — it knows your tasks and meetings, and reaches out to other agents when needed."}
+                  </p>
                 </div>
               )}
               {messages.map((msg) => {
@@ -963,6 +1401,45 @@ export default function ChatPage() {
                         </div>
                       </div>
                     </div>
+                  );
+                }
+                if (msg.type === "file_choice") {
+                  return (
+                    <FileChoiceCard
+                      key={msg.id}
+                      sender={msg.sender}
+                      content={msg.content}
+                      timestamp={msg.timestamp}
+                      attachments={msg.attachments || []}
+                      onSummarize={() =>
+                        runFileSummary(msg.attachments || [], msg.id)
+                      }
+                      onSendToTeammate={() =>
+                        promptForRecipient(msg.attachments || [], msg.id)
+                      }
+                      disabled={loading}
+                    />
+                  );
+                }
+                if (msg.type === "team_picker") {
+                  return (
+                    <TeamPickerCard
+                      key={msg.id}
+                      sender={msg.sender}
+                      content={msg.content}
+                      timestamp={msg.timestamp}
+                      attachments={msg.attachments || []}
+                      people={people}
+                      onPick={(person) =>
+                        sendFilesToPerson(
+                          msg.attachments || [],
+                          person,
+                          msg.id,
+                        )
+                      }
+                      onCancel={() => cancelPicker(msg.id)}
+                      disabled={loading}
+                    />
                   );
                 }
                 return (
@@ -1269,7 +1746,37 @@ export default function ChatPage() {
           onDeny={() => handleApproval(false)}
         />
       )}
+
+      {/* Top-right share toast */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-4 right-4 z-50 flex items-start gap-2.5 max-w-sm bg-ink border border-white/[0.12] rounded-xl px-4 py-3 shadow-xl animate-fade-up"
+        >
+          <CheckCircle2 className="w-4 h-4 text-[#88D3A4] mt-0.5 shrink-0" />
+          <div className="text-[12px] text-parchment leading-relaxed">
+            {toast}
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="text-dusk hover:text-parchment transition shrink-0"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatInner />
+    </Suspense>
   );
 }
 
@@ -1478,6 +1985,181 @@ function InboxRow({ item }: { item: NotificationItem }) {
           {item.actor && (
             <p className="text-[10px] text-dusk mt-0.5 truncate">{item.actor}</p>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileChoiceCard({
+  sender,
+  content,
+  timestamp,
+  attachments,
+  onSummarize,
+  onSendToTeammate,
+  disabled,
+}: {
+  sender: string;
+  content: string;
+  timestamp: string;
+  attachments: ChatAttachment[];
+  onSummarize: () => void;
+  onSendToTeammate: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex justify-start mb-3 animate-fade-up">
+      <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-graphite/80 border border-white/[0.06]">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[11px] font-medium text-parchment">{sender}</div>
+          <div className="text-[10px] text-dusk font-mono">{timestamp}</div>
+        </div>
+        <div className="text-sm text-parchment mb-3">{content}</div>
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {attachments.map((a) => (
+              <span
+                key={a.id}
+                className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-ink border border-white/[0.08] text-parchment"
+              >
+                <FileText className="w-3 h-3 text-smoke" />
+                <span className="max-w-[200px] truncate">{a.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            type="button"
+            onClick={onSummarize}
+            disabled={disabled}
+            className="flex-1 flex items-center justify-center gap-2 text-[12px] px-3 py-2 rounded-lg bg-ink border border-white/[0.08] hover:border-claret/40 hover:bg-white/[0.02] text-parchment transition disabled:opacity-40"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-claret" />
+            Would you like a summary?
+          </button>
+          <button
+            type="button"
+            onClick={onSendToTeammate}
+            disabled={disabled}
+            className="flex-1 flex items-center justify-center gap-2 text-[12px] px-3 py-2 rounded-lg bg-ink border border-white/[0.08] hover:border-claret/40 hover:bg-white/[0.02] text-parchment transition disabled:opacity-40"
+          >
+            <Users className="w-3.5 h-3.5 text-claret" />
+            Whom do you want to send it to?
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TeamPickerCard({
+  sender,
+  content,
+  timestamp,
+  attachments,
+  people,
+  onPick,
+  onCancel,
+  disabled,
+}: {
+  sender: string;
+  content: string;
+  timestamp: string;
+  attachments: ChatAttachment[];
+  people: Array<{ id: string; name: string; role: string }>;
+  onPick: (person: { id: string; name: string; role: string }) => void;
+  onCancel: () => void;
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return people;
+    return people.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) || p.role.toLowerCase().includes(q),
+    );
+  }, [people, query]);
+
+  return (
+    <div className="flex justify-start mb-3 animate-fade-up">
+      <div className="w-full max-w-md rounded-2xl px-4 py-3 bg-graphite/80 border border-white/[0.06]">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[11px] font-medium text-parchment">{sender}</div>
+          <div className="text-[10px] text-dusk font-mono">{timestamp}</div>
+        </div>
+        <div className="text-sm text-parchment mb-2">{content}</div>
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {attachments.map((a) => (
+              <span
+                key={a.id}
+                className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-ink border border-white/[0.08] text-parchment"
+              >
+                <FileText className="w-3 h-3 text-smoke" />
+                <span className="max-w-[160px] truncate">{a.name}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 bg-ink border border-white/[0.08] rounded-lg px-2.5 py-1.5 mb-2">
+          <Search className="w-3.5 h-3.5 text-dusk shrink-0" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search teammates…"
+            className="flex-1 bg-transparent text-[12px] text-parchment placeholder:text-dusk outline-none"
+            autoFocus
+          />
+        </div>
+        <div className="max-h-56 overflow-y-auto -mx-1 px-1">
+          {filtered.length === 0 ? (
+            <p className="text-[11px] text-dusk px-2 py-3">
+              No teammates match &quot;{query}&quot;.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {filtered.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => onPick(p)}
+                    disabled={disabled}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md bg-ink/60 border border-transparent hover:border-claret/30 hover:bg-white/[0.03] transition text-left disabled:opacity-40"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-graphite border border-white/[0.08] flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
+                      {p.name
+                        .split(" ")
+                        .map((w) => w[0])
+                        .join("")
+                        .toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12px] text-bone truncate">
+                        {p.name}
+                      </div>
+                      <div className="text-[10px] text-dusk truncate">
+                        {p.role}
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="flex justify-end mt-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={disabled}
+            className="text-[11px] text-dusk hover:text-parchment transition px-2 py-1 disabled:opacity-40"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>

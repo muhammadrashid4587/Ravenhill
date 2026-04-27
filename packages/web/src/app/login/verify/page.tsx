@@ -4,9 +4,25 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/AuthContext";
+import { setSessionToken } from "@/lib/session";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
+const PROD_API = "https://ravenhill-api.fly.dev";
+function resolveApiBase(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host === "raven-hill.org" ||
+      host === "www.raven-hill.org" ||
+      host.endsWith(".vercel.app")
+    ) {
+      return PROD_API;
+    }
+  }
+  const fromEnv = (process.env.NEXT_PUBLIC_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  return fromEnv || "http://localhost:8000";
+}
 type Status = "verifying" | "success" | "error";
 
 const ERROR_COPY: Record<string, string> = {
@@ -48,9 +64,9 @@ function VerifyInvitePageInner() {
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/auth/verify`, {
+        const apiBase = resolveApiBase();
+        const res = await fetch(`${apiBase}/api/auth/verify`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
         });
@@ -63,6 +79,13 @@ function VerifyInvitePageInner() {
           );
           setStatus("error");
           return;
+        }
+        const body = await res.json().catch(() => ({}));
+        if (body && typeof body.session_token === "string") {
+          // Mirror on the frontend domain so the Next middleware
+          // presence-check can see a cookie (the HttpOnly cross-site
+          // cookie set by the API is invisible to middleware).
+          setSessionToken(body.session_token);
         }
         await refresh();
         setStatus("success");

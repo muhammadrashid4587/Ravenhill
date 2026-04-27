@@ -97,13 +97,13 @@ export default function KnowledgePage() {
     const edges = [
       ...topics.map((t) => ({
         source: "me",
-        target: `topic:${t.topic}`,
+        target: t.id,
         weight: t.weight,
       })),
       ...collaborators.map((c) => ({
         source: "me",
-        target: `person:${c.person_id}`,
-        weight: c.strength,
+        target: c.id,
+        weight: c.weight,
       })),
     ];
 

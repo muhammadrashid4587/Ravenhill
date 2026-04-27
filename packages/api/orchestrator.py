@@ -119,6 +119,8 @@ class SecondHopRequest(BaseModel):
 def _row_to_agent(row: AgentRow) -> Agent:
     return Agent(
         id=row.id,
+        org_id=row.org_id,
+        org_role=(row.org_role or "member"),
         name=row.name,
         role=row.role,
         role_description=row.role_description or "",
@@ -135,21 +137,30 @@ def _row_to_agent(row: AgentRow) -> Agent:
     )
 
 
-async def _get_agent(agent_id: UUID) -> Agent | None:
-    """Fetch an agent from the database."""
+async def _get_agent(agent_id: UUID, org_id: UUID | None = None) -> Agent | None:
+    """Fetch an agent from the database.
+
+    If `org_id` is provided, the agent must belong to that org — returns
+    None otherwise. Prevents cross-tenant lookup of arbitrary UUIDs.
+    """
     async with db.async_session() as session:
         row = await session.get(AgentRow, agent_id)
         if not row:
             return None
+        if org_id is not None and row.org_id != org_id:
+            return None
         return _row_to_agent(row)
 
 
-async def _get_all_agents() -> list[Agent]:
-    """Fetch all active agents from the database."""
+async def _get_all_agents(org_id: UUID | None = None) -> list[Agent]:
+    """Fetch all active agents, optionally scoped to a single org."""
     async with db.async_session() as session:
-        result = await session.execute(
-            select(AgentRow).where(AgentRow.is_active.is_(True))
+        stmt = db.with_org(
+            select(AgentRow).where(AgentRow.is_active.is_(True)),
+            AgentRow,
+            org_id,
         )
+        result = await session.execute(stmt)
         rows = result.scalars().all()
         return [_row_to_agent(r) for r in rows]
 
@@ -535,7 +546,7 @@ async def orchestrate(request: OrchestrateRequest):
         )
 
     # Step 1: Load all agents and build topic map
-    all_agents = await _get_all_agents()
+    all_agents = await _get_all_agents(source.org_id)
     topic_map = build_topic_map(all_agents)
     available_keys = list(topic_map.keys())
 
@@ -624,7 +635,7 @@ async def orchestrate(request: OrchestrateRequest):
     # Step 5: Fetch target agents
     target_agents = []
     for aid in ranked_ids[:3]:
-        agent = await _get_agent(UUID(aid))
+        agent = await _get_agent(UUID(aid), source.org_id)
         if agent:
             target_agents.append(agent)
 
@@ -680,7 +691,7 @@ async def orchestrate(request: OrchestrateRequest):
         queried_ids = {str(a.id) for a in target_agents}
         new_refs = [r for r in references if r != str(source.id) and r not in queried_ids]
         if new_refs:
-            ref_agent = await _get_agent(UUID(new_refs[0]))
+            ref_agent = await _get_agent(UUID(new_refs[0]), source.org_id)
             if ref_agent:
                 second_hop_available = True
                 second_hop_agent_id = new_refs[0]
@@ -690,6 +701,7 @@ async def orchestrate(request: OrchestrateRequest):
 
     # Log activity
     await log_activity(ActivityEntry(
+        org_id=source.org_id,
         type="route",
         from_agent=source.name,
         to_agent=", ".join(agent_names),
@@ -721,7 +733,7 @@ async def _handle_action_request(
     trace_id: UUID,
 ) -> OrchestrateResponse:
     """Handle an action request — notification or document sharing with approval."""
-    all_agents = await _get_all_agents()
+    all_agents = await _get_all_agents(source.org_id)
 
     # FIX 1: Check for notification intent before document matching
     if _is_notification(message):
@@ -736,6 +748,7 @@ async def _handle_action_request(
             ))
 
             await log_activity(ActivityEntry(
+                org_id=source.org_id,
                 type="notification",
                 from_agent=source.name,
                 to_agent=target.name,
@@ -794,6 +807,7 @@ async def _handle_action_request(
 
     if requires_approval or target_agent.trust_level == "approve":
         approval = ApprovalRequest(
+            org_id=source.org_id,
             requesting_agent=source.id,
             owning_agent=target_agent.id,
             action="share_file",
@@ -823,6 +837,7 @@ async def _handle_action_request(
         ))
 
         await log_activity(ActivityEntry(
+            org_id=source.org_id,
             type="doc_request",
             from_agent=source.name,
             to_agent=target_agent.name,
@@ -860,8 +875,10 @@ async def _handle_action_request(
 async def second_hop(request: SecondHopRequest):
     """Query a referenced agent directly (second-hop chaining)."""
     source = await _get_agent(request.agent_id)
-    ref_agent = await _get_agent(request.referenced_agent_id)
-    if not source or not ref_agent:
+    if not source:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    ref_agent = await _get_agent(request.referenced_agent_id, source.org_id)
+    if not ref_agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     session_id = _resolve_session_id(request.session_id)
@@ -898,6 +915,7 @@ async def second_hop(request: SecondHopRequest):
     ))
 
     await log_activity(ActivityEntry(
+        org_id=source.org_id,
         type="route",
         from_agent=source.name,
         to_agent=ref_agent.name,
@@ -987,7 +1005,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
                     return
 
             # Step 1: Load agents + build topic map
-            all_agents = await _get_all_agents()
+            all_agents = await _get_all_agents(source.org_id)
             topic_map = build_topic_map(all_agents)
             available_keys = list(topic_map.keys())
 
@@ -1074,7 +1092,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
             # Step 4: Fetch and query agents
             target_agents = []
             for aid in ranked_ids[:3]:
-                agent = await _get_agent(UUID(aid))
+                agent = await _get_agent(UUID(aid), source.org_id)
                 if agent:
                     target_agents.append(agent)
 
@@ -1152,7 +1170,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
                 if r != str(source.id) and r not in queried_ids
             ]
             if new_refs:
-                ref_agent = await _get_agent(UUID(new_refs[0]))
+                ref_agent = await _get_agent(UUID(new_refs[0]), source.org_id)
                 if ref_agent:
                     yield _sse({
                         "type": "second_hop",
@@ -1165,6 +1183,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
 
             # Log activity
             await log_activity(ActivityEntry(
+                org_id=source.org_id,
                 type="route",
                 from_agent=source.name,
                 to_agent=", ".join(agent_names),
@@ -1193,8 +1212,10 @@ async def orchestrate_stream(request: OrchestrateRequest):
 async def second_hop_stream(request: SecondHopRequest):
     """Streaming second-hop query."""
     source = await _get_agent(request.agent_id)
-    ref_agent = await _get_agent(request.referenced_agent_id)
-    if not source or not ref_agent:
+    if not source:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    ref_agent = await _get_agent(request.referenced_agent_id, source.org_id)
+    if not ref_agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     session_id = _resolve_session_id(request.session_id)
@@ -1247,6 +1268,7 @@ async def second_hop_stream(request: SecondHopRequest):
             ]})
 
             await log_activity(ActivityEntry(
+                org_id=source.org_id,
                 type="route",
                 from_agent=source.name,
                 to_agent=ref_agent.name,
@@ -1278,8 +1300,8 @@ async def complete_doc_request(approval_id: UUID):
     if not approval_row:
         raise HTTPException(status_code=404, detail="Approval not found")
 
-    source = await _get_agent(approval_row.requesting_agent)
-    target = await _get_agent(approval_row.owning_agent)
+    source = await _get_agent(approval_row.requesting_agent, approval_row.org_id)
+    target = await _get_agent(approval_row.owning_agent, approval_row.org_id)
     if not source or not target:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -1312,6 +1334,7 @@ async def complete_doc_request(approval_id: UUID):
     readable_name = doc_name.replace("_", " ").rsplit(".", 1)[0]
 
     await log_activity(ActivityEntry(
+        org_id=source.org_id,
         type="approval",
         from_agent=target.name,
         description=f"Approved document share to {source.name}: {doc_name}",

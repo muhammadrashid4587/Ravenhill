@@ -2,19 +2,27 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from agents.models import Agent
+from auth.deps import get_current_agent_optional
 import db
-from db import AgentRow
+from db import DEFAULT_ORG_ID, AgentRow, with_org
 
 router = APIRouter()
+
+
+def _scope_org(agent: AgentRow | None) -> UUID:
+    """Registry scope: authed caller's org, or default org for public demo."""
+    return agent.org_id if agent and agent.org_id else DEFAULT_ORG_ID
 
 
 def _row_to_agent(row: AgentRow) -> Agent:
     return Agent(
         id=row.id,
+        org_id=row.org_id,
+        org_role=(row.org_role or "member"),
         name=row.name,
         role=row.role,
         role_description=row.role_description or "",
@@ -31,7 +39,7 @@ def _row_to_agent(row: AgentRow) -> Agent:
     )
 
 
-async def search_agents_by_query(query: str) -> list[Agent]:
+async def search_agents_by_query(query: str, org_id: UUID | None = None) -> list[Agent]:
     """Find agents whose knowledge areas match a query.
 
     TODO: Replace keyword matching with semantic search (pgvector).
@@ -40,9 +48,12 @@ async def search_agents_by_query(query: str) -> list[Agent]:
     words = query_lower.split()
 
     async with db.async_session() as session:
-        result = await session.execute(
-            select(AgentRow).where(AgentRow.is_active.is_(True))
+        stmt = with_org(
+            select(AgentRow).where(AgentRow.is_active.is_(True)),
+            AgentRow,
+            org_id,
         )
+        result = await session.execute(stmt)
         rows = result.scalars().all()
 
     results = []
@@ -59,27 +70,40 @@ async def search_agents_by_query(query: str) -> list[Agent]:
 
 
 @router.get("/", response_model=list[Agent])
-async def list_registry():
-    """List all registered agents and their metadata."""
+async def list_registry(
+    agent: AgentRow | None = Depends(get_current_agent_optional),
+):
+    """List registered agents in the caller's org."""
+    org_id = _scope_org(agent)
     async with db.async_session() as session:
-        result = await session.execute(
-            select(AgentRow).where(AgentRow.is_active.is_(True)).order_by(AgentRow.name)
-        )
+        stmt = with_org(
+            select(AgentRow).where(AgentRow.is_active.is_(True)),
+            AgentRow,
+            org_id,
+        ).order_by(AgentRow.name)
+        result = await session.execute(stmt)
         rows = result.scalars().all()
         return [_row_to_agent(r) for r in rows]
 
 
 @router.get("/search")
-async def search_agents(query: str) -> list[Agent]:
-    """HTTP endpoint wrapping search_agents_by_query."""
-    return await search_agents_by_query(query)
+async def search_agents(
+    query: str,
+    agent: AgentRow | None = Depends(get_current_agent_optional),
+) -> list[Agent]:
+    """HTTP endpoint wrapping search_agents_by_query, scoped to caller's org."""
+    return await search_agents_by_query(query, _scope_org(agent))
 
 
 @router.get("/{agent_id}", response_model=Agent)
-async def get_agent_metadata(agent_id: UUID):
-    """Get an agent's registry entry."""
+async def get_agent_metadata(
+    agent_id: UUID,
+    agent: AgentRow | None = Depends(get_current_agent_optional),
+):
+    """Get an agent's registry entry, scoped to the caller's org."""
+    org_id = _scope_org(agent)
     async with db.async_session() as session:
         row = await session.get(AgentRow, agent_id)
-        if not row:
+        if not row or (row.org_id is not None and row.org_id != org_id):
             return None
         return _row_to_agent(row)

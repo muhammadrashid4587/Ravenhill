@@ -58,6 +58,30 @@ class VerifyPayload(BaseModel):
     token: str
 
 
+# ---------- Password signup / login ----------
+
+
+class SignupPayload(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    name: str | None = None
+
+
+class LoginPayload(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=200)
+
+
+# ---------- Share-link signup ----------
+
+
+class ShareLinkSignupPayload(BaseModel):
+    invite_code: str = Field(min_length=8, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    name: str | None = None
+
+
 # ---------- /me response ----------
 
 

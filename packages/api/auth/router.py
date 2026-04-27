@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from config import settings
 from db import AgentRow
 
-from .deps import get_current_agent_optional, require_admin_token
+from .deps import extract_session_token, get_current_agent_optional, require_admin_token
 from .email import send_signin_email
 from .models import (
     AccessRequestPayload,
@@ -15,9 +15,12 @@ from .models import (
     CurrentUserAgent,
     InvitePayload,
     InviteResponse,
+    LoginPayload,
     MeResponse,
+    ShareLinkSignupPayload,
     SignInRequestPayload,
     SignInRequestResponse,
+    SignupPayload,
     VerifyPayload,
 )
 from .service import (
@@ -27,7 +30,10 @@ from .service import (
     create_invite,
     create_signin_token,
     delete_session,
+    login_with_password,
     record_access_request,
+    signup_via_share_link,
+    signup_with_password,
 )
 
 router = APIRouter()
@@ -35,26 +41,30 @@ router = APIRouter()
 
 def _set_session_cookie(response: Response, token: str) -> None:
     secure = settings.site_url.startswith("https://")
+    # SameSite=None required for cross-site cookie (frontend on vercel.app,
+    # API on fly.dev). Browsers only accept SameSite=None when Secure=True.
+    samesite = "none" if secure else "lax"
     response.set_cookie(
         key=settings.session_cookie_name,
         value=token,
         max_age=settings.session_ttl_days * 24 * 60 * 60,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=samesite,
         path="/",
     )
 
 
 def _clear_session_cookie(response: Response) -> None:
     secure = settings.site_url.startswith("https://")
+    samesite = "none" if secure else "lax"
     response.set_cookie(
         key=settings.session_cookie_name,
         value="",
         max_age=0,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=samesite,
         path="/",
     )
 
@@ -119,20 +129,20 @@ async def issue_invite(payload: InvitePayload) -> InviteResponse:
 
 @router.post("/sign-in-request", response_model=SignInRequestResponse)
 async def sign_in_request(payload: SignInRequestPayload) -> SignInRequestResponse:
-    """Self-serve sign-in: email us and, if you're on the allowlist, we
-    email you a fresh one-shot login link.
+    """Self-serve sign-in. If no Agent exists for this email we create one
+    on the fly with sensible defaults; either way we email a fresh one-shot
+    login link.
 
-    404 with `email_not_admitted` if the email isn't tied to an active
-    Agent — the frontend uses that to route the visitor to request-access.
-    429 with `too_frequent` if a link was issued in the last minute.
+    403 with `account_deactivated` if the email matches an admin-disabled
+    Agent. 429 with `too_frequent` if a link was issued in the last minute.
     """
     try:
         agent, _invite, invite_url = await create_signin_token(payload.email)
     except SignInError as e:
-        if e.code == "email_not_admitted":
+        if e.code == "account_deactivated":
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="email_not_admitted",
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="account_deactivated",
             )
         if e.code == "too_frequent":
             raise HTTPException(
@@ -166,6 +176,98 @@ async def sign_in_request(payload: SignInRequestPayload) -> SignInRequestRespons
     )
 
 
+# ---------- Public: password signup + login ----------
+
+
+@router.post("/signup")
+async def signup(payload: SignupPayload, response: Response) -> dict:
+    """Create an account with email + password. Returns the current user
+    and sets the session cookie. 409 if email is already registered."""
+    try:
+        agent, session = await signup_with_password(
+            payload.email, payload.password, payload.name
+        )
+    except SignInError as e:
+        if e.code == "email_taken":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="email_taken")
+        if e.code == "account_deactivated":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="account_deactivated"
+            )
+        raise
+
+    _set_session_cookie(response, session.session_token)
+    return {
+        "agent": _agent_to_current_user(agent).model_dump(),
+        "expires_at": session.expires_at.isoformat(),
+        "session_token": session.session_token,
+    }
+
+
+@router.post("/login")
+async def login(payload: LoginPayload, response: Response) -> dict:
+    """Verify email + password, set the session cookie, return the user.
+    401 invalid_credentials on any failure; 403 account_deactivated if
+    the account is disabled."""
+    try:
+        agent, session = await login_with_password(payload.email, payload.password)
+    except SignInError as e:
+        if e.code == "account_deactivated":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="account_deactivated"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials"
+        )
+
+    _set_session_cookie(response, session.session_token)
+    return {
+        "agent": _agent_to_current_user(agent).model_dump(),
+        "expires_at": session.expires_at.isoformat(),
+        "session_token": session.session_token,
+    }
+
+
+# ---------- Public: signup via org share-link ----------
+
+
+@router.post("/share-link-signup")
+async def share_link_signup(
+    payload: ShareLinkSignupPayload, response: Response
+) -> dict:
+    """Create an account that joins an org via its share-link invite_code.
+
+    On success: agent lands as a `member` of that org and receives a
+    session cookie. 404 `invite_invalid` for unknown/expired codes, 409
+    `email_taken` if the email already has a password-backed account.
+    """
+    try:
+        agent, session = await signup_via_share_link(
+            payload.invite_code, payload.email, payload.password, payload.name
+        )
+    except SignInError as e:
+        if e.code == "invite_invalid":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="invite_invalid"
+            )
+        if e.code == "email_taken":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="email_taken"
+            )
+        if e.code == "account_deactivated":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="account_deactivated"
+            )
+        raise
+
+    _set_session_cookie(response, session.session_token)
+    return {
+        "agent": _agent_to_current_user(agent).model_dump(),
+        "expires_at": session.expires_at.isoformat(),
+        "session_token": session.session_token,
+    }
+
+
 # ---------- Public: verify an invite, set session cookie ----------
 
 
@@ -188,6 +290,10 @@ async def verify_invite(payload: VerifyPayload, response: Response) -> dict:
     return {
         "agent": _agent_to_current_user(agent).model_dump(),
         "expires_at": session.expires_at.isoformat(),
+        # Returned so the frontend can mirror the token as a same-domain
+        # cookie for its middleware presence-check. The API-domain cookie
+        # (HttpOnly, SameSite=None) is still the real credential.
+        "session_token": session.session_token,
     }
 
 
@@ -210,7 +316,7 @@ async def me(request: Request) -> MeResponse:
     # Recover the session row to surface expiry — validate_session was
     # already called by the dependency, so we need one more round-trip.
     from .service import validate_session
-    token = request.cookies.get(settings.session_cookie_name, "")
+    token = extract_session_token(request)
     result = await validate_session(token)
     if result is None:
         raise HTTPException(
@@ -230,7 +336,7 @@ async def me(request: Request) -> MeResponse:
 @router.post("/logout")
 async def logout(request: Request, response: Response) -> dict:
     """Invalidate the current session and clear the cookie. Idempotent."""
-    token = request.cookies.get(settings.session_cookie_name, "")
+    token = extract_session_token(request)
     if token:
         await delete_session(token)
     _clear_session_cookie(response)
@@ -253,4 +359,8 @@ async def dev_login(agent_id: UUID, response: Response) -> dict:
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="agent_not_found")
     _set_session_cookie(response, session.session_token)
-    return {"status": "ok", "agent_id": str(session.agent_id)}
+    return {
+        "status": "ok",
+        "agent_id": str(session.agent_id),
+        "session_token": session.session_token,
+    }

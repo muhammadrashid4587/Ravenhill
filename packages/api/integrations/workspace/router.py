@@ -3,17 +3,23 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from integrations.google_meet import (
-    _get_tokens,
+    _coerce_agent_uuid,
+    _has_tokens,
     _is_configured,
     get_auth_url,
     handle_auth_callback,
 )
+from integrations.google_tokens import delete_tokens
 from integrations.workspace.adapters import (
     ingest_gmail_topics,
     list_calendar_events,
     list_drive_files,
     list_drive_folders,
     list_gmail_threads,
+)
+from integrations.workspace.agent_surfaces import (
+    build_pre_meeting_brief,
+    triage_inbox,
 )
 
 router = APIRouter()
@@ -70,6 +76,36 @@ async def gmail_ingest(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---- Agent surfaces: triage + pre-meeting brief ----
+
+
+@router.get("/gmail/triage")
+async def gmail_triage(agent_id: str = Query(default="demo")):
+    """Agent picks the top-3 threads that need the user's attention and
+    returns why + urgency. Falls back to heuristic ranking when the LLM
+    is unavailable."""
+    try:
+        return await triage_inbox(agent_id)
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/calendar/brief")
+async def calendar_brief(
+    agent_id: str = Query(default="demo"),
+    event_id: str = Query(...),
+):
+    """Pre-meeting brief for a calendar event. Pulls attendees + recent
+    Gmail threads mentioning them and asks the agent for a 3-bullet
+    brief (context / what's at stake / suggested opening)."""
+    try:
+        return await build_pre_meeting_brief(agent_id, event_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="event_not_found")
+    except Exception as e:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---- Google OAuth surface ----
 
 
@@ -77,10 +113,10 @@ async def gmail_ingest(
 async def google_status(agent_id: str = Query(default="demo")):
     """Per-agent Google connection status. Scopes cover Calendar + Drive + Gmail."""
     configured = _is_configured()
-    tokens = _get_tokens(agent_id) if configured else None
+    connected = await _has_tokens(agent_id) if configured else False
     return {
         "configured": configured,
-        "connected": bool(tokens),
+        "connected": connected,
         "agent_id": agent_id,
         "scopes": [
             "calendar.readonly",
@@ -114,8 +150,7 @@ async def google_callback(
 
 @router.post("/google/disconnect")
 async def google_disconnect(agent_id: str = Query(default="demo")):
-    """Clear the agent's stored Google tokens (local in-memory store for Phase 1)."""
-    from integrations.google_meet import _token_store
-
-    _token_store.pop(agent_id, None)
-    return {"status": "disconnected", "agent_id": agent_id}
+    """Drop the agent's stored Google tokens from Postgres."""
+    uid = _coerce_agent_uuid(agent_id)
+    deleted = await delete_tokens(uid) if uid is not None else False
+    return {"status": "disconnected", "agent_id": agent_id, "deleted": deleted}

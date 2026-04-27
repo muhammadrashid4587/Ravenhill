@@ -6,18 +6,45 @@
  * already configured with allow_credentials=true for the configured
  * origins.
  */
+import { readSessionToken } from "@/lib/session";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// API base resolution.
+//   1. In the browser on a known production host, hardcode the prod API so a
+//      mis-configured env var can never break the site.
+//   2. Otherwise read NEXT_PUBLIC_API_URL (build-time inlined) and trim
+//      whitespace + trailing slashes.
+//   3. Fall back to local dev.
+const PROD_API = "https://ravenhill-api.fly.dev";
+function resolveApiBase(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host === "raven-hill.org" ||
+      host === "www.raven-hill.org" ||
+      host.endsWith(".vercel.app")
+    ) {
+      return PROD_API;
+    }
+  }
+  const fromEnv = (process.env.NEXT_PUBLIC_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  return fromEnv || "http://localhost:8000";
+}
+const API_BASE = resolveApiBase();
 
 // Default init for every request — always include credentials.
 const defaultInit: RequestInit = { credentials: "include" };
 
 function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const sessionToken =
+    typeof document !== "undefined" ? readSessionToken() : "";
   return fetch(`${API_BASE}${path}`, {
     ...defaultInit,
     ...init,
-    credentials: "include",
+    credentials: sessionToken ? "omit" : "include",
     headers: {
+      ...(sessionToken ? { "X-Session-Token": sessionToken } : {}),
       ...(init.headers || {}),
     },
   });
@@ -74,12 +101,19 @@ export async function deleteAgent(agentId: string) {
   return res.json();
 }
 
-export async function chatWithAgent(agentId: string, message: string) {
+export async function chatWithAgent(
+  agentId: string,
+  message: string,
+): Promise<{ agent_id: string; agent_name: string; content: string }> {
   const res = await apiFetch(`/api/agents/${agentId}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content: message, agent_id: agentId }),
   });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `chat failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -93,6 +127,242 @@ export async function sendInterAgentMessage(message: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(message),
+  });
+  return res.json();
+}
+
+export interface AgentLedgerMessage {
+  id: string;
+  from_agent_id: string;
+  to_agent_id: string;
+  from_name: string;
+  to_name: string;
+  content: string;
+  intent: string | null;
+  in_reply_to: string | null;
+  status: string;
+  created_at: string;
+}
+
+export async function sendAgentMessage(
+  toAgentId: string,
+  content: string,
+  intent?: string,
+): Promise<AgentLedgerMessage> {
+  const res = await apiFetch(`/api/messages/agent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to_agent_id: toAgentId, content, intent }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `send failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchAgentInbox(): Promise<AgentLedgerMessage[]> {
+  const res = await apiFetch(`/api/messages/inbox`);
+  if (!res.ok) throw new Error(`inbox fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAgentSent(): Promise<AgentLedgerMessage[]> {
+  const res = await apiFetch(`/api/messages/sent`);
+  if (!res.ok) throw new Error(`sent fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAgentThread(
+  otherAgentId: string,
+): Promise<AgentLedgerMessage[]> {
+  const res = await apiFetch(`/api/messages/thread/${otherAgentId}`);
+  if (!res.ok) throw new Error(`thread fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function replyToAgentMessage(
+  ledgerId: string,
+  content: string,
+): Promise<AgentLedgerMessage> {
+  const res = await apiFetch(`/api/messages/${ledgerId}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `reply failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+// ---- File sharing between agents (in-band, no backend schema changes) ----
+//
+// `MessageLedgerRow` only has a `content` (text) column, so to ship real
+// file payloads between two users without a backend migration we encode
+// the file metadata (and base64 bytes for textual files within the size
+// cap) into the body of a normal inter-agent message. The body keeps a
+// human-readable preamble so the recipient's auto-reply LLM doesn't trip
+// on a JSON-only blob, and the marker itself is stripped out at render
+// time on the receiving side.
+
+const FILE_MARKER_OPEN = "⟦file:RAVENHILL_V1⟧";
+const FILE_MARKER_CLOSE = "⟦/file⟧";
+const MAX_EMBEDDED_FILE_BYTES = 256 * 1024;
+
+const TEXTUAL_API_MIME_PREFIXES = ["text/"];
+const TEXTUAL_API_MIME_EXACT = new Set([
+  "application/json",
+  "application/xml",
+  "application/javascript",
+  "application/x-yaml",
+  "application/x-typescript",
+  "application/sql",
+]);
+const TEXTUAL_API_EXTENSIONS = new Set([
+  "md", "txt", "csv", "tsv", "json", "yaml", "yml", "xml", "html", "htm",
+  "css", "scss", "js", "jsx", "ts", "tsx", "py", "rb", "go", "rs", "java",
+  "kt", "swift", "c", "h", "cpp", "hpp", "sh", "bash", "zsh", "sql",
+  "ini", "cfg", "toml", "log", "rst", "tex",
+]);
+
+function isShareableAsText(mime: string, name: string): boolean {
+  const m = (mime || "").toLowerCase();
+  if (TEXTUAL_API_MIME_PREFIXES.some((p) => m.startsWith(p))) return true;
+  if (TEXTUAL_API_MIME_EXACT.has(m)) return true;
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  return TEXTUAL_API_EXTENSIONS.has(ext);
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+interface SharedFilePayload {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  content_b64?: string;
+  truncated?: boolean;
+}
+
+export interface ParsedFileMessage {
+  preamble: string;
+  attachment: {
+    id: string;
+    name: string;
+    mime_type: string;
+    size_bytes: number;
+    url?: string;
+    source: "shared";
+  };
+  truncated: boolean;
+}
+
+// Sends a file from the caller's agent to another agent through the same
+// `/api/messages/agent` endpoint a normal text message uses. For textual
+// files within `MAX_EMBEDDED_FILE_BYTES` the actual bytes ride along as
+// base64; for binary or oversized files only the metadata travels and
+// the recipient sees a "real bytes pending Drive ingestion" affordance.
+export async function sendFileToAgent(
+  toAgentId: string,
+  attachment: {
+    id: string;
+    name: string;
+    mime_type: string;
+    size_bytes: number;
+    url?: string;
+  },
+  note?: string,
+): Promise<AgentLedgerMessage> {
+  const payload: SharedFilePayload = {
+    id: attachment.id,
+    name: attachment.name,
+    mime: attachment.mime_type || "application/octet-stream",
+    size: attachment.size_bytes,
+  };
+
+  const canEmbed =
+    !!attachment.url &&
+    attachment.url.startsWith("blob:") &&
+    isShareableAsText(attachment.mime_type, attachment.name) &&
+    attachment.size_bytes <= MAX_EMBEDDED_FILE_BYTES;
+
+  if (canEmbed) {
+    try {
+      const res = await fetch(attachment.url!);
+      const blob = await res.blob();
+      payload.content_b64 = await blobToBase64(blob);
+    } catch {
+      // Fall through with metadata-only — the recipient still sees the share.
+    }
+  } else if (attachment.size_bytes > MAX_EMBEDDED_FILE_BYTES) {
+    payload.truncated = true;
+  }
+
+  const sizeKB = Math.max(1, Math.round(attachment.size_bytes / 1024));
+  const preamble = note
+    ? `Shared file: ${attachment.name} (${sizeKB} KB)\n\n${note}`
+    : `Shared file: ${attachment.name} (${sizeKB} KB)`;
+  const body = `${preamble}\n\n${FILE_MARKER_OPEN}${JSON.stringify(payload)}${FILE_MARKER_CLOSE}`;
+
+  return sendAgentMessage(toAgentId, body, "file_share");
+}
+
+// Pulls the file payload back out of an inter-agent message body. Returns
+// null when the body has no marker (i.e. it's a normal text message).
+export function parseFileMarker(body: string): ParsedFileMessage | null {
+  if (!body) return null;
+  const open = body.indexOf(FILE_MARKER_OPEN);
+  if (open < 0) return null;
+  const close = body.indexOf(
+    FILE_MARKER_CLOSE,
+    open + FILE_MARKER_OPEN.length,
+  );
+  if (close < 0) return null;
+
+  const json = body.slice(open + FILE_MARKER_OPEN.length, close);
+  let payload: SharedFilePayload;
+  try {
+    payload = JSON.parse(json) as SharedFilePayload;
+  } catch {
+    return null;
+  }
+  if (!payload.name || typeof payload.size !== "number") return null;
+
+  const mime = payload.mime || "application/octet-stream";
+  const url = payload.content_b64
+    ? `data:${mime};base64,${payload.content_b64}`
+    : undefined;
+
+  return {
+    preamble: body.slice(0, open).trim(),
+    truncated: !!payload.truncated,
+    attachment: {
+      id: payload.id || `shared-${Math.random().toString(36).slice(2)}`,
+      name: payload.name,
+      mime_type: mime,
+      size_bytes: payload.size,
+      url,
+      source: "shared",
+    },
+  };
+}
+
+export async function markAgentMessageRead(ledgerId: string) {
+  const res = await apiFetch(`/api/messages/${ledgerId}/read`, {
+    method: "POST",
   });
   return res.json();
 }
@@ -153,6 +423,57 @@ export async function fetchWorkspaceCalendar(agentId?: string) {
   const params = agentId ? `?agent_id=${agentId}` : "";
   const res = await fetch(`${API_BASE}/api/workspace/calendar/events${params}`);
   if (!res.ok) throw new Error(`calendar fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export interface TriageItem {
+  thread_id: string;
+  subject: string;
+  from: string;
+  urgency: "now" | "today" | "this_week";
+  reason: string;
+  thread_url?: string | null;
+}
+
+export async function fetchInboxTriage(agentId?: string): Promise<{
+  agent_id: string;
+  items: TriageItem[];
+  source: string;
+}> {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await fetch(`${API_BASE}/api/workspace/gmail/triage${params}`);
+  if (!res.ok) throw new Error(`triage fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export interface PreMeetingBrief {
+  event: {
+    id: string;
+    title: string;
+    start_time: string;
+    attendees: string[];
+    meeting_url?: string | null;
+  };
+  bullets: string[];
+  related_threads: Array<{
+    id: string;
+    subject: string;
+    from: string;
+    thread_url?: string | null;
+  }>;
+  source: string;
+}
+
+export async function fetchPreMeetingBrief(
+  eventId: string,
+  agentId?: string,
+): Promise<PreMeetingBrief> {
+  const params = new URLSearchParams({ event_id: eventId });
+  if (agentId) params.set("agent_id", agentId);
+  const res = await fetch(
+    `${API_BASE}/api/workspace/calendar/brief?${params}`,
+  );
+  if (!res.ok) throw new Error(`brief fetch failed: ${res.status}`);
   return res.json();
 }
 

@@ -156,6 +156,45 @@ async def test_verify_issues_session_cookie_and_me_returns_agent():
 
 
 @pytest.mark.asyncio
+async def test_me_and_logout_accept_session_token_header():
+    async with await _client() as c:
+        invite_res = await c.post(
+            "/api/auth/invite",
+            headers={"X-Admin-Token": "test-admin-token"},
+            json={
+                "email": "header@example.com",
+                "name": "Header User",
+                "role": "Ops",
+                "department": "Operations",
+            },
+        )
+        token = invite_res.json()["token"]
+        verify_res = await c.post("/api/auth/verify", json={"token": token})
+        assert verify_res.status_code == 200
+        session_token = verify_res.json()["session_token"]
+
+    async with await _client() as c2:
+        me_res = await c2.get(
+            "/api/auth/me",
+            headers={"X-Session-Token": session_token},
+        )
+        assert me_res.status_code == 200
+        assert me_res.json()["agent"]["email"] == "header@example.com"
+
+        logout_res = await c2.post(
+            "/api/auth/logout",
+            headers={"X-Session-Token": session_token},
+        )
+        assert logout_res.status_code == 200
+
+        me_res2 = await c2.get(
+            "/api/auth/me",
+            headers={"X-Session-Token": session_token},
+        )
+        assert me_res2.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_verify_rejects_invalid_token():
     async with await _client() as c:
         r = await c.post("/api/auth/verify", json={"token": "does-not-exist"})
@@ -283,16 +322,47 @@ async def _invite_and_verify(c, email: str, name: str):
 
 
 @pytest.mark.asyncio
-async def test_signin_request_unknown_email_returns_404():
-    """Email not tied to an active Agent — frontend routes to request-access."""
-    settings.resend_api_key = ""  # stay in dev-log mode
+async def test_signin_request_unknown_email_auto_creates_agent():
+    """Self-serve signup: an unknown email creates a fresh Agent and gets
+    a magic link on the same request."""
+    settings.app_env = "development"
+    settings.resend_api_key = ""
     async with await _client() as c:
         r = await c.post(
             "/api/auth/sign-in-request",
-            json={"email": "never-invited@example.com"},
+            json={"email": "brand.new@example.com"},
         )
-    assert r.status_code == 404
-    assert r.json()["detail"] == "email_not_admitted"
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "logged"
+    assert data["dev_url"] and "/login/verify?token=" in data["dev_url"]
+
+
+@pytest.mark.asyncio
+async def test_signin_request_deactivated_returns_403():
+    """Disabled account returns 403 — admin has to reactivate."""
+    settings.resend_api_key = ""
+    async with await _client() as c:
+        await _invite_and_verify(c, "disabled@example.com", "Disabled User")
+    # Flip the agent to inactive via the raw session.
+    from db import AgentRow, async_session
+    from sqlalchemy import update
+
+    async with async_session() as s:
+        await s.execute(
+            update(AgentRow)
+            .where(AgentRow.email == "disabled@example.com")
+            .values(is_active=False)
+        )
+        await s.commit()
+
+    async with await _client() as c:
+        r = await c.post(
+            "/api/auth/sign-in-request",
+            json={"email": "disabled@example.com"},
+        )
+    assert r.status_code == 403
+    assert r.json()["detail"] == "account_deactivated"
 
 
 @pytest.mark.asyncio

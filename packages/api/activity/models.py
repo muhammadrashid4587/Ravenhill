@@ -41,6 +41,9 @@ async def broadcast(entry: dict):
 
 class ActivityEntry(BaseModel):
     id: UUID = Field(default_factory=uuid4)
+    # Tenant anchor. Required for every new entry; callers that can't
+    # derive an org yet (startup tasks, tests) pass DEFAULT_ORG_ID explicitly.
+    org_id: UUID | None = None
     type: str  # "route", "answer", "approval", "doc_request"
     from_agent: str
     to_agent: str | None = None
@@ -53,6 +56,7 @@ async def log_activity(entry: ActivityEntry):
     async with db.async_session() as session:
         row = ActivityRow(
             id=entry.id,
+            org_id=entry.org_id,
             type=entry.type,
             from_agent=entry.from_agent,
             to_agent=entry.to_agent,
@@ -65,6 +69,7 @@ async def log_activity(entry: ActivityEntry):
     # Broadcast to SSE subscribers
     entry_dict = {
         "id": str(entry.id),
+        "org_id": str(entry.org_id) if entry.org_id else None,
         "type": entry.type,
         "from_agent": entry.from_agent,
         "to_agent": entry.to_agent,
