@@ -15,6 +15,7 @@ import {
   HardDriveUpload,
 } from "lucide-react";
 import { fetchOnboardingState, setOnboardingState } from "@/lib/mocks";
+import { fetchSlackAuthUrl } from "@/lib/api";
 import type { OnboardingState, OnboardingStep } from "@/lib/types";
 
 type Source = "slack" | "gmail" | "google_calendar" | "drive";
@@ -118,6 +119,19 @@ export default function OnboardingPage() {
   const toggleSource = async (id: Source) => {
     if (!state) return;
     setConnecting(id);
+    // For Slack specifically, try to kick off real OAuth before falling back
+    // to the mock-toggle behavior. The redirect leaves this page entirely
+    // when the backend is ready; if the endpoint isn't there yet we just
+    // continue with the local-state toggle and the user can finish onboarding.
+    if (id === "slack" && !state.connected_sources.includes("slack")) {
+      try {
+        const { auth_url } = await fetchSlackAuthUrl();
+        window.location.href = auth_url;
+        return;
+      } catch {
+        /* fall through to mock toggle */
+      }
+    }
     await new Promise((r) => setTimeout(r, 500));
     const connected = state.connected_sources.includes(id)
       ? state.connected_sources.filter((x) => x !== id)

@@ -559,6 +559,85 @@ export async function disconnectGoogle(agentId?: string) {
   return res.json();
 }
 
+// ---- Slack OAuth + workspace data ----
+// Backend currently only exposes POST /api/integrations/slack/events (inbound
+// webhook). The status / OAuth / channel-list endpoints below are forward-
+// looking — when Muhammad ships them, this file is already pointed at the
+// right paths. Until then `fetchSlackStatus` reports "not configured" and
+// the channel/thread reads transparently fall back to mocks so the chat UI
+// keeps working.
+
+export interface SlackStatus {
+  configured: boolean;
+  connected: boolean;
+  team_name?: string;
+  scopes: string[];
+}
+
+const SLACK_STATUS_FALLBACK: SlackStatus = {
+  configured: false,
+  connected: false,
+  scopes: [],
+};
+
+export async function fetchSlackStatus(agentId?: string): Promise<SlackStatus> {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  try {
+    const res = await apiFetch(`/api/integrations/slack/status${params}`);
+    if (res.status === 404) return SLACK_STATUS_FALLBACK;
+    if (!res.ok) throw new Error(`slack status failed: ${res.status}`);
+    return res.json();
+  } catch {
+    return SLACK_STATUS_FALLBACK;
+  }
+}
+
+export async function fetchSlackAuthUrl(): Promise<{ auth_url: string }> {
+  const res = await apiFetch(`/api/integrations/slack/auth-url`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(
+      detail.detail ||
+        "Slack OAuth isn't configured on the server yet. Backend endpoint /api/integrations/slack/auth-url is pending.",
+    );
+  }
+  return res.json();
+}
+
+export async function disconnectSlack(agentId?: string) {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  const res = await apiFetch(
+    `/api/integrations/slack/disconnect${params}`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error(`slack disconnect failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSlackChannels() {
+  try {
+    const res = await apiFetch(`/api/integrations/slack/channels`);
+    if (res.ok) return res.json();
+  } catch {
+    /* fall through to mock */
+  }
+  const mocks = await import("@/lib/mocks");
+  return mocks.fetchSlackChannels();
+}
+
+export async function fetchSlackThread(channelId: string) {
+  try {
+    const res = await apiFetch(
+      `/api/integrations/slack/channels/${encodeURIComponent(channelId)}/thread`,
+    );
+    if (res.ok) return res.json();
+  } catch {
+    /* fall through to mock */
+  }
+  const mocks = await import("@/lib/mocks");
+  return mocks.fetchSlackThread(channelId);
+}
+
 /**
  * Subscribe to real-time activity events via SSE.
  * Returns a cleanup function to close the connection.

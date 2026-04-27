@@ -15,10 +15,14 @@ import {
 } from "lucide-react";
 import {
   disconnectGoogle,
+  disconnectSlack,
   fetchGoogleAuthUrl,
   fetchGoogleStatus,
   fetchHealth,
+  fetchSlackAuthUrl,
+  fetchSlackStatus,
   type GoogleStatus,
+  type SlackStatus,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
 
@@ -34,11 +38,17 @@ export default function SettingsPage() {
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleError, setGoogleError] = useState<string>("");
+  const [slack, setSlack] = useState<SlackStatus | null>(null);
+  const [slackBusy, setSlackBusy] = useState(false);
+  const [slackError, setSlackError] = useState<string>("");
 
   useEffect(() => {
     fetchGoogleStatus(myAgent?.id)
       .then(setGoogle)
       .catch(() => setGoogle(null));
+    fetchSlackStatus(myAgent?.id)
+      .then(setSlack)
+      .catch(() => setSlack(null));
   }, [myAgent]);
 
   const handleConnectGoogle = async () => {
@@ -65,6 +75,33 @@ export default function SettingsPage() {
       setGoogle(status);
     } finally {
       setGoogleBusy(false);
+    }
+  };
+
+  const handleConnectSlack = async () => {
+    setSlackBusy(true);
+    setSlackError("");
+    try {
+      const { auth_url } = await fetchSlackAuthUrl();
+      window.location.href = auth_url;
+    } catch (e) {
+      setSlackError(
+        e instanceof Error
+          ? e.message
+          : "Slack OAuth isn't configured on the server yet.",
+      );
+      setSlackBusy(false);
+    }
+  };
+
+  const handleDisconnectSlack = async () => {
+    setSlackBusy(true);
+    try {
+      await disconnectSlack(myAgent?.id);
+      const status = await fetchSlackStatus(myAgent?.id);
+      setSlack(status);
+    } finally {
+      setSlackBusy(false);
     }
   };
 
@@ -349,10 +386,113 @@ export default function SettingsPage() {
             )}
           </div>
 
+          {/* Slack — Events API adapter is live; user-OAuth + channel reads
+              swap from mock to real the moment the backend ships
+              /api/integrations/slack/{auth-url,channels,thread,status}. */}
+          <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-4 mb-3">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center shrink-0">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4">
+                    <path fill="#E01E5A" d="M5.04 15.16a2.13 2.13 0 1 1-2.13-2.13h2.13v2.13zm1.07 0a2.13 2.13 0 1 1 4.27 0v5.34a2.13 2.13 0 1 1-4.27 0v-5.34z" />
+                    <path fill="#36C5F0" d="M8.24 5.04a2.13 2.13 0 1 1 2.13-2.13v2.13H8.24zm0 1.07a2.13 2.13 0 1 1 0 4.27H2.91a2.13 2.13 0 1 1 0-4.27h5.33z" />
+                    <path fill="#2EB67D" d="M18.96 8.24a2.13 2.13 0 1 1 2.13 2.13h-2.13V8.24zm-1.07 0a2.13 2.13 0 1 1-4.27 0V2.91a2.13 2.13 0 1 1 4.27 0v5.33z" />
+                    <path fill="#ECB22E" d="M15.76 18.96a2.13 2.13 0 1 1-2.13 2.13v-2.13h2.13zm0-1.07a2.13 2.13 0 1 1 0-4.27h5.33a2.13 2.13 0 1 1 0 4.27h-5.33z" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium text-gray-100">
+                      Slack
+                    </div>
+                    {slack?.connected && (
+                      <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-green-500/10 text-green-400 border-green-500/30">
+                        <CheckCircle2 className="w-2.5 h-2.5" /> connected
+                        {slack.team_name ? ` · ${slack.team_name}` : ""}
+                      </span>
+                    )}
+                    {slack && !slack.configured && (
+                      <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/30">
+                        <AlertCircle className="w-2.5 h-2.5" /> not configured
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Channels, DMs, and the Events ingestion pipeline. Read-only
+                    in V1.
+                  </div>
+                </div>
+              </div>
+              {slack?.connected ? (
+                <button
+                  onClick={handleDisconnectSlack}
+                  disabled={slackBusy}
+                  className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-700 hover:border-gray-600 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                >
+                  <LogOut className="w-3 h-3" /> Disconnect
+                </button>
+              ) : (
+                <button
+                  onClick={handleConnectSlack}
+                  disabled={slackBusy}
+                  className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                >
+                  {slackBusy ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      Starting…
+                    </>
+                  ) : (
+                    <>
+                      Connect <ExternalLink className="w-3 h-3" />
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "Channels", scope: "channels:read" },
+                { label: "Messages", scope: "channels:history" },
+                { label: "Events", scope: "events:webhook" },
+              ].map((s) => (
+                <div
+                  key={s.scope}
+                  className="bg-gray-900 border border-gray-800 rounded-md px-2.5 py-1.5"
+                >
+                  <div className="text-[11px] text-gray-200">{s.label}</div>
+                  <div className="text-[10px] text-gray-600 font-mono truncate">
+                    {s.scope}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {slackError && (
+              <div className="mt-3 text-[11px] text-red-300 bg-red-500/10 border border-red-500/30 rounded-md px-2.5 py-2 break-words">
+                {slackError}
+              </div>
+            )}
+            {slack && !slack.configured && !slackError && (
+              <p className="mt-3 text-[11px] text-gray-500">
+                Inbound Events webhook is live. User-facing OAuth + channel
+                reads pending — backend endpoints
+                {" "}
+                <code className="text-gray-300">/api/integrations/slack/auth-url</code>,
+                {" "}
+                <code className="text-gray-300">/channels</code>,
+                {" "}
+                <code className="text-gray-300">/status</code>
+                {" "}
+                ship next.
+              </p>
+            )}
+          </div>
+
           {/* Others still coming */}
           <div className="space-y-1">
             {[
-              { name: "Slack", status: "Events API adapter shipped — user OAuth pending" },
               { name: "Microsoft Teams", status: "Phase 2" },
             ].map((integration) => (
               <div

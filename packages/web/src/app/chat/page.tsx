@@ -37,12 +37,10 @@ import {
   fetchAgentInbox,
   fetchAgentThread,
   parseFileMarker,
-  type AgentLedgerMessage,
-} from "@/lib/api";
-import {
   fetchSlackChannels,
   fetchSlackThread,
-} from "@/lib/mocks";
+  type AgentLedgerMessage,
+} from "@/lib/api";
 import type {
   ChatAttachment,
   NotificationItem,
