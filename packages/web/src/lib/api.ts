@@ -376,6 +376,46 @@ export async function submitApproval(approvalId: string, approved: boolean) {
   return res.json();
 }
 
+export interface ApprovalAskTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ApprovalAskFallbackContext {
+  requester_name?: string;
+  target_name?: string;
+  resource?: string;
+  context?: string;
+  status?: string;
+  verification?: string;
+  created_at?: string;
+}
+
+export async function askAboutApproval(params: {
+  approvalId?: string;
+  question: string;
+  targetAgentId?: string;
+  conversation?: ApprovalAskTurn[];
+  fallbackContext?: ApprovalAskFallbackContext;
+}): Promise<{ answer: string; used_real_db: boolean }> {
+  const res = await apiFetch(`/api/approvals/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      approval_id: params.approvalId ?? null,
+      question: params.question,
+      target_agent_id: params.targetAgentId ?? null,
+      conversation: params.conversation ?? [],
+      fallback_context: params.fallbackContext ?? null,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `ask failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function orchestrate(agentId: string, message: string) {
   const res = await apiFetch(`/api/orchestrate/`, {
     method: "POST",
