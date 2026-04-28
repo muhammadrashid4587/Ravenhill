@@ -132,7 +132,12 @@ function LoginPageInner() {
       }
       await refresh();
       const from = searchParams.get("from") || "/home";
-      router.push(from);
+      // Hard navigation, not router.push: mobile Safari occasionally
+      // races client-side navigation against the document.cookie write
+      // we just made, leaving middleware to read a request without the
+      // session cookie and bounce back to /login. A full reload flushes
+      // pending cookie writes before the next request goes out.
+      window.location.href = from;
     } catch {
       setError("Couldn't reach the server. Check your connection.");
     } finally {
@@ -154,7 +159,7 @@ function LoginPageInner() {
         }
         await refresh();
         const from = searchParams.get("from") || "/home";
-        router.push(from);
+        window.location.href = from;
       } catch {
         setError("Dev sign-in failed. Is the API running?");
       }
