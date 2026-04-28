@@ -559,6 +559,103 @@ export async function disconnectGoogle(agentId?: string) {
   return res.json();
 }
 
+// ============================================================
+// Slack — OAuth + read endpoints
+// ============================================================
+
+export interface SlackStatus {
+  configured: boolean;
+  connected: boolean;
+  team_id?: string | null;
+  team_name?: string | null;
+  scope?: string | null;
+}
+
+export interface SlackChannel {
+  id: string;
+  name: string;
+  is_private: boolean;
+  is_member: boolean;
+  num_members: number;
+  topic: string;
+  purpose: string;
+}
+
+export interface SlackChannelMessage {
+  ts: string;
+  user: string | null;
+  text: string;
+  thread_ts?: string | null;
+  reply_count: number;
+  subtype?: string | null;
+}
+
+export async function fetchSlackStatus(agentId: string): Promise<SlackStatus> {
+  const res = await fetch(
+    `${API_BASE}/api/integrations/slack/status?agent_id=${encodeURIComponent(agentId)}`,
+  );
+  if (!res.ok) throw new Error(`slack status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSlackAuthUrl(
+  agentId: string,
+): Promise<{ auth_url: string }> {
+  const res = await fetch(
+    `${API_BASE}/api/integrations/slack/auth-url?agent_id=${encodeURIComponent(agentId)}`,
+  );
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `slack auth-url failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function submitSlackCallback(code: string, state: string) {
+  const params = new URLSearchParams({ code, state });
+  const res = await fetch(
+    `${API_BASE}/api/integrations/slack/callback?${params}`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error(detail.detail || `slack callback failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function disconnectSlack(agentId: string) {
+  const res = await fetch(
+    `${API_BASE}/api/integrations/slack/disconnect?agent_id=${encodeURIComponent(agentId)}`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error(`slack disconnect failed: ${res.status}`);
+  return res.json();
+}
+
+export async function listSlackChannels(
+  agentId: string,
+  limit = 100,
+): Promise<{ channels: SlackChannel[]; connected?: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/integrations/slack/channels?agent_id=${encodeURIComponent(agentId)}&limit=${limit}`,
+  );
+  if (!res.ok) throw new Error(`slack channels failed: ${res.status}`);
+  return res.json();
+}
+
+export async function listSlackChannelMessages(
+  agentId: string,
+  channelId: string,
+  limit = 30,
+): Promise<{ messages: SlackChannelMessage[]; connected?: boolean }> {
+  const res = await fetch(
+    `${API_BASE}/api/integrations/slack/channels/${encodeURIComponent(channelId)}/messages?agent_id=${encodeURIComponent(agentId)}&limit=${limit}`,
+  );
+  if (!res.ok) throw new Error(`slack messages failed: ${res.status}`);
+  return res.json();
+}
+
 /**
  * Subscribe to real-time activity events via SSE.
  * Returns a cleanup function to close the connection.

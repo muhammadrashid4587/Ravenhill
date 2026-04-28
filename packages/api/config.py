@@ -35,7 +35,17 @@ class Settings(BaseSettings):
 
     # Slack Events API (Phase 1 ingestion)
     slack_signing_secret: str = ""  # verifies webhook authenticity; empty = skip (dev/test)
-    slack_bot_token: str = ""  # xoxb-... used for future user/channel resolution
+    slack_bot_token: str = ""  # xoxb-... fallback when an agent has not run OAuth yet
+
+    # Slack OAuth v2 (per-agent connect from the UI)
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+    # Frontend route that handles the OAuth redirect; must match a Redirect URL
+    # registered in the Slack app's OAuth & Permissions config.
+    slack_redirect_uri: str = "http://localhost:3000/integrations/slack/callback"
+    # Comma-separated bot scopes requested at consent. Read-only by default —
+    # we don't post on the user's behalf without a separate, narrower scope.
+    slack_scopes: str = "channels:read,groups:read,channels:history,groups:history,users:read,team:read"
 
     # The Singularity (formerly ETO)
     singularity_api_key: str = ""
