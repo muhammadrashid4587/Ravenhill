@@ -30,7 +30,9 @@ function AttachmentCard({
         ? "Drive"
         : attachment.source === "slack"
           ? "Slack"
-          : "Uploaded";
+          : attachment.source === "shared"
+            ? "Shared"
+            : "Uploaded";
 
   const cardBg = isAgent
     ? "bg-ink/60 border-white/[0.08]"

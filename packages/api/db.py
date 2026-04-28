@@ -466,6 +466,41 @@ class GoogleOAuthTokenRow(Base):
     )
 
 
+class SlackOAuthTokenRow(Base):
+    """Per-agent Slack OAuth tokens, encrypted at rest.
+
+    One row per (org_id, agent_id) — same isolation rule as Google. The
+    bot token (xoxb-) and the user token (xoxp-) are both encrypted; we
+    store the user token only when the OAuth response includes one (i.e.
+    the user granted user-scope permissions in addition to bot scopes).
+
+    `team_id` and `team_name` are kept in clear so the UI can render
+    "Connected to Acme" without a decryption round-trip.
+    """
+
+    __tablename__ = "slack_oauth_tokens"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    org_id = Column(Uuid, ForeignKey("organizations.id"), nullable=False)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    bot_access_token = Column(Text, nullable=False)
+    user_access_token = Column(Text, nullable=True)
+    bot_user_id = Column(String(100), nullable=True)
+    authed_user_id = Column(String(100), nullable=True)
+    team_id = Column(String(100), nullable=False)
+    team_name = Column(String(300), nullable=True)
+    scope = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "agent_id", name="uq_slack_oauth_tokens_org_agent"),
+        Index("ix_slack_oauth_tokens_agent", "agent_id"),
+        Index("ix_slack_oauth_tokens_org", "org_id"),
+        Index("ix_slack_oauth_tokens_team", "team_id"),
+    )
+
+
 class MeetingFileRow(Base):
     __tablename__ = "meeting_files"
 

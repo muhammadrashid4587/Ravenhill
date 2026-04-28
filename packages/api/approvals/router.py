@@ -210,6 +210,212 @@ async def get_approval(
         return _row_to_approval(row)
 
 
+class ApprovalAskContext(BaseModel):
+    """Approval fields the caller can supply when the approval_id isn't a
+    real DB row (e.g. the page is using mock approvals). Treated as the
+    source of truth ONLY when the DB lookup misses."""
+
+    requester_name: str | None = None
+    target_name: str | None = None
+    resource: str | None = None
+    context: str | None = None
+    status: str | None = None
+    verification: str | None = None
+    created_at: str | None = None
+
+
+class ApprovalAskRequest(BaseModel):
+    approval_id: str | None = None
+    question: str
+    target_agent_id: str | None = None
+    conversation: list[dict] = Field(default_factory=list)
+    fallback_context: ApprovalAskContext | None = None
+
+
+class ApprovalAskResponse(BaseModel):
+    answer: str
+    used_real_db: bool
+
+
+def _coerce_uuid_optional(value: str | None) -> UUID | None:
+    if not value:
+        return None
+    try:
+        return UUID(value)
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _gather_db_context(
+    session, approval_id: UUID
+) -> tuple[ApprovalRow | None, AgentRow | None, AgentRow | None, list[ApprovalRow]]:
+    """Pull approval + requester + owner + recent prior approvals from the
+    same requester to the same owner. Returns Nones if anything is missing
+    so the caller can fall back gracefully."""
+    row = await session.get(ApprovalRow, approval_id)
+    if row is None:
+        return (None, None, None, [])
+
+    requester = await session.get(AgentRow, row.requesting_agent)
+    owner = await session.get(AgentRow, row.owning_agent)
+
+    prior = (
+        await session.execute(
+            select(ApprovalRow)
+            .where(
+                ApprovalRow.requesting_agent == row.requesting_agent,
+                ApprovalRow.owning_agent == row.owning_agent,
+                ApprovalRow.id != row.id,
+            )
+            .order_by(ApprovalRow.created_at.desc())
+            .limit(5)
+        )
+    ).scalars().all()
+
+    return (row, requester, owner, list(prior))
+
+
+def _build_ask_prompt(
+    *,
+    approval_summary: dict,
+    prior_summary: list[dict],
+    question: str,
+    conversation: list[dict],
+) -> tuple[str, str]:
+    """Return (system, user_message) tuned for short, grounded answers."""
+    system = (
+        "You are Ravenhill — an AI assistant helping a person decide on an "
+        "access request that another agent has sent them. Use ONLY the facts "
+        "in the supplied approval context. Keep answers under 4 sentences, be "
+        "specific, and if the context doesn't cover what the person asked, "
+        "say so plainly instead of guessing. Never invent prior history or "
+        "approval outcomes that aren't listed."
+    )
+    lines = ["APPROVAL UNDER REVIEW:"]
+    for k, v in approval_summary.items():
+        if v:
+            lines.append(f"- {k}: {v}")
+    if prior_summary:
+        lines.append("")
+        lines.append("PRIOR APPROVALS BETWEEN THESE TWO AGENTS (most recent first):")
+        for p in prior_summary:
+            lines.append(
+                f"- {p.get('created_at', '?')}: {p.get('resource', '?')} "
+                f"→ {p.get('status', '?')}"
+            )
+    if conversation:
+        lines.append("")
+        lines.append("CONVERSATION SO FAR:")
+        for turn in conversation[-6:]:  # cap context size
+            role = turn.get("role", "user")
+            content = turn.get("content", "")
+            if content:
+                lines.append(f"{role}: {content}")
+    lines.append("")
+    lines.append(f"USER'S QUESTION: {question}")
+    return system, "\n".join(lines)
+
+
+def _fallback_answer(question: str, approval_summary: dict) -> str:
+    """Deterministic reply used when no LLM provider is available. Echoes
+    what we know so the UI still feels responsive in dev / mock mode."""
+    requester = approval_summary.get("requester") or "The requester"
+    resource = approval_summary.get("resource") or "the requested resource"
+    return (
+        f"I can't reach a model right now, so here's what I have on file: "
+        f"{requester} is asking for {resource}. "
+        f"Re your question — \"{question.strip()}\" — try again in a moment "
+        f"and I'll reason over the context properly."
+    )
+
+
+@router.post("/ask", response_model=ApprovalAskResponse)
+async def ask_about_approval(req: ApprovalAskRequest) -> ApprovalAskResponse:
+    """Answer a free-form question about an approval, grounded in the DB.
+
+    Lookup is best-effort: if the approval_id resolves to a real row we use
+    that as ground truth; otherwise we fall back to caller-supplied context
+    so the feature still works against mock approvals.
+    """
+    if not req.question or not req.question.strip():
+        raise HTTPException(status_code=400, detail="question is required")
+
+    approval_summary: dict[str, str] = {}
+    prior_summary: list[dict[str, str]] = []
+    used_real_db = False
+
+    uid = _coerce_uuid_optional(req.approval_id)
+    if uid is not None:
+        async with db.async_session() as session:
+            row, requester, owner, prior = await _gather_db_context(session, uid)
+        if row is not None:
+            used_real_db = True
+            requester_depts = (
+                ", ".join(requester.departments)
+                if requester and isinstance(requester.departments, list)
+                else ""
+            )
+            approval_summary = {
+                "requester": requester.name if requester else str(row.requesting_agent),
+                "requester_role": (requester.role if requester else "") or "",
+                "requester_depts": requester_depts,
+                "owner": owner.name if owner else str(row.owning_agent),
+                "action": row.action or "",
+                "resource": row.resource or "",
+                "description": row.description or "",
+                "status": row.status or "",
+                "created_at": row.created_at.isoformat() if row.created_at else "",
+            }
+            prior_summary = [
+                {
+                    "created_at": p.created_at.isoformat() if p.created_at else "",
+                    "resource": p.resource or "",
+                    "status": p.status or "",
+                }
+                for p in prior
+            ]
+
+    if not approval_summary and req.fallback_context is not None:
+        fc = req.fallback_context
+        approval_summary = {
+            "requester": fc.requester_name or "",
+            "owner": fc.target_name or "",
+            "resource": fc.resource or "",
+            "description": fc.context or "",
+            "status": fc.status or "",
+            "verification": fc.verification or "",
+            "created_at": fc.created_at or "",
+        }
+
+    if not approval_summary:
+        approval_summary = {"description": "(no approval context available)"}
+
+    system, user_message = _build_ask_prompt(
+        approval_summary=approval_summary,
+        prior_summary=prior_summary,
+        question=req.question.strip(),
+        conversation=req.conversation,
+    )
+
+    from agents.llm_providers import call_llm
+
+    try:
+        answer = await call_llm(
+            system=system,
+            user_message=user_message,
+            model_tier="fast",
+            max_tokens=400,
+        )
+    except Exception as exc:
+        log.warning("approvals/ask call_llm failed: %s", exc)
+        answer = None
+
+    if not answer or not answer.strip():
+        answer = _fallback_answer(req.question, approval_summary)
+
+    return ApprovalAskResponse(answer=answer.strip(), used_real_db=used_real_db)
+
+
 @router.post("/{approval_id}/decide", response_model=ApprovalRequest)
 async def decide(
     approval_id: UUID,

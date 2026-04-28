@@ -11,6 +11,7 @@ import {
   Calendar as CalendarIcon,
   Inbox,
   Sparkles,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
@@ -23,7 +24,8 @@ import {
   type PreMeetingBrief,
   type TriageItem,
 } from "@/lib/api";
-import type { CalendarEvent } from "@/lib/types";
+import { fetchApprovals } from "@/lib/mocks";
+import type { Approval, CalendarEvent } from "@/lib/types";
 
 const DESTINATIONS = [
   {
@@ -97,6 +99,9 @@ export default function HomePage() {
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
 
+  const [approvals, setApprovals] = useState<Approval[] | null>(null);
+  const [approvalsLoading, setApprovalsLoading] = useState(true);
+
   useEffect(() => {
     if (!myAgent) return;
     setEventsLoading(true);
@@ -110,7 +115,18 @@ export default function HomePage() {
       .then((res) => setTriage(res.items || []))
       .catch(() => setTriage([]))
       .finally(() => setTriageLoading(false));
+
+    setApprovalsLoading(true);
+    fetchApprovals()
+      .then((items) => setApprovals(items || []))
+      .catch(() => setApprovals([]))
+      .finally(() => setApprovalsLoading(false));
   }, [myAgent]);
+
+  const pendingApprovals = useMemo(
+    () => (approvals || []).filter((a) => a.status === "pending"),
+    [approvals],
+  );
 
   const todaysEvents = useMemo(() => {
     if (!events) return [];
@@ -371,6 +387,73 @@ export default function HomePage() {
               </ul>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Approvals — pending requests waiting on you */}
+      <div className="relative z-10 max-w-5xl mx-auto px-6 pb-4">
+        <div
+          className="bg-ink border border-white/[0.06] rounded-2xl p-5 animate-fade-up"
+          style={{ animationDelay: "180ms" }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck
+                className="w-4 h-4 text-claret"
+                strokeWidth={1.75}
+              />
+              <h2 className="text-[13px] font-medium text-bone">Approvals</h2>
+              {!approvalsLoading && pendingApprovals.length > 0 && (
+                <span className="text-[10px] font-mono text-dusk">
+                  {pendingApprovals.length}
+                </span>
+              )}
+            </div>
+            <Link
+              href="/approvals"
+              className="text-[11px] text-dusk hover:text-smoke transition"
+            >
+              Open approvals ›
+            </Link>
+          </div>
+
+          {approvalsLoading ? (
+            <p className="text-xs text-dusk">Checking pending requests…</p>
+          ) : pendingApprovals.length === 0 ? (
+            <p className="text-xs text-dusk leading-relaxed">
+              Nothing waiting for you. Standing permissions keep this inbox
+              light.
+            </p>
+          ) : (
+            <ul className="space-y-2.5">
+              {pendingApprovals.slice(0, 4).map((a) => (
+                <li key={a.id}>
+                  <Link
+                    href="/approvals"
+                    className="block group p-2 -mx-2 rounded-lg hover:bg-white/[0.03] transition"
+                  >
+                    <div className="flex items-start gap-2 mb-1">
+                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 bg-claret/15 text-claret border-claret/30">
+                        Pending
+                      </span>
+                      <div className="text-[13px] text-parchment truncate flex-1">
+                        {a.resource}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-smoke leading-relaxed">
+                      {a.requester_name} wants to share with{" "}
+                      {a.target_name === "You" ? "you" : a.target_name}
+                    </div>
+                    {a.context && (
+                      <div className="text-[10px] text-dusk mt-0.5 truncate">
+                        {a.context}
+                      </div>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 

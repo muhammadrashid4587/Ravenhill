@@ -24,6 +24,12 @@ const EDGE_EXPERT = "rgba(248,113,113,0.35)";
 const EDGE_COLLAB = "rgba(250,204,21,0.25)";
 const EDGE_MENTION = "rgba(255,255,255,0.10)";
 
+const EDGE_LABEL: Record<ExpertiseEdge["kind"], string> = {
+  EXPERT_IN: "expert in",
+  COLLABORATED_WITH: "collaborated",
+  MENTIONED: "mentions",
+};
+
 function edgeColor(kind: ExpertiseEdge["kind"]) {
   if (kind === "EXPERT_IN") return EDGE_EXPERT;
   if (kind === "COLLABORATED_WITH") return EDGE_COLLAB;
@@ -36,6 +42,7 @@ export default function ExpertisePage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [hovered, setHovered] = useState<string | null>(null);
+  const [showEdgeLabels, setShowEdgeLabels] = useState(true);
   const [sim, setSim] = useState<SimNode[]>([]);
   const rafRef = useRef<number | null>(null);
 
@@ -215,6 +222,18 @@ export default function ExpertisePage() {
                 className="bg-transparent text-[12px] text-parchment placeholder:text-dusk outline-none flex-1"
               />
             </label>
+            <button
+              onClick={() => setShowEdgeLabels((v) => !v)}
+              className={`text-[11px] px-2.5 py-1 rounded-md border transition ${
+                showEdgeLabels
+                  ? "border-white/[0.16] bg-white/[0.08] text-bone"
+                  : "border-white/[0.08] text-smoke hover:text-parchment hover:bg-white/[0.04]"
+              }`}
+              aria-pressed={showEdgeLabels}
+              title="Toggle relationship labels on edges"
+            >
+              Labels
+            </button>
           </div>
 
           <div className="bg-ink border border-white/[0.06] rounded-xl p-3">
@@ -260,6 +279,58 @@ export default function ExpertisePage() {
                     />
                   );
                 })}
+
+                {/* Rendered between edges and nodes so labels sit above the
+                    edge line but below node circles. */}
+                {showEdgeLabels &&
+                  graph.edges.map((e) => {
+                    const a = sim.find((n) => n.id === e.source);
+                    const b = sim.find((n) => n.id === e.target);
+                    if (!a || !b) return null;
+                    const mx = (a.x + b.x) / 2;
+                    const my = (a.y + b.y) / 2;
+                    let angle = Math.atan2(b.y - a.y, b.x - a.x);
+                    // Keep text upright: never rotate past vertical.
+                    if (angle > Math.PI / 2) angle -= Math.PI;
+                    if (angle < -Math.PI / 2) angle += Math.PI;
+                    const deg = (angle * 180) / Math.PI;
+                    const active =
+                      hovered && (hovered === e.source || hovered === e.target);
+                    const dim = hovered && !active;
+                    const label = EDGE_LABEL[e.kind];
+                    const halfW = label.length * 2.6 + 4;
+                    return (
+                      <g
+                        key={`edge-label-${e.source}-${e.target}-${e.kind}`}
+                        transform={`translate(${mx}, ${my}) rotate(${deg})`}
+                        style={{
+                          opacity: dim ? 0.15 : active ? 1 : 0.6,
+                          transition: "opacity 180ms",
+                          pointerEvents: "none",
+                        }}
+                      >
+                        <rect
+                          x={-halfW}
+                          y={-6}
+                          width={halfW * 2}
+                          height={12}
+                          rx={2}
+                          fill="#0A0A0A"
+                          fillOpacity={0.8}
+                        />
+                        <text
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontSize={8.5}
+                          fill={active ? "#F5F0E6" : "#9A9287"}
+                          fontWeight={active ? 500 : 400}
+                          style={{ letterSpacing: "0.02em" }}
+                        >
+                          {label}
+                        </text>
+                      </g>
+                    );
+                  })}
 
                 {/* nodes */}
                 {sim.map((n) => {
@@ -314,7 +385,10 @@ export default function ExpertisePage() {
                 <LegendLine color="#F87171" label="Expert in" />
                 <LegendLine color="#FACC15" label="Collaborated" dashed />
               </div>
-              <span>Hover a node to isolate. Positions settle after ~2s.</span>
+              <span>
+                Hover a node to isolate. Edges are labeled with the
+                relationship type — toggle with <em className="not-italic text-parchment">Labels</em>.
+              </span>
             </div>
           </div>
         </section>

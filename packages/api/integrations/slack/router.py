@@ -23,7 +23,13 @@ from events.models import EventIngestRequest
 from events.persistence import persist_event
 from graph import queries as graph_queries
 from graph.models import NodeType
+from integrations.slack import adapter as slack_adapter
+from integrations.slack import oauth as slack_oauth
 from integrations.slack.normalizer import NormalizationError, normalize_slack_event
+from integrations.slack.tokens import (
+    delete_tokens as delete_slack_tokens,
+    get_team_metadata as get_slack_team_metadata,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -113,3 +119,91 @@ async def slack_events(
     ingest_req = EventIngestRequest(**rne.model_dump(exclude={"event_id", "ingested_at"}))
     result = await persist_event(ingest_req)
     return {"ok": True, "event_id": str(result.event_id), "deduplicated": result.deduplicated}
+
+
+# ============================================================
+# OAuth + read endpoints — frontend uses these to connect Slack
+# and surface channels / messages on the user's behalf.
+# ============================================================
+
+
+def _coerce_uuid(agent_id: str) -> UUID | None:
+    if not agent_id or agent_id == "demo":
+        return None
+    try:
+        return UUID(agent_id)
+    except ValueError:
+        return None
+
+
+@router.get("/auth-url")
+async def slack_auth_url(agent_id: str) -> dict[str, str]:
+    """Build the Slack OAuth authorize URL that the frontend redirects to."""
+    try:
+        url = await slack_oauth.get_auth_url(agent_id)
+        return {"auth_url": url}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/callback")
+async def slack_callback(code: str, state: str) -> dict[str, Any]:
+    """Exchange the authorization code for tokens and persist them."""
+    try:
+        return await slack_oauth.handle_auth_callback(code, state)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("slack callback failed")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/status")
+async def slack_status(agent_id: str) -> dict[str, Any]:
+    """Lightweight connection check — does NOT call Slack, just reads the row."""
+    uid = _coerce_uuid(agent_id)
+    if uid is None:
+        return {"connected": False, "configured": bool(settings.slack_client_id)}
+    meta = await get_slack_team_metadata(uid)
+    return {
+        "connected": meta is not None,
+        "configured": bool(settings.slack_client_id),
+        "team_id": meta and meta.get("team_id"),
+        "team_name": meta and meta.get("team_name"),
+        "scope": meta and meta.get("scope"),
+    }
+
+
+@router.post("/disconnect")
+async def slack_disconnect(agent_id: str) -> dict[str, Any]:
+    uid = _coerce_uuid(agent_id)
+    if uid is None:
+        raise HTTPException(status_code=400, detail="agent_id is required")
+    removed = await delete_slack_tokens(uid)
+    return {"removed": removed}
+
+
+@router.get("/channels")
+async def slack_channels(agent_id: str, limit: int = 100) -> dict[str, Any]:
+    try:
+        channels = await slack_adapter.list_channels(agent_id, limit=limit)
+        return {"channels": channels}
+    except slack_adapter.SlackNotConnected:
+        return {"channels": [], "connected": False}
+    except slack_adapter.SlackAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@router.get("/channels/{channel_id}/messages")
+async def slack_channel_messages(
+    channel_id: str,
+    agent_id: str,
+    limit: int = 30,
+) -> dict[str, Any]:
+    try:
+        messages = await slack_adapter.list_messages(agent_id, channel_id, limit=limit)
+        return {"messages": messages}
+    except slack_adapter.SlackNotConnected:
+        return {"messages": [], "connected": False}
+    except slack_adapter.SlackAPIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))

@@ -15,10 +15,14 @@ import {
 } from "lucide-react";
 import {
   disconnectGoogle,
+  disconnectSlack,
   fetchGoogleAuthUrl,
   fetchGoogleStatus,
   fetchHealth,
+  fetchSlackAuthUrl,
+  fetchSlackStatus,
   type GoogleStatus,
+  type SlackStatus,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
 
@@ -34,12 +38,52 @@ export default function SettingsPage() {
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [googleError, setGoogleError] = useState<string>("");
+  const [slack, setSlack] = useState<SlackStatus | null>(null);
+  const [slackBusy, setSlackBusy] = useState(false);
+  const [slackError, setSlackError] = useState<string>("");
 
   useEffect(() => {
     fetchGoogleStatus(myAgent?.id)
       .then(setGoogle)
       .catch(() => setGoogle(null));
+    if (myAgent?.id) {
+      fetchSlackStatus(myAgent.id)
+        .then(setSlack)
+        .catch(() => setSlack(null));
+    }
   }, [myAgent]);
+
+  const handleConnectSlack = async () => {
+    if (!myAgent?.id) {
+      setSlackError("Sign in first so the Slack token is bound to you.");
+      return;
+    }
+    setSlackBusy(true);
+    setSlackError("");
+    try {
+      const { auth_url } = await fetchSlackAuthUrl(myAgent.id);
+      window.location.href = auth_url;
+    } catch (e) {
+      setSlackError(
+        e instanceof Error
+          ? e.message
+          : "Slack OAuth isn't configured on the server. Set SLACK_CLIENT_ID + SLACK_CLIENT_SECRET in .env and restart.",
+      );
+      setSlackBusy(false);
+    }
+  };
+
+  const handleDisconnectSlack = async () => {
+    if (!myAgent?.id) return;
+    setSlackBusy(true);
+    try {
+      await disconnectSlack(myAgent.id);
+      const status = await fetchSlackStatus(myAgent.id);
+      setSlack(status);
+    } finally {
+      setSlackBusy(false);
+    }
+  };
 
   const handleConnectGoogle = async () => {
     setGoogleBusy(true);
@@ -349,32 +393,94 @@ export default function SettingsPage() {
             )}
           </div>
 
+          {/* Slack — real OAuth + read-only channel listing */}
+          <div className="border-t border-white/[0.06] pt-4 mt-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-gray-200">Slack</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  {slack?.connected ? (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 text-[#4ADE80] inline -mt-0.5 mr-1" />
+                      Connected{slack.team_name ? ` — ${slack.team_name}` : ""}
+                    </>
+                  ) : slack?.configured ? (
+                    "Read access to channels and messages."
+                  ) : (
+                    "Server-side OAuth credentials not configured."
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {slack?.connected ? (
+                  <>
+                    <Link
+                      href="/settings/integrations/slack"
+                      className="text-xs text-gray-300 border border-gray-800 hover:border-gray-700 px-3 py-1.5 rounded-lg"
+                    >
+                      View channels
+                    </Link>
+                    <button
+                      onClick={handleDisconnectSlack}
+                      disabled={slackBusy}
+                      className="text-xs text-gray-300 border border-gray-800 hover:border-gray-700 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                    >
+                      Disconnect
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleConnectSlack}
+                    disabled={slackBusy || !slack?.configured}
+                    className="text-xs text-white bg-[#4A154B] hover:bg-[#611f63] px-3 py-1.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {slackBusy ? "Opening Slack…" : "Connect Slack"}
+                  </button>
+                )}
+              </div>
+            </div>
+            {slackError && (
+              <div className="mt-3 flex items-start gap-2 text-[11px] text-red-300">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>{slackError}</span>
+              </div>
+            )}
+            {slack && !slack.configured && !slackError && (
+              <p className="mt-3 text-[11px] text-gray-500">
+                Server-side credentials are missing. Set{" "}
+                <code className="text-gray-300">SLACK_CLIENT_ID</code> and{" "}
+                <code className="text-gray-300">SLACK_CLIENT_SECRET</code> in{" "}
+                <code className="text-gray-300">packages/api/.env</code> and
+                restart the API.
+              </p>
+            )}
+          </div>
+
           {/* Others still coming */}
           <div className="space-y-1">
-            {[
-              { name: "Slack", status: "Events API adapter shipped — user OAuth pending" },
-              { name: "Microsoft Teams", status: "Phase 2" },
-            ].map((integration) => (
-              <div
-                key={integration.name}
-                className="flex items-center justify-between py-2"
-              >
-                <div>
-                  <div className="text-sm text-gray-200">
-                    {integration.name}
-                  </div>
-                  <div className="text-[10px] text-gray-600">
-                    {integration.status}
-                  </div>
-                </div>
-                <button
-                  disabled
-                  className="text-xs text-gray-500 border border-gray-800 px-3 py-1.5 rounded-lg cursor-not-allowed"
+            {[{ name: "Microsoft Teams", status: "Phase 2" }].map(
+              (integration) => (
+                <div
+                  key={integration.name}
+                  className="flex items-center justify-between py-2"
                 >
-                  Soon
-                </button>
-              </div>
-            ))}
+                  <div>
+                    <div className="text-sm text-gray-200">
+                      {integration.name}
+                    </div>
+                    <div className="text-[10px] text-gray-600">
+                      {integration.status}
+                    </div>
+                  </div>
+                  <button
+                    disabled
+                    className="text-xs text-gray-500 border border-gray-800 px-3 py-1.5 rounded-lg cursor-not-allowed"
+                  >
+                    Soon
+                  </button>
+                </div>
+              ),
+            )}
           </div>
         </section>
 
