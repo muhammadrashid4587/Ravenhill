@@ -207,6 +207,24 @@ async def list_nodes(node_type: NodeType | None = None, limit: int = 100) -> lis
         return [_node_to_model(r) for r in result.scalars().all()]
 
 
+async def list_edges(
+    edge_type: EdgeType | None = None,
+    min_weight: float = 0.0,
+    limit: int = 1000,
+) -> list[GraphEdge]:
+    """List edges, newest-first. Used to render the expertise map and any
+    graph-shaped UI that needs the full edge set in one fetch."""
+    async with db.async_session() as session:
+        stmt = select(db.GraphEdgeRow)
+        if edge_type is not None:
+            stmt = stmt.where(db.GraphEdgeRow.edge_type == edge_type.value)
+        if min_weight > 0:
+            stmt = stmt.where(db.GraphEdgeRow.weight >= min_weight)
+        stmt = stmt.order_by(db.GraphEdgeRow.updated_at.desc()).limit(limit)
+        result = await session.execute(stmt)
+        return [_edge_to_model(r) for r in result.scalars().all()]
+
+
 def _node_to_model(row: db.GraphNodeRow) -> GraphNode:
     return GraphNode(
         id=row.id,

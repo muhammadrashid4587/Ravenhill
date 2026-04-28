@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Network, Search, Users, Hash, MessageSquare } from "lucide-react";
-import { fetchExpertiseGraph } from "@/lib/mocks";
+import { fetchExpertiseGraph } from "@/lib/api";
 import type { ExpertiseGraph, ExpertiseNode, ExpertiseEdge } from "@/lib/types";
 
 type Filter = "all" | "person" | "topic";

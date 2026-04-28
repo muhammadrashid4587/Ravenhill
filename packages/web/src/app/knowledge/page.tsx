@@ -14,7 +14,10 @@ import {
   Lock,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
-import { fetchShadowProfile, fetchExpertiseGraph } from "@/lib/mocks";
+import { fetchExpertiseGraph } from "@/lib/api";
+// Shadow profile has no backend yet — mock stays until the
+// agent-shadowing feature lands. See `agent_shadows_human` in TECHNICAL_PLAN.
+import { fetchShadowProfile } from "@/lib/mocks";
 import type { ExpertiseGraph, ShadowProfile } from "@/lib/types";
 
 const CHANNEL_ICONS: Record<string, typeof MessageSquare> = {

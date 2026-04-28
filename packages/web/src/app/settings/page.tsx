@@ -4,13 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Save,
-  Building2,
   ArrowRight,
   CheckCircle2,
   AlertCircle,
   LogOut,
   ExternalLink,
-  ShieldAlert,
   CreditCard,
 } from "lucide-react";
 import {
@@ -162,53 +160,9 @@ export default function SettingsPage() {
           </div>
         </Link>
 
-        {/* Permissions — who your agent can share with, on its own */}
-        <Link
-          href="/settings/permissions"
-          className="block bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-6 transition group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
-                <ShieldAlert className="w-4 h-4 text-claret" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-100">
-                  Permissions
-                </div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  Per-team / topic / person / classification / external rules.
-                  Default is not-ready.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition" />
-          </div>
-        </Link>
-
-        {/* HRIS import — pull the whole roster in one click */}
-        <Link
-          href="/settings/hris"
-          className="block bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-6 transition group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
-                <Building2 className="w-4 h-4 text-blue-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-100">
-                  Import from HRIS
-                </div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  Rippling, Gusto, BambooHR, Workday, or CSV — creates an agent
-                  per employee
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition" />
-          </div>
-        </Link>
+        {/* Permissions and HRIS cards hidden until they have real backends.
+            Pages remain reachable by URL for dev. Surfacing them here would
+            invite the beta company to click into half-built screens. */}
 
         {/* Connection */}
         <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">

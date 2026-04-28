@@ -14,8 +14,12 @@ import {
   Sparkles,
   Loader2,
 } from "lucide-react";
-import { fetchApprovals } from "@/lib/mocks";
-import { askAboutApproval, submitApproval, type ApprovalAskTurn } from "@/lib/api";
+import {
+  askAboutApproval,
+  fetchApprovals,
+  submitApproval,
+  type ApprovalAskTurn,
+} from "@/lib/api";
 import { useAuth } from "@/lib/AuthContext";
 import type { Approval, VerificationStatus } from "@/lib/types";
 

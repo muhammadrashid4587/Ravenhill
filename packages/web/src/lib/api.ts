@@ -197,6 +197,120 @@ export async function replyToAgentMessage(
   return res.json();
 }
 
+// ---- Approvals (real, replaces lib/mocks::fetchApprovals) ----
+
+import type {
+  Approval,
+  ExpertiseGraph,
+  ExpertiseNode,
+  ExpertiseEdge,
+  ExpertiseNodeKind,
+} from "@/lib/types";
+
+interface ApprovalRequestRaw {
+  id: string;
+  requesting_agent: string;
+  owning_agent: string;
+  action: string;
+  description: string;
+  resource: string;
+  status: "pending" | "approved" | "denied" | "expired";
+  created_at: string;
+}
+
+// Fetches pending approvals for the caller's org and enriches them with
+// requester/target names so the UI doesn't need a second round trip.
+// Replaces the mock fetchApprovals in lib/mocks.
+export async function fetchApprovals(): Promise<Approval[]> {
+  const [pendingRes, agentsRes] = await Promise.all([
+    apiFetch("/api/approvals/pending"),
+    apiFetch("/api/agents/"),
+  ]);
+  if (!pendingRes.ok) throw new Error(`approvals fetch failed: ${pendingRes.status}`);
+  const pending: ApprovalRequestRaw[] = await pendingRes.json();
+  const agents: Array<{ id: string; name: string }> = agentsRes.ok
+    ? await agentsRes.json()
+    : [];
+  const nameById = new Map(agents.map((a) => [a.id, a.name]));
+  return pending.map((r) => ({
+    id: r.id,
+    requester_agent: r.requesting_agent,
+    requester_name: nameById.get(r.requesting_agent) || "Unknown",
+    target_agent: r.owning_agent,
+    target_name: nameById.get(r.owning_agent) || "Unknown",
+    resource: r.resource,
+    context: r.description || undefined,
+    status: r.status,
+    verification: "verified",
+    created_at: r.created_at,
+  }));
+}
+
+// ---- Expertise graph (real, replaces lib/mocks::fetchExpertiseGraph) ----
+
+interface GraphNodeRaw {
+  id: string;
+  node_type: string;
+  name: string;
+  attributes: Record<string, unknown>;
+}
+
+interface GraphEdgeRaw {
+  id: string;
+  from_id: string;
+  to_id: string;
+  edge_type: string;
+  weight: number;
+  attributes: Record<string, unknown>;
+}
+
+// Backend EdgeType → frontend's narrower 3-kind palette. Anything that
+// isn't EXPERT_IN or COLLABORATED_WITH falls into MENTIONED so the
+// renderer always has a label to draw.
+function mapEdgeKind(t: string): "EXPERT_IN" | "COLLABORATED_WITH" | "MENTIONED" {
+  if (t === "EXPERT_IN" || t === "WORKS_ON") return "EXPERT_IN";
+  if (t === "COLLABORATED_WITH") return "COLLABORATED_WITH";
+  return "MENTIONED";
+}
+
+function mapNodeKind(t: string): ExpertiseNodeKind {
+  // ExpertiseNodeKind in lib/types is a string union — pass through the
+  // backend node_type value verbatim. Renderer is forgiving on unknown kinds.
+  return t as ExpertiseNodeKind;
+}
+
+export async function fetchExpertiseGraph(): Promise<ExpertiseGraph> {
+  const [nodesRes, edgesRes] = await Promise.all([
+    apiFetch("/api/graph/nodes?limit=500"),
+    apiFetch("/api/graph/edges?limit=2000"),
+  ]);
+  if (!nodesRes.ok) throw new Error(`graph nodes fetch failed: ${nodesRes.status}`);
+  if (!edgesRes.ok) throw new Error(`graph edges fetch failed: ${edgesRes.status}`);
+  const rawNodes: GraphNodeRaw[] = await nodesRes.json();
+  const rawEdges: GraphEdgeRaw[] = await edgesRes.json();
+
+  const nodes: ExpertiseNode[] = rawNodes.map((n) => ({
+    id: n.id,
+    label: n.name,
+    kind: mapNodeKind(n.node_type),
+    weight:
+      typeof n.attributes?.weight === "number"
+        ? (n.attributes.weight as number)
+        : undefined,
+    department:
+      typeof n.attributes?.department === "string"
+        ? (n.attributes.department as string)
+        : undefined,
+  }));
+  const edges: ExpertiseEdge[] = rawEdges.map((e) => ({
+    source: e.from_id,
+    target: e.to_id,
+    kind: mapEdgeKind(e.edge_type),
+    weight: e.weight,
+  }));
+  return { nodes, edges, generated_at: new Date().toISOString() };
+}
+
 // ---- File sharing between agents (in-band, no backend schema changes) ----
 //
 // `MessageLedgerRow` only has a `content` (text) column, so to ship real

@@ -17,8 +17,6 @@ import {
   Inbox,
   Settings,
   Network,
-  Bell,
-  Gauge,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
@@ -31,14 +29,17 @@ const PRIMARY_NAV = [
   { href: "/organization", label: "Organization", icon: Building2 },
 ];
 
+// Hidden from this list (still reachable by URL but not surfaced) until
+// they have real backends: /notifications (no aggregated feed yet),
+// /admin (no admin stats endpoint yet). They're decorative right now and
+// surfacing them in the nav would invite the beta company to click into
+// half-built screens.
 const SECONDARY_NAV = [
-  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/meetings", label: "Meetings", icon: CalendarCheck },
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/drive", label: "Drive", icon: HardDriveUpload },
   { href: "/knowledge", label: "Knowledge", icon: Brain },
   { href: "/expertise", label: "Expertise map", icon: Network },
-  { href: "/admin", label: "Admin", icon: Gauge },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from graph import queries
 from graph.ask import ask_who_knows
 from graph.models import (
+    EdgeType,
     ExpertHit,
     GraphEdge,
     GraphNode,
@@ -68,6 +69,18 @@ async def upsert_edge(req: UpsertEdgeRequest) -> GraphEdge:
         weight_delta=req.weight_delta,
         set_weight=req.set_weight,
         attributes=req.attributes,
+    )
+
+
+@router.get("/edges", response_model=list[GraphEdge])
+async def list_edges(
+    edge_type: EdgeType | None = Query(default=None),
+    min_weight: float = Query(default=0.0, ge=0.0),
+    limit: int = Query(default=1000, ge=1, le=5000),
+) -> list[GraphEdge]:
+    """List edges. Powers the expertise-map render (nodes + edges in two fetches)."""
+    return await queries.list_edges(
+        edge_type=edge_type, min_weight=min_weight, limit=limit
     )
 
 

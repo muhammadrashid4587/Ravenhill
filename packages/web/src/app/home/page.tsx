@@ -23,8 +23,8 @@ import {
   fetchWorkspaceCalendar,
   type PreMeetingBrief,
   type TriageItem,
+  fetchApprovals,
 } from "@/lib/api";
-import { fetchApprovals } from "@/lib/mocks";
 import type { Approval, CalendarEvent } from "@/lib/types";
 
 const DESTINATIONS = [
