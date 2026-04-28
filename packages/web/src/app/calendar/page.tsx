@@ -13,13 +13,33 @@ import {
   AlertCircle,
   Flag,
   CheckCircle2,
+  CheckSquare,
+  PenLine,
+  BellRing,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
-import { fetchMeetings, type Meeting } from "@/lib/api";
-import { fetchCalendarEvents, fetchPendingItems } from "@/lib/mocks";
+import {
+  fetchGoogleStatus,
+  fetchMeetings,
+  fetchWorkspaceCalendar,
+  type GoogleStatus,
+  type Meeting,
+} from "@/lib/api";
+import { fetchPendingItems } from "@/lib/mocks";
 import type { CalendarEvent, PendingItem } from "@/lib/types";
 
-type ViewMode = "month" | "week" | "agenda";
+type ViewMode = "month" | "week" | "list" | "board" | "agenda";
+type CalendarSource = "google" | "microsoft_teams";
+
+const VIEW_TABS: Array<{ id: ViewMode; label: string }> = [
+  { id: "month", label: "Month" },
+  { id: "week", label: "Week" },
+  { id: "list", label: "List" },
+  { id: "board", label: "Board" },
+  { id: "agenda", label: "Agenda" },
+];
+
+type EventPriority = "high" | "low";
 
 type CalendarItem =
   | {
@@ -31,6 +51,7 @@ type CalendarItem =
       meeting_url?: string;
       attendees: number;
       has_transcript?: boolean;
+      eventPriority: EventPriority;
     }
   | {
       kind: "deadline";
@@ -41,6 +62,116 @@ type CalendarItem =
       priority: "high" | "medium" | "low";
       status: "todo" | "in_progress" | "done";
     };
+
+type ActionKind = "attend" | "note_taker" | "reminder";
+type ActionItem = {
+  id: string;
+  kind: ActionKind;
+  event_id: string;
+  event_title: string;
+  event_start: Date;
+  reason: string;
+};
+
+const HIGH_KEYWORDS = [
+  "1:1",
+  "1-1",
+  "review",
+  "decision",
+  "demo",
+  "interview",
+  "exec",
+  "board",
+  "kickoff",
+  "launch",
+  "all hands",
+];
+
+function eventPriorityFor(args: {
+  title: string;
+  attendees: number;
+  meeting_url?: string;
+}): EventPriority {
+  const t = args.title.toLowerCase();
+  if (HIGH_KEYWORDS.some((k) => t.includes(k))) return "high";
+  if (args.meeting_url && args.attendees > 0 && args.attendees <= 5) return "high";
+  return "low";
+}
+
+function deriveActionItems(
+  items: CalendarItem[],
+  fromDay: Date,
+  now: Date,
+): ActionItem[] {
+  const windowStart = startOfDay(fromDay).getTime();
+  const windowEnd = startOfDay(addDays(fromDay, 3)).getTime();
+  const out: ActionItem[] = [];
+
+  const events = items.filter(
+    (i): i is Extract<CalendarItem, { kind: "event" }> => i.kind === "event",
+  );
+
+  for (const ev of events) {
+    const t = ev.start.getTime();
+    if (t < windowStart || t >= windowEnd) continue;
+
+    if (ev.eventPriority === "high" && t >= now.getTime()) {
+      out.push({
+        id: `attend:${ev.id}`,
+        kind: "attend",
+        event_id: ev.id,
+        event_title: ev.title,
+        event_start: ev.start,
+        reason: "High priority — be there in person if you can.",
+      });
+    }
+
+    // Note-taker for medium/large meetings without an existing transcript
+    if (!ev.has_transcript && ev.attendees >= 3 && t >= now.getTime()) {
+      out.push({
+        id: `notes:${ev.id}`,
+        kind: "note_taker",
+        event_id: ev.id,
+        event_title: ev.title,
+        event_start: ev.start,
+        reason: `${ev.attendees} attendees — your agent should capture decisions and action items.`,
+      });
+    }
+
+    // Reminder for high-priority items starting within the next 24 hours
+    const minsToStart = Math.round((t - now.getTime()) / 60_000);
+    if (
+      ev.eventPriority === "high" &&
+      minsToStart > 0 &&
+      minsToStart <= 24 * 60
+    ) {
+      out.push({
+        id: `remind:${ev.id}`,
+        kind: "reminder",
+        event_id: ev.id,
+        event_title: ev.title,
+        event_start: ev.start,
+        reason:
+          minsToStart < 60
+            ? `Starts in ${minsToStart} min — flag the reminder bell.`
+            : `Starts in ${Math.round(minsToStart / 60)}h — make sure reminders are on.`,
+      });
+    }
+  }
+
+  // Order: earliest event first, then by action priority (attend → notes → remind)
+  const KIND_ORDER: Record<ActionKind, number> = {
+    attend: 0,
+    note_taker: 1,
+    reminder: 2,
+  };
+  out.sort((a, b) => {
+    const dt = a.event_start.getTime() - b.event_start.getTime();
+    if (dt !== 0) return dt;
+    return KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
+  });
+  return out;
+}
 
 const PRIORITY_DOT: Record<string, string> = {
   high: "bg-[#F87171]",
@@ -107,24 +238,34 @@ export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [pending, setPending] = useState<PendingItem[]>([]);
-  const [view, setView] = useState<ViewMode>("month");
+  const [view, setView] = useState<ViewMode>("agenda");
   const [cursor, setCursor] = useState<Date>(() => new Date());
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState<Date>(() => new Date());
   const [selectedDay, setSelectedDay] = useState<Date>(() => startOfDay(new Date()));
   const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
+  const [source, setSource] = useState<CalendarSource>("google");
 
   useEffect(() => {
     Promise.all([
-      fetchCalendarEvents(myAgent?.id).catch(() => []),
+      // Real Google Calendar through the workspace adapter — backend falls back
+      // to seed data automatically if the user hasn't connected Google yet.
+      fetchWorkspaceCalendar(myAgent?.id || "demo").catch(() => []),
       fetchPendingItems().catch(() => []),
       myAgent ? fetchMeetings(myAgent.id).catch(() => []) : Promise.resolve([]),
     ]).then(([ev, p, m]) => {
-      setEvents(ev);
+      setEvents(ev as CalendarEvent[]);
       setPending(p);
       setMeetings(m);
       setLoading(false);
     });
+  }, [myAgent]);
+
+  useEffect(() => {
+    fetchGoogleStatus(myAgent?.id)
+      .then(setGoogle)
+      .catch(() => setGoogle(null));
   }, [myAgent]);
 
   // Heartbeat for reminder checks + now-line
@@ -193,16 +334,24 @@ export default function CalendarPage() {
 
   // Merge events + deadlines into a single calendar item list
   const items: CalendarItem[] = useMemo(() => {
-    const evs: CalendarItem[] = events.map((e) => ({
-      kind: "event",
-      id: `ev:${e.id}`,
-      title: e.title,
-      start: new Date(e.start_time),
-      end: new Date(e.end_time),
-      meeting_url: e.meeting_url,
-      attendees: e.attendees.length,
-      has_transcript: e.has_transcript,
-    }));
+    const evs: CalendarItem[] = events.map((e) => {
+      const attendees = e.attendees.length;
+      return {
+        kind: "event",
+        id: `ev:${e.id}`,
+        title: e.title,
+        start: new Date(e.start_time),
+        end: new Date(e.end_time),
+        meeting_url: e.meeting_url,
+        attendees,
+        has_transcript: e.has_transcript,
+        eventPriority: eventPriorityFor({
+          title: e.title,
+          attendees,
+          meeting_url: e.meeting_url,
+        }),
+      };
+    });
 
     const mtgs: CalendarItem[] = meetings
       .filter((m) => m.created_at)
@@ -216,6 +365,10 @@ export default function CalendarPage() {
           end: new Date(start.getTime() + 30 * 60_000),
           attendees: 0,
           has_transcript: true,
+          eventPriority: eventPriorityFor({
+            title: m.title,
+            attendees: 0,
+          }),
         };
       });
 
@@ -262,23 +415,41 @@ export default function CalendarPage() {
     return { item: it, diffMin };
   });
 
-  const cursorLabel =
-    view === "month"
-      ? cursor.toLocaleDateString([], { month: "long", year: "numeric" })
-      : view === "week"
-        ? (() => {
-            const wk = weekGrid(cursor);
-            return `${wk[0].toLocaleDateString([], { month: "short", day: "numeric" })} – ${wk[6].toLocaleDateString([], { month: "short", day: "numeric" })}`;
-          })()
-        : "Agenda";
+  const cursorLabel = useMemo(() => {
+    if (view === "month") {
+      return cursor.toLocaleDateString([], { month: "long", year: "numeric" });
+    }
+    if (view === "week" || view === "list" || view === "board") {
+      const wk = weekGrid(cursor);
+      return `${wk[0].toLocaleDateString([], { month: "short", day: "numeric" })} – ${wk[6].toLocaleDateString([], { month: "short", day: "numeric" })}`;
+    }
+    // Agenda is day-scoped — show the selected day
+    return selectedDay.toLocaleDateString([], {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+  }, [view, cursor, selectedDay]);
 
   const handleStep = (dir: -1 | 1) => {
+    if (view === "agenda") {
+      // Agenda steps one day at a time (right arrow → next day, left → prev day)
+      const next = addDays(selectedDay, dir);
+      setSelectedDay(next);
+      // Keep cursor in sync so other views pick up the new week/month
+      setCursor(next);
+      return;
+    }
     const c = new Date(cursor);
     if (view === "month") c.setMonth(c.getMonth() + dir);
-    else if (view === "week") c.setDate(c.getDate() + dir * 7);
-    else c.setDate(c.getDate() + dir * 14);
+    else c.setDate(c.getDate() + dir * 7);
     setCursor(c);
   };
+
+  const weekActionItems = useMemo(
+    () => deriveActionItems(items, selectedDay, now),
+    [items, selectedDay, now],
+  );
 
   return (
     <div className="min-h-screen bg-obsidian text-parchment">
@@ -292,6 +463,11 @@ export default function CalendarPage() {
             <p className="text-xs text-smoke mt-0.5">
               Meetings, deadlines, and reminders in one view
             </p>
+            <SourcePicker
+              source={source}
+              onChange={setSource}
+              googleConnected={!!google?.connected}
+            />
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -317,19 +493,19 @@ export default function CalendarPage() {
               aria-label="Calendar view"
               className="flex items-center bg-ink border border-white/[0.06] rounded-lg p-0.5"
             >
-              {(["month", "week", "agenda"] as ViewMode[]).map((v) => (
+              {VIEW_TABS.map(({ id, label }) => (
                 <button
-                  key={v}
+                  key={id}
                   role="tab"
-                  aria-selected={view === v}
-                  onClick={() => setView(v)}
-                  className={`text-[11px] px-2.5 py-1 rounded-md transition capitalize ${
-                    view === v
+                  aria-selected={view === id}
+                  onClick={() => setView(id)}
+                  className={`text-[11px] px-2.5 py-1 rounded-md transition ${
+                    view === id
                       ? "bg-white/[0.08] text-bone"
                       : "text-smoke hover:text-parchment"
                   }`}
                 >
-                  {v}
+                  {label}
                 </button>
               ))}
             </div>
@@ -367,6 +543,26 @@ export default function CalendarPage() {
           </div>
         </div>
 
+        {/* Google connection banner — only when not connected and creds exist */}
+        {google && !google.connected && (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-dusk bg-ink border border-white/[0.06] rounded-md px-3 py-2">
+            <AlertCircle className="w-3.5 h-3.5 text-[#FACC15]" />
+            <span>
+              Showing demo data. Connect Google Calendar in{" "}
+              <Link href="/settings" className="text-claret hover:text-[#D6596C]">
+                Settings
+              </Link>{" "}
+              to sync your real calendar.
+            </span>
+          </div>
+        )}
+        {google?.connected && (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-[#88D3A4]">
+            <CheckCircle2 className="w-3 h-3" />
+            Synced live with Google Calendar.
+          </div>
+        )}
+
         {/* Reminder strip */}
         {upcomingReminders.length > 0 && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -403,7 +599,16 @@ export default function CalendarPage() {
           <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
         </div>
       ) : view === "agenda" ? (
-        <AgendaView items={items} now={now} />
+        <AgendaView
+          day={selectedDay}
+          items={dayItems(selectedDay)}
+          actionItems={weekActionItems}
+          now={now}
+        />
+      ) : view === "list" ? (
+        <ListView cursor={cursor} dayItems={dayItems} now={now} />
+      ) : view === "board" ? (
+        <BoardView cursor={cursor} dayItems={dayItems} now={now} />
       ) : view === "week" ? (
         <WeekView
           cursor={cursor}
@@ -422,7 +627,7 @@ export default function CalendarPage() {
         />
       )}
 
-      {view !== "agenda" && (
+      {view !== "agenda" && view !== "list" && view !== "board" && (
         <DayDetailPanel day={selectedDay} items={dayItems(selectedDay)} />
       )}
     </div>
@@ -560,80 +765,192 @@ function WeekView({
 }
 
 function AgendaView({
+  day,
   items,
+  actionItems,
   now,
 }: {
+  day: Date;
   items: CalendarItem[];
+  actionItems: ActionItem[];
   now: Date;
 }) {
-  const upcoming = items.filter((i) => i.end.getTime() >= now.getTime());
-  const past = items.filter((i) => i.end.getTime() < now.getTime()).reverse();
+  const eventsOnly = items.filter(
+    (i): i is Extract<CalendarItem, { kind: "event" }> => i.kind === "event",
+  );
+  const high = eventsOnly.filter((e) => e.eventPriority === "high");
+  const low = eventsOnly.filter((e) => e.eventPriority === "low");
+
   return (
-    <div className="p-6 max-w-3xl space-y-8">
-      <section>
-        <h2 className="text-sm font-medium text-parchment mb-3">Upcoming</h2>
-        {upcoming.length === 0 ? (
-          <EmptyCard label="Nothing upcoming" />
-        ) : (
-          <div className="space-y-2">
-            {upcoming.map((it) => (
-              <AgendaRow key={it.id} item={it} />
-            ))}
-          </div>
-        )}
-      </section>
-      <section>
-        <h2 className="text-sm font-medium text-parchment mb-3">Past</h2>
-        {past.length === 0 ? (
-          <EmptyCard label="No history in range" />
-        ) : (
-          <div className="space-y-2">
-            {past.slice(0, 20).map((it) => (
-              <AgendaRow key={it.id} item={it} muted />
-            ))}
-          </div>
-        )}
-      </section>
+    <div className="p-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-6xl">
+        {/* Column 1 — Meetings, grouped by priority */}
+        <section>
+          <h2 className="text-sm font-medium text-parchment mb-3 flex items-center gap-2">
+            <CalendarDays className="w-3.5 h-3.5 text-claret" />
+            Meetings
+            <span className="text-[10px] font-mono text-dusk">
+              {eventsOnly.length}
+            </span>
+          </h2>
+
+          <h3 className="text-[10px] uppercase tracking-wider text-dusk mt-3 mb-2 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#F87171]" />
+            High priority
+            <span className="font-mono">{high.length}</span>
+          </h3>
+          {high.length === 0 ? (
+            <EmptyCard label="No high-priority meetings on this day." />
+          ) : (
+            <div className="space-y-2">
+              {high.map((e) => (
+                <MeetingRow key={e.id} ev={e} now={now} />
+              ))}
+            </div>
+          )}
+
+          <h3 className="text-[10px] uppercase tracking-wider text-dusk mt-5 mb-2 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
+            Low priority
+            <span className="font-mono">{low.length}</span>
+          </h3>
+          {low.length === 0 ? (
+            <EmptyCard label="No low-priority meetings." />
+          ) : (
+            <div className="space-y-2">
+              {low.map((e) => (
+                <MeetingRow key={e.id} ev={e} now={now} muted />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Column 2 — Action items derived from the next 3 days */}
+        <section>
+          <h2 className="text-sm font-medium text-parchment mb-3 flex items-center gap-2">
+            <CheckSquare className="w-3.5 h-3.5 text-claret" />
+            Action items
+            <span className="text-[10px] font-mono text-dusk">
+              {actionItems.length}
+            </span>
+          </h2>
+          <p className="text-[11px] text-dusk mb-3">
+            What your agent recommends for {day.toLocaleDateString([], { weekday: "long" })}
+            {" and the next two days."}
+          </p>
+          {actionItems.length === 0 ? (
+            <EmptyCard label="Nothing to flag — your day is calm." />
+          ) : (
+            <div className="space-y-2">
+              {actionItems.map((a) => (
+                <ActionRow key={a.id} action={a} />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
 
-function AgendaRow({ item, muted }: { item: CalendarItem; muted?: boolean }) {
+function MeetingRow({
+  ev,
+  now,
+  muted,
+}: {
+  ev: Extract<CalendarItem, { kind: "event" }>;
+  now: Date;
+  muted?: boolean;
+}) {
+  const minsToStart = Math.round((ev.start.getTime() - now.getTime()) / 60_000);
+  const past = ev.end.getTime() < now.getTime();
   return (
     <div
-      className={`flex items-start gap-3 bg-ink border border-white/[0.06] rounded-lg px-4 py-3 ${
-        muted ? "opacity-60" : ""
+      className={`flex items-start gap-3 bg-ink border border-white/[0.06] rounded-lg px-3 py-2.5 ${
+        muted || past ? "opacity-60" : ""
       }`}
     >
-      <div className="flex flex-col items-center justify-center bg-graphite rounded-md px-2 py-1.5 shrink-0 border border-white/[0.06] min-w-[48px]">
+      <div className="flex flex-col items-center justify-center bg-graphite rounded-md px-2 py-1.5 shrink-0 border border-white/[0.06] min-w-[54px]">
         <span className="text-[9px] uppercase tracking-wide text-dusk">
-          {item.start.toLocaleDateString([], { month: "short" })}
+          {formatTime(ev.start)}
         </span>
-        <span className="text-sm font-semibold text-bone leading-none">
-          {item.start.getDate()}
+        <span className="text-[10px] text-dusk leading-none">
+          {formatTime(ev.end)}
         </span>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-bone truncate">{item.title}</span>
-          <KindChip item={item} />
+          <span className="text-sm text-bone truncate">{ev.title}</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(139,30,47,0.18)] text-[#F0B8C0] border-[rgba(139,30,47,0.35)]">
+            {ev.eventPriority}
+          </span>
         </div>
         <div className="text-[11px] text-dusk mt-0.5">
-          {formatDay(item.start)} · {formatTime(item.start)}
-          {item.kind === "event" && ` – ${formatTime(item.end)}`}
-          {item.kind === "event" && item.attendees > 0 && ` · ${item.attendees} attendees`}
+          {ev.attendees > 0
+            ? `${ev.attendees} ${ev.attendees === 1 ? "attendee" : "attendees"}`
+            : "Solo block"}
+          {!past && minsToStart > 0 && minsToStart < 240
+            ? ` · in ${minsToStart < 60 ? `${minsToStart}m` : `${Math.round(minsToStart / 60)}h`}`
+            : ""}
         </div>
       </div>
-      {item.kind === "event" && item.meeting_url && (
+      {ev.meeting_url && !past && (
         <a
-          href={item.meeting_url}
+          href={ev.meeting_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 text-[11px] text-smoke hover:text-parchment transition shrink-0"
+          className="flex items-center gap-1 text-[11px] text-claret hover:text-[#D6596C] transition shrink-0"
         >
           <Video className="w-3 h-3" /> Join
         </a>
       )}
+    </div>
+  );
+}
+
+const ACTION_ICON: Record<ActionKind, typeof CheckSquare> = {
+  attend: CheckSquare,
+  note_taker: PenLine,
+  reminder: BellRing,
+};
+
+const ACTION_LABEL: Record<ActionKind, string> = {
+  attend: "Attend",
+  note_taker: "Run note-taker",
+  reminder: "Set reminder",
+};
+
+const ACTION_TINT: Record<ActionKind, string> = {
+  attend:
+    "bg-[rgba(220,38,38,0.10)] text-[#F87171] border-[rgba(220,38,38,0.32)]",
+  note_taker:
+    "bg-[rgba(139,30,47,0.18)] text-[#F0B8C0] border-[rgba(139,30,47,0.35)]",
+  reminder:
+    "bg-[rgba(234,179,8,0.12)] text-[#FACC15] border-[rgba(234,179,8,0.36)]",
+};
+
+function ActionRow({ action }: { action: ActionItem }) {
+  const Icon = ACTION_ICON[action.kind];
+  return (
+    <div className="bg-ink border border-white/[0.06] rounded-lg px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <span
+          className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border ${ACTION_TINT[action.kind]}`}
+        >
+          <Icon className="w-3 h-3" />
+          {ACTION_LABEL[action.kind]}
+        </span>
+        <span className="text-[10px] font-mono text-dusk">
+          {action.event_start.toLocaleDateString([], {
+            weekday: "short",
+          })}{" "}
+          · {formatTime(action.event_start)}
+        </span>
+      </div>
+      <div className="text-sm text-bone truncate mt-1.5">
+        {action.event_title}
+      </div>
+      <div className="text-[11px] text-smoke mt-0.5">{action.reason}</div>
     </div>
   );
 }
@@ -660,24 +977,6 @@ function CellChip({ item, expanded }: { item: CalendarItem; expanded?: boolean }
     >
       <Flag className="w-2.5 h-2.5 shrink-0" />
       <span className="truncate">{item.title}</span>
-    </span>
-  );
-}
-
-function KindChip({ item }: { item: CalendarItem }) {
-  if (item.kind === "event") {
-    return (
-      <span className="text-[9px] px-1.5 py-0.5 rounded border bg-[rgba(139,30,47,0.18)] text-[#F0B8C0] border-[rgba(139,30,47,0.35)]">
-        meeting
-      </span>
-    );
-  }
-  const key = item.status === "done" ? "done" : item.priority;
-  return (
-    <span
-      className={`text-[9px] px-1.5 py-0.5 rounded border ${PRIORITY_CHIP[key]}`}
-    >
-      {item.status === "done" ? "done" : `${item.priority} deadline`}
     </span>
   );
 }
@@ -808,6 +1107,238 @@ function EmptyCard({ label }: { label: string }) {
   return (
     <div className="bg-ink border border-white/[0.06] rounded-xl p-6 text-center">
       <p className="text-xs text-smoke">{label}</p>
+    </div>
+  );
+}
+
+function SourcePicker({
+  source,
+  onChange,
+  googleConnected,
+}: {
+  source: CalendarSource;
+  onChange: (s: CalendarSource) => void;
+  googleConnected: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 mt-2">
+      <button
+        type="button"
+        onClick={() => onChange("google")}
+        className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md border transition ${
+          source === "google"
+            ? "bg-ink border-white/[0.14] text-bone"
+            : "bg-transparent border-white/[0.06] text-smoke hover:text-parchment"
+        }`}
+      >
+        <span
+          className={`w-1.5 h-1.5 rounded-full ${
+            googleConnected ? "bg-[#4ADE80]" : "bg-[#FACC15]"
+          }`}
+        />
+        Google Calendar
+      </button>
+      <button
+        type="button"
+        disabled
+        title="Microsoft Teams calendar — coming soon"
+        className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md border border-white/[0.06] bg-transparent text-dusk cursor-not-allowed"
+      >
+        Microsoft Teams
+        <span className="text-[9px] uppercase tracking-wider text-dusk font-mono">
+          soon
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function ListView({
+  cursor,
+  dayItems,
+  now,
+}: {
+  cursor: Date;
+  dayItems: (d: Date) => CalendarItem[];
+  now: Date;
+}) {
+  const days = weekGrid(cursor);
+  return (
+    <div className="p-6 max-w-3xl space-y-4">
+      {days.map((d) => {
+        const its = dayItems(d);
+        const isToday = sameDay(d, now);
+        return (
+          <section key={d.toISOString()} className="animate-fade-up">
+            <header className="flex items-baseline gap-2 mb-2">
+              <h3
+                className={`text-sm font-medium ${
+                  isToday ? "text-claret" : "text-parchment"
+                }`}
+              >
+                {d.toLocaleDateString([], {
+                  weekday: "long",
+                  month: "short",
+                  day: "numeric",
+                })}
+                {isToday && (
+                  <span className="ml-2 text-[10px] uppercase tracking-wider text-claret/80">
+                    Today
+                  </span>
+                )}
+              </h3>
+              <span className="text-[10px] font-mono text-dusk">
+                {its.length} {its.length === 1 ? "item" : "items"}
+              </span>
+            </header>
+            {its.length === 0 ? (
+              <p className="text-[11px] text-dusk pl-3 border-l border-white/[0.06]">
+                Nothing scheduled.
+              </p>
+            ) : (
+              <ul className="space-y-1.5 border-l border-white/[0.06] pl-3">
+                {its.map((it) => (
+                  <li
+                    key={it.id}
+                    className="flex items-start gap-2 text-[12px]"
+                  >
+                    <span className="text-[10px] font-mono text-dusk w-12 shrink-0 mt-0.5">
+                      {formatTime(it.start)}
+                    </span>
+                    <span className="flex-1 text-parchment truncate">
+                      {it.title}
+                    </span>
+                    {it.kind === "event" && (
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 ${
+                          it.eventPriority === "high"
+                            ? "bg-[rgba(220,38,38,0.10)] text-[#F87171] border-[rgba(220,38,38,0.32)]"
+                            : "bg-white/[0.04] text-dusk border-white/[0.08]"
+                        }`}
+                      >
+                        {it.eventPriority}
+                      </span>
+                    )}
+                    {it.kind === "deadline" && (
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 ${
+                          PRIORITY_CHIP[
+                            it.status === "done" ? "done" : it.priority
+                          ]
+                        }`}
+                      >
+                        <Flag className="w-2.5 h-2.5 inline -mt-0.5 mr-0.5" />
+                        {it.status === "done" ? "done" : it.priority}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function BoardView({
+  cursor,
+  dayItems,
+  now,
+}: {
+  cursor: Date;
+  dayItems: (d: Date) => CalendarItem[];
+  now: Date;
+}) {
+  const days = weekGrid(cursor);
+  return (
+    <div className="p-6 overflow-x-auto">
+      <div className="flex gap-3 min-w-max">
+        {days.map((d) => {
+          const its = dayItems(d);
+          const isToday = sameDay(d, now);
+          return (
+            <div
+              key={d.toISOString()}
+              className={`w-[260px] shrink-0 bg-ink border rounded-xl p-3 ${
+                isToday ? "border-claret/60" : "border-white/[0.06]"
+              }`}
+            >
+              <div className="flex items-baseline justify-between mb-3">
+                <span
+                  className={`text-[11px] uppercase tracking-wider ${
+                    isToday ? "text-claret" : "text-dusk"
+                  }`}
+                >
+                  {d.toLocaleDateString([], { weekday: "short" })}
+                </span>
+                <span
+                  className={`text-base tabular-nums ${
+                    isToday ? "text-claret font-semibold" : "text-parchment"
+                  }`}
+                >
+                  {d.getDate()}
+                </span>
+              </div>
+              {its.length === 0 ? (
+                <p className="text-[11px] text-dusk text-center py-6">
+                  Empty
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {its.map((it) => (
+                    <li
+                      key={it.id}
+                      className="bg-graphite border border-white/[0.06] rounded-md px-2.5 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[10px] font-mono text-dusk">
+                          {formatTime(it.start)}
+                        </span>
+                        {it.kind === "event" ? (
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 ${
+                              it.eventPriority === "high"
+                                ? "bg-[rgba(220,38,38,0.10)] text-[#F87171] border-[rgba(220,38,38,0.32)]"
+                                : "bg-white/[0.04] text-dusk border-white/[0.08]"
+                            }`}
+                          >
+                            {it.eventPriority}
+                          </span>
+                        ) : (
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 ${
+                              PRIORITY_CHIP[
+                                it.status === "done" ? "done" : it.priority
+                              ]
+                            }`}
+                          >
+                            {it.status === "done" ? "done" : it.priority}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[12px] text-parchment line-clamp-2">
+                        {it.title}
+                      </div>
+                      {it.kind === "event" && it.meeting_url && (
+                        <a
+                          href={it.meeting_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-claret hover:text-[#D6596C]"
+                        >
+                          <Video className="w-3 h-3" /> Join
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
