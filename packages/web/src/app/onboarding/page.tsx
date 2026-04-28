@@ -15,6 +15,8 @@ import {
   HardDriveUpload,
 } from "lucide-react";
 import { fetchOnboardingState, setOnboardingState } from "@/lib/mocks";
+import { fetchSlackAuthUrl, fetchSlackStatus } from "@/lib/api";
+import { useAuth } from "@/lib/AuthContext";
 import type { OnboardingState, OnboardingStep } from "@/lib/types";
 
 type Source = "slack" | "gmail" | "google_calendar" | "drive";
@@ -89,11 +91,13 @@ const INFERRED = {
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { agent: myAgent } = useAuth();
   const [state, setState] = useState<OnboardingState | null>(null);
   const [step, setStep] = useState<OnboardingStep>("welcome");
   const [connecting, setConnecting] = useState<Source | null>(null);
   const [confirmedTeam, setConfirmedTeam] = useState(INFERRED.team);
   const [confirmedRole, setConfirmedRole] = useState(INFERRED.role);
+  const [slackError, setSlackError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOnboardingState().then((s) => {
@@ -101,6 +105,35 @@ export default function OnboardingPage() {
       setStep(s.current_step);
     });
   }, []);
+
+  // Reflect a real Slack connection in the onboarding state on mount —
+  // user might have completed OAuth in another tab. Also fires once on
+  // myAgent becoming available.
+  useEffect(() => {
+    if (!myAgent?.id) return;
+    fetchSlackStatus(myAgent.id)
+      .then((status) => {
+        if (status.connected) {
+          setState((prev) => {
+            if (!prev) return prev;
+            if (prev.connected_sources.includes("slack")) return prev;
+            const next = {
+              ...prev,
+              connected_sources: [...prev.connected_sources, "slack" as Source],
+              inferred_org_ready: true,
+            };
+            void setOnboardingState({
+              connected_sources: next.connected_sources,
+              inferred_org_ready: true,
+            });
+            return next;
+          });
+        }
+      })
+      .catch(() => {
+        /* status check is best-effort */
+      });
+  }, [myAgent?.id]);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
 
@@ -117,6 +150,31 @@ export default function OnboardingPage() {
 
   const toggleSource = async (id: Source) => {
     if (!state) return;
+
+    // Slack uses a real OAuth handshake — redirect the user to Slack and
+    // let the callback page persist the connection. Disconnecting Slack
+    // from the onboarding screen is intentionally not supported here;
+    // use Settings.
+    if (id === "slack" && !state.connected_sources.includes("slack")) {
+      if (!myAgent?.id) {
+        setSlackError("Sign in first so we can bind the Slack token to you.");
+        return;
+      }
+      setConnecting(id);
+      setSlackError(null);
+      try {
+        const { auth_url } = await fetchSlackAuthUrl(myAgent.id);
+        window.location.href = auth_url;
+        return; // navigation away — don't clear connecting flag
+      } catch (e) {
+        setSlackError(
+          e instanceof Error ? e.message : "Couldn't start Slack OAuth.",
+        );
+        setConnecting(null);
+        return;
+      }
+    }
+
     setConnecting(id);
     await new Promise((r) => setTimeout(r, 500));
     const connected = state.connected_sources.includes(id)
@@ -166,6 +224,7 @@ export default function OnboardingPage() {
           <Connect
             state={state}
             connecting={connecting}
+            slackError={slackError}
             onToggle={toggleSource}
             onNext={() => advance("inference_preview")}
           />
@@ -245,11 +304,13 @@ function Welcome({ onNext }: { onNext: () => void }) {
 function Connect({
   state,
   connecting,
+  slackError,
   onToggle,
   onNext,
 }: {
   state: OnboardingState;
   connecting: Source | null;
+  slackError: string | null;
   onToggle: (s: Source) => void;
   onNext: () => void;
 }) {
@@ -260,6 +321,11 @@ function Connect({
         Pick at least one. More sources = sharper inference, but one is enough
         to get useful results.
       </p>
+      {slackError && (
+        <div className="rounded-md border border-claret/40 bg-claret/10 px-3 py-2 text-[11px] text-claret">
+          {slackError}
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {SOURCES.map((s) => {
           const connected = state.connected_sources.includes(s.id);

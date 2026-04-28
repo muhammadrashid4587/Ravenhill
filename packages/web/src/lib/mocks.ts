@@ -9,9 +9,7 @@ import type {
   AdminOrgStats,
   Approval,
   CalendarEvent,
-  ChatAttachment,
   ExpertiseGraph,
-  FileSummary,
   NotificationItem,
   OnboardingState,
   PendingItem,
@@ -935,62 +933,6 @@ export function parseHRISCsv(csv: string): HRISRosterRow[] {
   });
 }
 
-export const sampleFileUrl = "/samples/q2-launch-prd.md";
-
-export const sampleAttachment: ChatAttachment = {
-  id: "att-sample-q2-prd",
-  name: "Q2 Launch PRD.md",
-  mime_type: "text/markdown",
-  size_bytes: 4320,
-  url: sampleFileUrl,
-  source: "upload",
-};
-
-const q2PrdSummary: FileSummary = {
-  attachment_id: sampleAttachment.id,
-  title: "Q2 Launch PRD — SideLineSwap Rollout",
-  one_liner:
-    "Plan to deploy E-Agent V1 inside SideLineSwap by 2026-06-01. Covers scope, owners, action items, and three open risks.",
-  contributors: [
-    { name: "Max Ravenhill", did: "Owner — wrote the PRD, booking case-study interviews, confirming 30-seat provisioning" },
-    { name: "Likitha Kamble", did: "Building the three-panel chat UI, Kanban board view, and Slack tab + file upload" },
-    { name: "Muhammad Rashid", did: "Shipped the Postgres foundation; next up is Slack OAuth encryption and permissions migration" },
-  ],
-  action_items: [
-    { owner: "Muhammad Rashid", task: "Finalize Slack OAuth token encryption", due: "2026-04-22" },
-    { owner: "Likitha Kamble", task: "Ship Slack tab + file upload in chat", due: "2026-04-25" },
-    { owner: "Max Ravenhill", task: "Confirm SLS admin provisioned 30 seats", due: "2026-04-30" },
-    { owner: "Muhammad Rashid", task: "Permissions schema migration", due: "2026-05-02" },
-    { owner: "Likitha Kamble", task: "Kanban board view off pending_items", due: "2026-05-05" },
-    { owner: "Max Ravenhill", task: "Book 8 case-study interviews", due: "2026-05-11 week" },
-    { owner: "Team", task: "Deployment dry-run rehearsal", due: "2026-05-25" },
-  ],
-  open_questions: [
-    "Will the Slack adapter hold up under SLS message volume? (load-test pending)",
-    "If the permissions schema changes after migration, how much mocks-first rework do we eat?",
-    "What's the fallback when comms-graph inference misses an obvious owner during onboarding?",
-  ],
-  generated_at: now,
-};
-
-export async function summarizeAttachment(
-  attachment: ChatAttachment,
-): Promise<FileSummary> {
-  if (attachment.id === sampleAttachment.id) {
-    return Promise.resolve(q2PrdSummary);
-  }
-  return Promise.resolve({
-    attachment_id: attachment.id,
-    title: attachment.name,
-    one_liner: `I scanned ${attachment.name} (${Math.round(attachment.size_bytes / 1024)} KB). No parser for this file type yet — real ingestion lands when the Drive adapter ships.`,
-    contributors: [],
-    action_items: [],
-    open_questions: [
-      "Upload-based parsing is mocked. Hook up Drive ingestion to pull real contributors and action items.",
-    ],
-    generated_at: new Date().toISOString(),
-  });
-}
 
 // ------------------------------------------------------------
 // Onboarding

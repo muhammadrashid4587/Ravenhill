@@ -298,7 +298,7 @@ export interface ChatAttachment {
   mime_type: string;
   size_bytes: number;
   url?: string;
-  source: "upload" | "agent_reply" | "drive" | "slack";
+  source: "upload" | "agent_reply" | "drive" | "slack" | "shared";
 }
 
 export interface FileSummary {

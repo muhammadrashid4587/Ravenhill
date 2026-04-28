@@ -18,12 +18,17 @@ import {
   ExternalLink,
   HardDriveUpload,
   ChevronRight,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
 import {
-  fetchWorkspaceFiles,
-  fetchDriveFolders,
-  type DriveFolder,
-} from "@/lib/mocks";
+  fetchGoogleStatus,
+  fetchWorkspaceDriveFiles,
+  fetchWorkspaceDriveFolders,
+  type GoogleStatus,
+} from "@/lib/api";
+import type { DriveFolder } from "@/lib/mocks";
 import type { WorkspaceFile } from "@/lib/types";
 
 const FOLDER_ICONS: Record<string, typeof Folder> = {
@@ -61,23 +66,34 @@ function formatAgo(iso: string) {
 }
 
 export default function DrivePage() {
+  const { agent: myAgent } = useAuth();
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [folders, setFolders] = useState<DriveFolder[]>([]);
   const [activeFolder, setActiveFolder] = useState<string>("root");
   const [selected, setSelected] = useState<WorkspaceFile | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
 
   useEffect(() => {
+    // Real Google Drive — backend falls back to seed data automatically when
+    // the agent hasn't connected Google yet.
+    const id = myAgent?.id || "demo";
     Promise.all([
-      fetchWorkspaceFiles().catch(() => []),
-      fetchDriveFolders().catch(() => []),
+      fetchWorkspaceDriveFiles(id).catch(() => []),
+      fetchWorkspaceDriveFolders(id).catch(() => []),
     ]).then(([f, fs]) => {
-      setFiles(f);
-      setFolders(fs);
+      setFiles((f || []) as WorkspaceFile[]);
+      setFolders((fs || []) as DriveFolder[]);
       setLoading(false);
     });
-  }, []);
+  }, [myAgent]);
+
+  useEffect(() => {
+    fetchGoogleStatus(myAgent?.id)
+      .then(setGoogle)
+      .catch(() => setGoogle(null));
+  }, [myAgent]);
 
   const filesById = useMemo(() => {
     const m = new Map<string, WorkspaceFile>();
@@ -117,6 +133,25 @@ export default function DrivePage() {
             />
           </div>
         </div>
+
+        {google && !google.connected && (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-dusk bg-ink border border-white/[0.06] rounded-md px-3 py-2">
+            <AlertCircle className="w-3.5 h-3.5 text-[#FACC15]" />
+            <span>
+              Showing demo data. Connect Google Drive in{" "}
+              <Link href="/settings" className="text-claret hover:text-[#D6596C]">
+                Settings
+              </Link>{" "}
+              to sync your real files.
+            </span>
+          </div>
+        )}
+        {google?.connected && (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-[#88D3A4]">
+            <CheckCircle2 className="w-3 h-3" />
+            Synced live with your Google Drive.
+          </div>
+        )}
       </header>
 
       {loading ? (
@@ -158,12 +193,6 @@ export default function DrivePage() {
                 );
               })}
             </nav>
-            <div className="mt-6 p-3 bg-ink border border-white/[0.06] rounded-lg">
-              <p className="text-[11px] text-smoke leading-relaxed">
-                Real Drive ingestion lands when Google OAuth + the Drive adapter
-                ship. Today this view reads mocks.
-              </p>
-            </div>
           </aside>
 
           {/* File list */}
@@ -266,9 +295,9 @@ function FilePreview({ file }: { file: WorkspaceFile }) {
           Agent summary
         </p>
         <p className="text-xs text-smoke leading-relaxed">
-          When the Drive adapter ships, the agent will generate a short summary
-          here — owners, deadlines, and any open questions — and route the file
-          to whoever asks about its topic.
+          Open the file in Drive and your agent will pick it up next time you
+          ask about this topic — owners, deadlines, and open questions surface
+          in the topic graph automatically.
         </p>
       </div>
 

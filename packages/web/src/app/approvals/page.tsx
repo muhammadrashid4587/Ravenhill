@@ -11,9 +11,12 @@ import {
   ShieldCheck,
   HelpCircle,
   Send,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { fetchApprovals } from "@/lib/mocks";
-import { submitApproval } from "@/lib/api";
+import { askAboutApproval, submitApproval, type ApprovalAskTurn } from "@/lib/api";
+import { useAuth } from "@/lib/AuthContext";
 import type { Approval, VerificationStatus } from "@/lib/types";
 
 type FilterTab = "pending" | "approved" | "denied";
@@ -74,6 +77,7 @@ function VerificationBadge({ status }: { status: VerificationStatus }) {
 }
 
 export default function ApprovalsPage() {
+  const { agent: myAgent } = useAuth();
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<FilterTab>("pending");
@@ -83,6 +87,12 @@ export default function ApprovalsPage() {
   const [infoPromptFor, setInfoPromptFor] = useState<string | null>(null);
   const [infoDraft, setInfoDraft] = useState("");
   const [infoRequested, setInfoRequested] = useState<Record<string, string>>({});
+  // Ask-for-more chat state, scoped per approval id.
+  const [askOpenFor, setAskOpenFor] = useState<string | null>(null);
+  const [askTurns, setAskTurns] = useState<Record<string, ApprovalAskTurn[]>>({});
+  const [askDraft, setAskDraft] = useState<Record<string, string>>({});
+  const [askBusy, setAskBusy] = useState<string | null>(null);
+  const [askError, setAskError] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchApprovals()
@@ -103,6 +113,55 @@ export default function ApprovalsPage() {
     () => approvals.filter((a) => a.status === tab),
     [approvals, tab],
   );
+
+  async function sendAsk(approval: Approval) {
+    const draft = (askDraft[approval.id] || "").trim();
+    if (!draft) return;
+    setAskBusy(approval.id);
+    setAskError((prev) => ({ ...prev, [approval.id]: "" }));
+
+    const prior = askTurns[approval.id] || [];
+    const nextHistory: ApprovalAskTurn[] = [
+      ...prior,
+      { role: "user", content: draft },
+    ];
+    // Render the user's message immediately; clear the draft.
+    setAskTurns((prev) => ({ ...prev, [approval.id]: nextHistory }));
+    setAskDraft((prev) => ({ ...prev, [approval.id]: "" }));
+
+    try {
+      const res = await askAboutApproval({
+        approvalId: approval.id,
+        question: draft,
+        targetAgentId: myAgent?.id,
+        conversation: prior,
+        fallbackContext: {
+          requester_name: approval.requester_name,
+          target_name: approval.target_name,
+          resource: approval.resource,
+          context: approval.context,
+          status: approval.status,
+          verification: approval.verification,
+          created_at: approval.created_at,
+        },
+      });
+      setAskTurns((prev) => ({
+        ...prev,
+        [approval.id]: [
+          ...nextHistory,
+          { role: "assistant", content: res.answer },
+        ],
+      }));
+    } catch (e) {
+      setAskError((prev) => ({
+        ...prev,
+        [approval.id]:
+          e instanceof Error ? e.message : "Couldn't reach the agent.",
+      }));
+    } finally {
+      setAskBusy(null);
+    }
+  }
 
   async function decide(approval: Approval, approve: boolean) {
     setDeciding(approval.id);
@@ -268,6 +327,17 @@ export default function ApprovalsPage() {
                           >
                             <HelpCircle className="w-3 h-3" /> Request more info
                           </button>
+                          <button
+                            type="button"
+                            disabled={deciding === a.id}
+                            onClick={() => {
+                              setAskOpenFor(askOpenFor === a.id ? null : a.id);
+                              setAskError((prev) => ({ ...prev, [a.id]: "" }));
+                            }}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-claret/15 text-claret border border-claret/30 hover:bg-claret/25 transition disabled:opacity-50"
+                          >
+                            <Sparkles className="w-3 h-3" /> Ask for more
+                          </button>
                           {deciding === a.id && (
                             <span className="text-[11px] text-dusk">
                               Submitting…
@@ -327,6 +397,95 @@ export default function ApprovalsPage() {
                             <p className="text-parchment">
                               &ldquo;{infoRequested[a.id]}&rdquo;
                             </p>
+                          </div>
+                        )}
+
+                        {askOpenFor === a.id && (
+                          <div className="mt-2 rounded-lg border border-claret/30 bg-claret/[0.04] p-3 animate-fade-up">
+                            <div className="flex items-center gap-1.5 text-[10px] text-dusk font-mono mb-2 uppercase tracking-wider">
+                              <Sparkles className="w-3 h-3 text-claret" />
+                              Ask your agent — uses Ravenhill data
+                            </div>
+
+                            {(askTurns[a.id]?.length ?? 0) > 0 && (
+                              <div className="space-y-2 mb-2 max-h-72 overflow-y-auto pr-1">
+                                {askTurns[a.id].map((turn, i) => (
+                                  <div
+                                    key={i}
+                                    className={
+                                      turn.role === "user"
+                                        ? "text-[12px] text-parchment"
+                                        : "text-[12px] text-bone leading-relaxed bg-ink/60 border border-white/[0.05] rounded-md px-2.5 py-2"
+                                    }
+                                  >
+                                    <span className="text-[9px] uppercase tracking-wider text-dusk font-mono mr-2">
+                                      {turn.role === "user" ? "you" : "agent"}
+                                    </span>
+                                    <span className="whitespace-pre-wrap">
+                                      {turn.content}
+                                    </span>
+                                  </div>
+                                ))}
+                                {askBusy === a.id && (
+                                  <div className="flex items-center gap-1.5 text-[11px] text-dusk">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Reasoning over the approval context…
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {askError[a.id] && (
+                              <div className="mb-2 text-[11px] text-claret">
+                                {askError[a.id]}
+                              </div>
+                            )}
+
+                            <div className="flex items-end gap-2">
+                              <textarea
+                                value={askDraft[a.id] || ""}
+                                onChange={(e) =>
+                                  setAskDraft((prev) => ({
+                                    ...prev,
+                                    [a.id]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (
+                                    e.key === "Enter" &&
+                                    !e.shiftKey &&
+                                    !askBusy
+                                  ) {
+                                    e.preventDefault();
+                                    void sendAsk(a);
+                                  }
+                                }}
+                                placeholder={
+                                  (askTurns[a.id]?.length ?? 0) === 0
+                                    ? `Ask anything — e.g. "Has ${a.requester_name.split(" ")[0]} requested this before?" or "What's the risk?"`
+                                    : "Follow up…"
+                                }
+                                rows={2}
+                                disabled={askBusy === a.id}
+                                className="flex-1 bg-obsidian border border-white/[0.06] rounded-md px-2.5 py-2 text-[12px] text-parchment placeholder:text-dusk focus:outline-none focus:border-white/[0.14] transition resize-none disabled:opacity-60"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void sendAsk(a)}
+                                disabled={
+                                  askBusy === a.id ||
+                                  !(askDraft[a.id] || "").trim()
+                                }
+                                className="shrink-0 flex items-center gap-1 text-[11px] px-3 py-2 rounded-md bg-claret/80 text-bone hover:bg-claret transition disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                {askBusy === a.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Send className="w-3 h-3" />
+                                )}
+                                Ask
+                              </button>
+                            </div>
                           </div>
                         )}
                       </>

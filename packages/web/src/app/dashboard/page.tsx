@@ -24,13 +24,16 @@ import {
   EyeOff,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
-import { fetchMeetings, fetchStats, fetchActivity, type Meeting } from "@/lib/api";
 import {
-  fetchPendingItems,
-  fetchCalendarEvents,
-  fetchWorkspaceFiles,
-  fetchWorkspaceEmails,
-} from "@/lib/mocks";
+  fetchMeetings,
+  fetchStats,
+  fetchActivity,
+  fetchWorkspaceCalendar,
+  fetchWorkspaceDriveFiles,
+  fetchGmailThreads,
+  type Meeting,
+} from "@/lib/api";
+import { fetchPendingItems } from "@/lib/mocks";
 import {
   isStale,
   type PendingItem,
@@ -143,17 +146,20 @@ export default function DashboardPage() {
       fetchActivity(undefined, 8).then((r) => r.items || []).catch(() => []),
       myAgent ? fetchMeetings(myAgent.id).catch(() => []) : Promise.resolve([]),
       fetchPendingItems().catch(() => []),
-      fetchCalendarEvents().catch(() => []),
-      fetchWorkspaceFiles().catch(() => []),
-      fetchWorkspaceEmails().catch(() => []),
+      // Live Google Workspace — backend falls back to seed data automatically
+      // when the agent hasn't connected Google yet, so a [] here means an
+      // actual fetch error, not "not connected".
+      fetchWorkspaceCalendar(myAgent?.id || "demo").catch(() => []),
+      fetchWorkspaceDriveFiles(myAgent?.id || "demo").catch(() => []),
+      fetchGmailThreads(myAgent?.id || "demo").catch(() => []),
     ]).then(([s, a, m, p, ce, wf, we]) => {
       setStats(s);
       setActivity(a);
       setMeetings(m);
       setPendingItems(p);
-      setCalendarEvents(ce);
-      setWorkspaceFiles(wf);
-      setWorkspaceEmails(we);
+      setCalendarEvents(ce as CalendarEvent[]);
+      setWorkspaceFiles(wf as WorkspaceFile[]);
+      setWorkspaceEmails(we as WorkspaceEmail[]);
       setLoading(false);
     });
   }, [myAgent]);
