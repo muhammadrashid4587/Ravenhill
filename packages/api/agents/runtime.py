@@ -56,7 +56,25 @@ async def attempt_auto_reply(
     we'd rather surface the message in the human's inbox than ship a
     fabricated answer in their voice. The system prompt is tuned to err
     toward deferring; tighten the rule, not loosen it, when iterating.
+
+    Gated by the recipient's `auto_reply_to_inbound_messages` capability:
+    `auto` runs the LLM, `ask` and `never` skip it and let the message
+    land in the human's inbox unanswered.
     """
+    # Capability gate (per-agent, set in /settings/shadow). Imported
+    # lazily to avoid a circular import at module-load time.
+    if recipient.org_id is not None:
+        from capabilities.service import get_permission as _get_permission
+        try:
+            perm = await _get_permission(
+                recipient.id, "auto_reply_to_inbound_messages", recipient.org_id
+            )
+        except Exception:
+            log.exception("attempt_auto_reply: capability lookup failed — defaulting to defer")
+            return None
+        if perm != "auto":
+            return None
+
     if get_active_provider() == "mock":
         # Mock mode has canned per-role responses but they leak demo
         # personas (Riley/Jordan/Sam/Alex). For a real user's agent

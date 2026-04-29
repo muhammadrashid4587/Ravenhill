@@ -197,6 +197,52 @@ export async function replyToAgentMessage(
   return res.json();
 }
 
+// ---- Capabilities (powers /settings/shadow) ----
+//
+// Three-state per-tool permissions, scoped to the caller's agent. The
+// shadow-settings page calls these to render the connector-style toggle
+// UI; runtime gates (e.g. attempt_auto_reply on the backend) consult
+// the persisted permission before acting.
+
+export type CapabilityPermission = "auto" | "ask" | "never";
+export type CapabilityLane = "observation" | "soft" | "hard";
+export type CapabilitySource = "default" | "user" | "learned";
+
+export interface AgentCapability {
+  tool_id: string;
+  name: string;
+  description: string;
+  lane: CapabilityLane;
+  default: CapabilityPermission;
+  permission: CapabilityPermission;
+  source: CapabilitySource;
+  requires_integration: string | null;
+  updated_at: string | null;
+}
+
+export async function fetchCapabilities(): Promise<AgentCapability[]> {
+  const res = await apiFetch("/api/capabilities/");
+  if (!res.ok) throw new Error(`capabilities fetch failed: ${res.status}`);
+  const data = await res.json();
+  return data.capabilities as AgentCapability[];
+}
+
+export async function setCapabilityPermission(
+  toolId: string,
+  permission: CapabilityPermission,
+): Promise<AgentCapability> {
+  const res = await apiFetch(`/api/capabilities/${toolId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ permission }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `update failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ---- Approvals (real, replaces lib/mocks::fetchApprovals) ----
 
 import type {

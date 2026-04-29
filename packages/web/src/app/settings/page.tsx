@@ -10,6 +10,7 @@ import {
   LogOut,
   ExternalLink,
   CreditCard,
+  Eye,
 } from "lucide-react";
 import {
   disconnectGoogle,
@@ -153,6 +154,30 @@ export default function SettingsPage() {
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
                   Free, Team, Business, Enterprise — pick what fits.
+                </div>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition" />
+          </div>
+        </Link>
+
+        {/* Shadow — what your agent is allowed to do on its own */}
+        <Link
+          href="/settings/shadow"
+          className="block bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-6 transition group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
+                <Eye className="w-4 h-4 text-claret" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-gray-100">
+                  Shadow
+                </div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  Set what your agent can do autonomously — read-only,
+                  soft actions, and hard actions, each with Auto / Ask / Off.
                 </div>
               </div>
             </div>

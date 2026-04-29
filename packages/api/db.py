@@ -512,6 +512,36 @@ class MeetingFileRow(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class AgentCapabilityRow(Base):
+    """Per-agent permission for each tool the agent can autonomously
+    exercise. Drives the shadow-settings UI and gates real runtime paths
+    (e.g. attempt_auto_reply consults `auto_reply_to_inbound_messages`).
+
+    `permission` is one of `auto` / `ask` / `never` — same three states
+    as the Claude Desktop connector model that inspired the UI.
+
+    `source` is `default` (registry default), `user` (explicit override),
+    or `learned` (suggested by the shadow observer based on captured
+    behavior — surfaced as a hint in the UI before becoming sticky).
+    """
+    __tablename__ = "agent_capabilities"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    org_id = Column(Uuid, ForeignKey("organizations.id"), nullable=False)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    tool_id = Column(String(100), nullable=False)
+    permission = Column(String(20), nullable=False, default="ask")
+    source = Column(String(20), nullable=False, default="default")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("agent_id", "tool_id", name="uq_agent_capability"),
+        Index("ix_agent_capability_org", "org_id"),
+        Index("ix_agent_capability_agent", "agent_id"),
+    )
+
+
 async def init_db():
     """Create all tables if they don't exist."""
     async with engine.begin() as conn:
