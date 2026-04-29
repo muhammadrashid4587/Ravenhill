@@ -25,6 +25,8 @@ export interface Timestamped {
 // Agents & People (LIVE, see packages/api/agents/models.py)
 // ============================================================
 
+export type Seniority = "junior" | "mid" | "senior" | "lead" | "exec";
+
 export interface Agent {
   id: string;
   name: string;
@@ -33,6 +35,9 @@ export interface Agent {
   role_description?: string;
   departments: string[];
   trust_level: "auto" | "notify" | "approve";
+  // Drives tier-aware routing on the backend; surfaced as a small badge
+  // in People lists so the user can see who their agent will/won't ping.
+  seniority?: Seniority;
   is_active: boolean;
 }
 

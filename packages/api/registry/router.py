@@ -33,6 +33,7 @@ def _row_to_agent(row: AgentRow) -> Agent:
         topic_keys=row.topic_keys or [],
         documents=row.documents or [],
         trust_level=row.trust_level or "auto",
+        seniority=row.seniority or "mid",
         scopes=row.scopes or [],
         is_active=row.is_active,
         created_at=row.created_at,

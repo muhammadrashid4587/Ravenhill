@@ -335,7 +335,19 @@ function ChatInner() {
   // Panel tabs
   const [leftTab, setLeftTab] = useState<"people" | "inbox" | "slack">("people");
   const [rightTab, setRightTab] = useState<"reasoning" | "activity">("reasoning");
-  const [people, setPeople] = useState<Array<{ id: string; name: string; role: string }>>([]);
+  const [people, setPeople] = useState<
+    Array<{
+      id: string;
+      name: string;
+      role: string;
+      seniority?:
+        | "junior"
+        | "mid"
+        | "senior"
+        | "lead"
+        | "exec";
+    }>
+  >([]);
   // Real inter-agent inbox (rows from /api/messages/inbox). The displayed
   // `inbox` is derived from this — keeping the raw form lets us reply by id.
   const [rawInbox, setRawInbox] = useState<AgentLedgerMessage[]>([]);
@@ -365,11 +377,25 @@ function ChatInner() {
           setPeople(
             agents
               .filter((a: { id: string }) => a.id !== myAgent.id)
-              .map((a: { id: string; name: string; role: string }) => ({
-                id: a.id,
-                name: a.name,
-                role: a.role,
-              })),
+              .map(
+                (a: {
+                  id: string;
+                  name: string;
+                  role: string;
+                  seniority?: string;
+                }) => ({
+                  id: a.id,
+                  name: a.name,
+                  role: a.role,
+                  seniority: a.seniority as
+                    | "junior"
+                    | "mid"
+                    | "senior"
+                    | "lead"
+                    | "exec"
+                    | undefined,
+                }),
+              ),
           );
         }
       })
@@ -1199,8 +1225,24 @@ function ChatInner() {
                       {getInitials(p.name)}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium text-bone truncate">
-                        {p.name}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-bone truncate">
+                          {p.name}
+                        </span>
+                        {p.seniority && (
+                          <span
+                            className={`text-[8px] uppercase tracking-wider font-semibold rounded px-1 py-px border shrink-0 ${
+                              p.seniority === "exec"
+                                ? "text-[#E6BA75] border-[#E6BA75]/30 bg-[#E6BA75]/10"
+                                : p.seniority === "lead"
+                                  ? "text-[#88D3A4] border-[#88D3A4]/30 bg-[#88D3A4]/10"
+                                  : "text-dusk border-white/[0.08]"
+                            }`}
+                            title={`${p.seniority} — your agent considers this when routing questions`}
+                          >
+                            {p.seniority}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-dusk truncate">{p.role}</div>
                     </div>

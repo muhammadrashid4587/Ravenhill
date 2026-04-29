@@ -244,6 +244,11 @@ agent platform. Analyze the message and return a JSON object with these fields:
 - "topic": a short topic label (e.g., "marketplace redesign", "api dependency", "vendor contract")
 - "summary": a one-sentence summary of what is being asked
 - "selected_keys": an array of 1-3 topic keys from the provided list that are relevant
+- "target_tier": one of "junior", "mid", "senior", "lead", "exec" — the seniority \
+level of person who SHOULD answer this. Tactical and operational questions are usually \
+"mid" or "senior". Anything requiring decision authority, strategic context, or \
+cross-functional sign-off is "lead" or "exec". Asking for help with a task or info-gathering \
+is "junior" or "mid". Default to "mid" when unclear — never inflate to "exec" without clear signal.
 
 Intent guidance:
 - "information_query": asking about the state of the company, a project, a metric, what someone \
@@ -286,8 +291,16 @@ _CLASSIFY_EXTRACT_SCHEMA: dict = {
             "items": {"type": "string"},
             "description": "1-3 relevant topic keys from the available set",
         },
+        "target_tier": {
+            "type": "string",
+            "enum": ["junior", "mid", "senior", "lead", "exec"],
+            "description": (
+                "Seniority of the person who SHOULD answer. Default 'mid' when unclear; "
+                "never inflate to 'exec' without clear signal."
+            ),
+        },
     },
-    "required": ["intent", "topic", "summary", "selected_keys"],
+    "required": ["intent", "topic", "summary", "selected_keys", "target_tier"],
     "additionalProperties": False,
 }
 
@@ -337,6 +350,13 @@ async def classify_and_extract(
                     )
                     if mock_result.get("selected_keys"):
                         result["selected_keys"] = mock_result["selected_keys"]
+
+                # Defensive: older models / structured-output failures
+                # may omit target_tier. Fall back to the heuristic so
+                # downstream routing always has a tier to work with.
+                tier = result.get("target_tier")
+                if tier not in ("junior", "mid", "senior", "lead", "exec"):
+                    result["target_tier"] = _mock_target_tier(message)
 
                 return result
         except Exception:
@@ -583,7 +603,43 @@ def _mock_classify_and_extract(
                     selected.append(k)
 
     base["selected_keys"] = selected[:3]
+    base["target_tier"] = _mock_target_tier(message)
     return base
+
+
+# Defaults to "mid". Promotes to "lead" or "exec" on signals that the
+# question requires authority or strategic context. Promotes downward to
+# "junior" on tactical "help me with this task" wording.
+_TIER_EXEC_KW = re.compile(
+    r"\b(approve|authoriz|sign[- ]?off|board|investor|fundrais|"
+    r"company\s+strateg|hire|fire|terminat|acqui[sr]e|shut\s+down|"
+    r"who\s+(owns|decides))\b",
+    re.IGNORECASE,
+)
+_TIER_LEAD_KW = re.compile(
+    r"\b(prior(itize|ity)|roadmap|head[- ]count|budget|q[1-4]\s+plan|"
+    r"deadline|escalat|cross[- ]team|sla)\b",
+    re.IGNORECASE,
+)
+_TIER_JUNIOR_KW = re.compile(
+    r"\b(can\s+you\s+(help|grab|find|send|share)|"
+    r"could\s+you\s+(send|share|forward)|"
+    r"quick\s+(question|task|favou?r))\b",
+    re.IGNORECASE,
+)
+
+
+def _mock_target_tier(message: str) -> str:
+    """Heuristic fallback for target_tier when the LLM hasn't supplied
+    one. Strict ladder: exec wins over lead wins over junior, with mid
+    as the default."""
+    if _TIER_EXEC_KW.search(message):
+        return "exec"
+    if _TIER_LEAD_KW.search(message):
+        return "lead"
+    if _TIER_JUNIOR_KW.search(message):
+        return "junior"
+    return "mid"
 
 
 # ---------------------------------------------------------------------------

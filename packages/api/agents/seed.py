@@ -192,6 +192,7 @@ SEED_AGENTS = [
             },
         ],
         "trust_level": "auto",
+        "seniority": "exec",
         "knowledge_base": "COO with visibility across all teams.",
         "scopes": ["read:public", "read:all"],
     },
@@ -408,6 +409,7 @@ SEED_AGENTS = [
             },
         ],
         "trust_level": "auto",
+        "seniority": "lead",
         "knowledge_base": "Product Lead managing marketplace redesign.",
         "scopes": ["read:public", "read:product", "write:product"],
     },
@@ -617,6 +619,7 @@ SEED_AGENTS = [
             },
         ],
         "trust_level": "auto",
+        "seniority": "lead",
         "knowledge_base": "Engineering Lead managing API integrations and sprint.",
         "scopes": ["read:public", "read:engineering", "write:engineering"],
     },
@@ -844,6 +847,7 @@ SEED_AGENTS = [
             },
         ],
         "trust_level": "approve",
+        "seniority": "lead",
         "knowledge_base": (
             "Operations Manager managing vendor relationships and seller onboarding."
         ),

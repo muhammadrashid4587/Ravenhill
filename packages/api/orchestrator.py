@@ -30,6 +30,7 @@ from agents.runtime import (
     stream_synthesis,
     synthesize_multi_agent_response,
 )
+from agents.seniority import filter_candidates
 from approvals.router import ApprovalRequest, create_approval_in_db, ws_manager
 import db
 from db import AgentRow, ApprovalRow, ActivityRow, MessageLedgerRow
@@ -558,9 +559,11 @@ async def orchestrate(request: OrchestrateRequest):
     intent = result.get("intent", "information_query")
     topic = result.get("topic", "unknown")
     selected_keys = result.get("selected_keys", [])
+    target_tier = result.get("target_tier", "mid")
     log.info(
         f"[{trace_id}] classify: {intent} topic={topic!r} "
-        f"keys={selected_keys} ({time.monotonic() - t_classify:.2f}s)"
+        f"keys={selected_keys} tier={target_tier} "
+        f"({time.monotonic() - t_classify:.2f}s)"
     )
 
     steps.append(OrchestrateStep(
@@ -634,14 +637,56 @@ async def orchestrate(request: OrchestrateRequest):
 
     # Step 5: Fetch target agents
     target_agents = []
-    for aid in ranked_ids[:3]:
+    for aid in ranked_ids[:6]:  # fetch more than 3 so seniority filter has options
         agent = await _get_agent(UUID(aid), source.org_id)
         if agent:
             target_agents.append(agent)
 
+    # Step 5b: Tier-aware filter — keep only candidates at-or-below the
+    # target_tier the classifier inferred. If only higher-tier agents
+    # match, we still route but flag for confirmation so the UI can
+    # gate the send (avoids a junior question silently paging the CEO).
+    decision = filter_candidates(
+        [(str(a.id), a.seniority) for a in target_agents],
+        target_tier=target_tier,  # type: ignore[arg-type]
+        requester_tier=source.seniority,  # type: ignore[arg-type]
+        max_results=3,
+    )
+    chosen_set = set(decision.chosen_ids)
+    target_agents = [a for a in target_agents if str(a.id) in chosen_set]
+    log.info(
+        f"[{trace_id}] seniority-filter: tier={target_tier} reason={decision.reason} "
+        f"requires_confirmation={decision.requires_confirmation} "
+        f"chosen={[a.name for a in target_agents]}"
+    )
+    if not target_agents:
+        log.info(f"[{trace_id}] seniority-filter dropped all candidates")
+        fallback_answer = await _conversational_fallback(
+            source, request.message, synthesis_history
+        )
+        steps.append(OrchestrateStep(
+            label="Responding directly",
+            detail="No suitable specialist available",
+        ))
+        _append_to_session(session_id, "assistant", fallback_answer)
+        return OrchestrateResponse(
+            intent=intent,
+            answer=fallback_answer,
+            sources=[],
+            steps=steps,
+            trace_id=str(trace_id),
+            session_id=session_id,
+            source_agent=_agent_summary(source),
+        )
+
     agent_names = [a.name for a in target_agents]
+    consult_label = f"Consulting {', '.join(agent_names)}..."
+    if decision.requires_confirmation:
+        consult_label = (
+            f"Escalating to {', '.join(agent_names)} (no lower-tier match)"
+        )
     steps.append(OrchestrateStep(
-        label=f"Consulting {', '.join(agent_names)}...",
+        label=consult_label,
         detail=f"{len(target_agents)} agent(s) queried in parallel",
     ))
 
@@ -1017,9 +1062,11 @@ async def orchestrate_stream(request: OrchestrateRequest):
             intent = result.get("intent", "information_query")
             topic = result.get("topic", "unknown")
             selected_keys = result.get("selected_keys", [])
+            target_tier = result.get("target_tier", "mid")
             log.info(
                 f"[{trace_id}] classify: {intent} topic={topic!r} "
-                f"keys={selected_keys} ({time.monotonic() - t_classify:.2f}s)"
+                f"keys={selected_keys} tier={target_tier} "
+                f"({time.monotonic() - t_classify:.2f}s)"
             )
 
             yield _sse({"type": "step", "step": {
@@ -1089,16 +1136,44 @@ async def orchestrate_stream(request: OrchestrateRequest):
                 yield _sse({"type": "done", "trace_id": str(trace_id)})
                 return
 
-            # Step 4: Fetch and query agents
+            # Step 4: Fetch candidates (over-fetch for the seniority filter)
             target_agents = []
-            for aid in ranked_ids[:3]:
+            for aid in ranked_ids[:6]:
                 agent = await _get_agent(UUID(aid), source.org_id)
                 if agent:
                     target_agents.append(agent)
 
+            # Tier-aware filter — see comment on the non-streaming path.
+            decision = filter_candidates(
+                [(str(a.id), a.seniority) for a in target_agents],
+                target_tier=target_tier,  # type: ignore[arg-type]
+                requester_tier=source.seniority,  # type: ignore[arg-type]
+                max_results=3,
+            )
+            chosen_set = set(decision.chosen_ids)
+            target_agents = [a for a in target_agents if str(a.id) in chosen_set]
+            log.info(
+                f"[{trace_id}] seniority-filter: tier={target_tier} reason={decision.reason} "
+                f"requires_confirmation={decision.requires_confirmation} "
+                f"chosen={[a.name for a in target_agents]}"
+            )
+            if not target_agents:
+                fallback = await _conversational_fallback(
+                    source, request.message, synthesis_history
+                )
+                yield _sse({"type": "chunk", "text": fallback})
+                _append_to_session(session_id, "assistant", fallback)
+                yield _sse({"type": "done", "trace_id": str(trace_id)})
+                return
+
             agent_names = [a.name for a in target_agents]
+            consult_label = f"Consulting {', '.join(agent_names)}..."
+            if decision.requires_confirmation:
+                consult_label = (
+                    f"Escalating to {', '.join(agent_names)} (no lower-tier match)"
+                )
             yield _sse({"type": "step", "step": {
-                "label": f"Consulting {', '.join(agent_names)}...",
+                "label": consult_label,
                 "status": "done",
                 "detail": (
                     f"Querying {len(target_agents)} "

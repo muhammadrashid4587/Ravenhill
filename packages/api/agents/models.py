@@ -43,6 +43,9 @@ class Agent(BaseModel):
     topic_keys: list[str] = []
     documents: list[DocumentRef] = []
     trust_level: Literal["auto", "notify", "approve"] = "auto"
+    # Seniority drives tier-aware routing — a junior question shouldn't
+    # accidentally page the CEO. Set on signup from the role title.
+    seniority: Literal["junior", "mid", "senior", "lead", "exec"] = "mid"
     scopes: list[str] = []
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -136,6 +136,10 @@ class AgentRow(Base):
     knowledge_entries = Column(JSON, default=list)
     documents = Column(JSON, default=list)
     trust_level = Column(String(20), default="auto")
+    # Seniority for tier-aware routing — derived from role title on signup,
+    # editable later. Routing logic prefers candidates with seniority <=
+    # target_tier so junior questions don't accidentally page the CEO.
+    seniority = Column(String(20), default="mid", nullable=False)
     scopes = Column(JSON, default=list)
     is_active = Column(Boolean, default=True)
     password_hash = Column(String(500), nullable=True)
@@ -568,6 +572,7 @@ async def alter_table_if_needed():
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS knowledge_entries JSON",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS documents JSON",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS trust_level VARCHAR(20) DEFAULT 'auto'",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS seniority VARCHAR(20) NOT NULL DEFAULT 'mid'",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS role_description TEXT DEFAULT ''",
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_email_nonempty ON agents (LOWER(email)) WHERE email IS NOT NULL AND email <> ''",
             "ALTER TABLE auth_invites ADD COLUMN IF NOT EXISTS is_login_only BOOLEAN NOT NULL DEFAULT FALSE",
