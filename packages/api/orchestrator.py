@@ -1449,11 +1449,11 @@ async def reset_demo():
     # Close all WebSocket connections so approval screen reconnects clean
     await ws_manager.close_all()
 
-    # Reseed agents
-    await db.seed_demo_agents()
+    # Note: demo agents are no longer reseeded — real customers don't
+    # have placeholder personas in their workspace.
 
-    log.info("[reset] demo state reset complete")
-    return {"status": "ok", "message": "Demo state reset"}
+    log.info("[reset] state reset complete")
+    return {"status": "ok", "message": "State reset"}
 
 
 def _build_second_hop_hint(

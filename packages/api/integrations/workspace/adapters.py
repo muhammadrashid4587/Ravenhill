@@ -28,10 +28,22 @@ def _is_configured() -> bool:
     return bool(settings.google_client_id and settings.google_client_secret)
 
 
-async def _use_seed(agent_id: str) -> bool:
+async def _has_real_connection(agent_id: str) -> bool:
+    """True iff Google is configured AND this agent has stored tokens.
+    The adapters return real data only when this is true; otherwise they
+    return empty arrays so users see 'not connected' rather than fake
+    sample data."""
     if not _is_configured():
-        return True
-    return not await _has_tokens(agent_id)
+        return False
+    return await _has_tokens(agent_id)
+
+
+async def _use_seed(agent_id: str) -> bool:
+    """Deprecated alias kept so the in-flight call sites still compile.
+    Inverted to return True only when there's NO real connection — and
+    every call site below now returns [] in that branch instead of seed
+    data."""
+    return not await _has_real_connection(agent_id)
 
 
 # ---------------------------------------------------------------------------
@@ -40,9 +52,13 @@ async def _use_seed(agent_id: str) -> bool:
 
 
 async def list_calendar_events(agent_id: str) -> list[dict[str, Any]]:
-    """Upcoming + recently-past events from the user's primary calendar."""
-    if await _use_seed(agent_id):
-        return _seed_calendar_events()
+    """Upcoming + recently-past events from the user's primary calendar.
+
+    Returns an empty list when the agent hasn't connected Google — real
+    customers see 'not connected' rather than a fake schedule. They
+    connect via /settings → Google."""
+    if not await _has_real_connection(agent_id):
+        return []
 
     import asyncio
     from googleapiclient.discovery import build
@@ -218,8 +234,9 @@ _DRIVE_SEED_FOLDERS: list[dict[str, Any]] = [
 
 
 async def list_drive_files(agent_id: str) -> list[dict[str, Any]]:
-    if await _use_seed(agent_id):
-        return list(_DRIVE_SEED_FILES)
+    """Files in the agent's Google Drive. Empty until they connect."""
+    if not await _has_real_connection(agent_id):
+        return []
 
     import asyncio
     from googleapiclient.discovery import build
@@ -259,8 +276,8 @@ async def list_drive_folders(agent_id: str) -> list[dict[str, Any]]:
     Drive's native folder model doesn't map 1:1 to these buckets, so we
     derive them from the file list. This gives the frontend a stable shape.
     """
-    if await _use_seed(agent_id):
-        return list(_DRIVE_SEED_FOLDERS)
+    if not await _has_real_connection(agent_id):
+        return []
 
     files = await list_drive_files(agent_id)
     ids = [f["id"] for f in files]
@@ -337,8 +354,9 @@ _GMAIL_SEED: list[dict[str, Any]] = [
 
 
 async def list_gmail_threads(agent_id: str, limit: int = 25) -> list[dict[str, Any]]:
-    if await _use_seed(agent_id):
-        return list(_GMAIL_SEED[:limit])
+    """Recent Gmail threads. Empty until the agent connects Google."""
+    if not await _has_real_connection(agent_id):
+        return []
 
     import asyncio
     from googleapiclient.discovery import build
@@ -501,5 +519,5 @@ async def ingest_gmail_topics(agent_id: str, limit: int = 25) -> dict[str, Any]:
         "topics_detected": unique_topics[:20],
         "persisted": persisted,
         "deduplicated": deduplicated,
-        "connected": not await _use_seed(agent_id),
+        "connected": await _has_real_connection(agent_id),
     }

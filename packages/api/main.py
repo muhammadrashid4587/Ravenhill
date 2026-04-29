@@ -26,21 +26,23 @@ async def lifespan(app: FastAPI):
         close_db,
         init_db,
         seed_default_org,
-        seed_demo_agents,
     )
 
     print("Starting Ravenhill API...")
     # Order matters:
     #   1. init_db()           — create tables (organizations, agents, ...).
-    #   2. seed_default_org()  — insert the default-org row so step 3's
-    #      UPDATE ... SET org_id = DEFAULT_ORG_ID has a valid FK target.
-    #   3. alter_table_if_needed() — add org_id columns on existing prod
+    #   2. seed_default_org()  — the org row exists for FK targets (the
+    #      default org is just a container — NO demo agents live in it
+    #      anymore. Real users always end up in their own workspace).
+    #   3. alter_table_if_needed() — add columns on existing prod
     #      tables, backfill NULLs to the default org, swap constraints.
-    #   4. seed_demo_agents()  — upsert demo personas (now org-scoped).
+    #
+    # Demo agents (Riley/Jordan/Sam/Alex) were removed: real customers
+    # never see them, and a real user opening the app should see only
+    # their actual teammates.
     await init_db()
     await seed_default_org()
     await alter_table_if_needed()
-    await seed_demo_agents()
     yield
     await close_db()
     print("Shutting down Ravenhill API...")
