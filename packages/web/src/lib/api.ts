@@ -197,6 +197,65 @@ export async function replyToAgentMessage(
   return res.json();
 }
 
+// ---- Tasks / pending items (replaces lib/mocks::fetchPendingItems) ----
+//
+// Real backing: `TaskRow` rows extracted from meeting transcripts. The
+// dashboard / calendar pages render these as a kanban-style board, so
+// we adapt to the existing `PendingItem` shape rather than reshaping
+// the renderer.
+
+interface TaskRaw {
+  id: string;
+  meeting_id: string;
+  agent_id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  source_excerpt: string | null;
+  due_date: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+const ALLOWED_STATUS = new Set(["todo", "in_progress", "done"]);
+
+// Backend uses "pending" / "in_progress" / "done" / "blocked"; the
+// frontend's TaskStatus enum is "todo" / "in_progress" / "done". Map
+// both pending and blocked into "todo" (anything not actively in
+// progress yet) so the kanban renders without losing rows.
+function mapStatus(s: string): "todo" | "in_progress" | "done" {
+  if (s === "done") return "done";
+  if (s === "in_progress") return "in_progress";
+  return "todo";
+}
+
+function mapPriority(p: string): "high" | "medium" | "low" {
+  return p === "high" || p === "low" ? p : "medium";
+}
+
+export async function fetchPendingItems() {
+  const res = await apiFetch("/api/meetings/tasks/mine");
+  if (!res.ok) return [];
+  const rows: TaskRaw[] = await res.json();
+  const now = new Date().toISOString();
+  return rows
+    .filter((r) => ALLOWED_STATUS.has(mapStatus(r.status)))
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description || undefined,
+      status: mapStatus(r.status),
+      priority: mapPriority(r.priority),
+      source: "meeting" as const,
+      source_ref: r.meeting_id,
+      due_date: r.due_date || undefined,
+      ready_state: "ready" as const,
+      created_at: r.created_at || now,
+      updated_at: r.updated_at || now,
+    }));
+}
+
 // ---- Capabilities (powers /settings/shadow) ----
 //
 // Three-state per-tool permissions, scoped to the caller's agent. The

@@ -31,9 +31,9 @@ import {
   fetchWorkspaceCalendar,
   fetchWorkspaceDriveFiles,
   fetchGmailThreads,
+  fetchPendingItems,
   type Meeting,
 } from "@/lib/api";
-import { fetchPendingItems } from "@/lib/mocks";
 import {
   isStale,
   type PendingItem,

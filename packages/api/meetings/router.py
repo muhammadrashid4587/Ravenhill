@@ -3,11 +3,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
+from auth.deps import get_current_agent
 import db
-from db import MeetingRow, TaskRow, MeetingFileRow
+from db import AgentRow, MeetingRow, TaskRow, MeetingFileRow, with_org
 from meetings.models import (
     MeetingCreate,
     MeetingImportGoogle,
@@ -63,6 +64,44 @@ def _meeting_to_out(meeting: MeetingRow, tasks: list[TaskRow], files: list[Meeti
         created_at=meeting.created_at,
         updated_at=meeting.updated_at,
     )
+
+
+@router.get("/tasks/mine", response_model=list[TaskOut])
+async def list_my_tasks(
+    caller: AgentRow = Depends(get_current_agent),
+    include_done: bool = False,
+):
+    """Every task assigned to the caller, scoped to their org.
+
+    Powers the dashboard's pending-items board — replaces the
+    `fetchPendingItems` mock. Done tasks are excluded by default; the
+    caller can pass `include_done=true` to see history."""
+    async with db.async_session() as session:
+        stmt = with_org(
+            select(TaskRow).where(TaskRow.agent_id == caller.id),
+            TaskRow,
+            caller.org_id,
+        )
+        if not include_done:
+            stmt = stmt.where(TaskRow.status != "done")
+        stmt = stmt.order_by(TaskRow.priority, TaskRow.due_date.nulls_last())
+        rows = (await session.execute(stmt)).scalars().all()
+        return [
+            TaskOut(
+                id=str(r.id),
+                meeting_id=str(r.meeting_id),
+                agent_id=str(r.agent_id),
+                title=r.title,
+                description=r.description,
+                status=r.status,
+                priority=r.priority,
+                source_excerpt=r.source_excerpt,
+                due_date=r.due_date,
+                created_at=r.created_at,
+                updated_at=r.updated_at,
+            )
+            for r in rows
+        ]
 
 
 @router.post("/", response_model=MeetingOut)

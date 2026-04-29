@@ -24,8 +24,8 @@ import {
   fetchWorkspaceCalendar,
   type GoogleStatus,
   type Meeting,
+  fetchPendingItems,
 } from "@/lib/api";
-import { fetchPendingItems } from "@/lib/mocks";
 import type { CalendarEvent, PendingItem } from "@/lib/types";
 
 type ViewMode = "month" | "week" | "list" | "board" | "agenda";
