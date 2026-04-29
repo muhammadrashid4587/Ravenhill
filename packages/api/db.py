@@ -564,8 +564,7 @@ async def alter_table_if_needed():
     to reference.
     """
     default_org = str(DEFAULT_ORG_ID)
-    async with engine.begin() as conn:
-        statements: list[str] = [
+    statements: list[str] = [
             # --- Pre-org column additions (historical) ---
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS email VARCHAR(320)",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS topic_keys JSON",
@@ -637,11 +636,19 @@ async def alter_table_if_needed():
             "CREATE INDEX IF NOT EXISTS ix_google_oauth_tokens_agent ON google_oauth_tokens (agent_id)",
             "CREATE INDEX IF NOT EXISTS ix_google_oauth_tokens_org ON google_oauth_tokens (org_id)",
         ]
-        for col_def in statements:
-            try:
+    # Each statement runs in its own transaction. Postgres aborts the
+    # whole transaction on the first failed statement — wrapping all
+    # migrations in a single engine.begin() meant one bad ALTER could
+    # silently roll back every subsequent migration in the same run.
+    # This is how alembic and django migrations both behave.
+    for col_def in statements:
+        try:
+            async with engine.begin() as conn:
                 await conn.execute(text(col_def))
-            except Exception:
-                pass  # Column/index/constraint might already exist
+        except Exception:
+            pass  # Column/index/constraint might already exist, or this
+            # specific dialect (SQLite in tests) doesn't support the SQL.
+            # Per-statement transaction means we keep going regardless.
 
 
 async def seed_default_org():

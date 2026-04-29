@@ -26,6 +26,7 @@ class CreateAgentRequest(BaseModel):
     knowledge_entries: list[dict] = []
     documents: list[dict] = []
     trust_level: str = "auto"
+    seniority: str | None = None  # if None, derived from role on create
     scopes: list[str] = []
 
 
@@ -40,6 +41,7 @@ class UpdateAgentRequest(BaseModel):
     knowledge_entries: list[dict] | None = None
     documents: list[dict] | None = None
     trust_level: str | None = None
+    seniority: str | None = None
     scopes: list[str] | None = None
     is_active: bool | None = None
 
@@ -106,6 +108,7 @@ async def create_agent(
     caller: AgentRow = Depends(get_current_agent),
 ):
     """Create a new agent in the caller's org."""
+    from agents.seniority import derive_from_role
     async with db.async_session() as session:
         row = AgentRow(
             org_id=caller.org_id,
@@ -119,6 +122,7 @@ async def create_agent(
             knowledge_entries=req.knowledge_entries,
             documents=req.documents,
             trust_level=req.trust_level,
+            seniority=req.seniority or derive_from_role(req.role),
             scopes=req.scopes,
         )
         session.add(row)
@@ -133,7 +137,16 @@ async def update_agent(
     req: UpdateAgentRequest,
     caller: AgentRow = Depends(get_current_agent),
 ):
-    """Update an existing agent — only your own."""
+    """Update an existing agent — only your own.
+
+    When the role changes and the caller hasn't explicitly set their own
+    seniority before, re-derive it from the new role title. This way
+    'I'm a CTO' updates the routing tier without requiring a separate
+    field. Once the user explicitly sets seniority via this endpoint,
+    auto-derivation stops respecting role edits — explicit beats
+    implicit.
+    """
+    from agents.seniority import derive_from_role
     async with db.async_session() as session:
         row = await session.get(AgentRow, agent_id)
         if not row:
@@ -141,8 +154,20 @@ async def update_agent(
         if row.org_id is not None and row.org_id != caller.org_id:
             raise HTTPException(status_code=404, detail="Agent not found")
 
-        for field, value in req.model_dump(exclude_unset=True).items():
+        updates = req.model_dump(exclude_unset=True)
+        role_changed = "role" in updates and updates["role"] != row.role
+        seniority_explicitly_set = "seniority" in updates
+
+        for field, value in updates.items():
             setattr(row, field, value)
+
+        if role_changed and not seniority_explicitly_set and row.seniority == "mid":
+            # Auto-derive only if seniority is at the column default — a
+            # user who set it themselves once shouldn't get overridden by
+            # a role tweak.
+            derived = derive_from_role(row.role)
+            if derived != row.seniority:
+                row.seniority = derived
 
         await session.commit()
         await session.refresh(row)

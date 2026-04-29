@@ -383,11 +383,13 @@ async def consume_invite(token: str) -> tuple[AgentRow, AuthSessionRow]:
         )
         agent = existing.scalar_one_or_none()
         if agent is None:
+            from agents.seniority import derive_from_role
             agent = AgentRow(
                 name=invite.name,
                 email=email,
                 role=invite.role,
                 departments=[invite.department],
+                seniority=derive_from_role(invite.role),
                 scopes=["read:public"],
                 is_active=True,
             )
