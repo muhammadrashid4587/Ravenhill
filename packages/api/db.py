@@ -571,7 +571,16 @@ async def alter_table_if_needed():
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS knowledge_entries JSON",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS documents JSON",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS trust_level VARCHAR(20) DEFAULT 'auto'",
-            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS seniority VARCHAR(20) NOT NULL DEFAULT 'mid'",
+            # Seniority migration in three idempotent steps — combined
+            # 'ADD COLUMN ... NOT NULL DEFAULT' can choke on some
+            # Postgres-pooler configurations (Supabase) when the table
+            # rewrite times out. Splitting lets each step succeed
+            # independently and per-statement transactions ensure a
+            # later step doesn't poison the next.
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS seniority VARCHAR(20)",
+            "UPDATE agents SET seniority = 'mid' WHERE seniority IS NULL",
+            "ALTER TABLE agents ALTER COLUMN seniority SET DEFAULT 'mid'",
+            "ALTER TABLE agents ALTER COLUMN seniority SET NOT NULL",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS role_description TEXT DEFAULT ''",
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_email_nonempty ON agents (LOWER(email)) WHERE email IS NOT NULL AND email <> ''",
             "ALTER TABLE auth_invites ADD COLUMN IF NOT EXISTS is_login_only BOOLEAN NOT NULL DEFAULT FALSE",
