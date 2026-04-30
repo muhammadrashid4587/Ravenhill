@@ -208,6 +208,7 @@ export interface Permission extends Timestamped {
 export interface CalendarEvent {
   id: string;
   title: string;
+  description?: string;
   start_time: string;
   end_time: string;
   attendees: string[];

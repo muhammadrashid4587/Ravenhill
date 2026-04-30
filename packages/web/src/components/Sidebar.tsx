@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
+import ThemeToggle from "@/components/ui/ThemeToggle";
 
 const PRIMARY_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -190,8 +191,10 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Right: user + logout menu */}
-        {myAgent && (
+        {/* Right: theme toggle + user + logout menu */}
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          {myAgent && (
           <div ref={menuRef} className="relative">
             <button
               type="button"
@@ -235,7 +238,8 @@ export default function Sidebar() {
               </div>
             )}
           </div>
-        )}
+          )}
+        </div>
       </div>
     </nav>
   );

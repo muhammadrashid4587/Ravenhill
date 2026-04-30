@@ -1,51 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Plus,
   Calendar,
   Clock,
-  CheckCircle2,
-  AlertCircle,
+  Users,
   Video,
   CalendarPlus,
   LogIn,
   Copy,
   Check,
   X,
+  ExternalLink,
+  Bell,
+  BellOff,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
-import { fetchMeetings, type Meeting } from "@/lib/api";
-import type { MeetingProvider } from "@/lib/types";
-
-function statusBadge(meeting: Meeting) {
-  const total = meeting.tasks.length;
-  const done = meeting.tasks.filter((t) => t.status === "done").length;
-  if (total === 0) return null;
-  if (done === total) {
-    return (
-      <span className="flex items-center gap-1 text-[11px] text-emerald-400">
-        <CheckCircle2 className="w-3 h-3" /> All done
-      </span>
-    );
-  }
-  return (
-    <span className="text-[11px] text-zinc-500">
-      {done}/{total} tasks done
-    </span>
-  );
-}
-
-function priorityCount(meeting: Meeting) {
-  const high = meeting.tasks.filter((t) => t.priority === "high" && t.status !== "done").length;
-  if (high === 0) return null;
-  return (
-    <span className="flex items-center gap-1 text-[11px] text-amber-400">
-      <AlertCircle className="w-3 h-3" /> {high} high priority
-    </span>
-  );
-}
+import { fetchWorkspaceCalendar } from "@/lib/api";
+import type { CalendarEvent, MeetingProvider } from "@/lib/types";
+import { useReminders } from "@/lib/RemindersContext";
 
 // Deep-link targets for each provider. No API creation — these open the
 // provider's own start/create/join flow in a new tab.
@@ -81,23 +57,127 @@ function generateZoomId(): string {
   return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`;
 }
 
+const REMINDER_OPTIONS = [
+  { label: "5 min before", minutes: 5 },
+  { label: "10 min before", minutes: 10 },
+  { label: "30 min before", minutes: 30 },
+  { label: "1 hour before", minutes: 60 },
+];
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function dayLabel(date: Date, today: Date): string {
+  const d0 = startOfDay(date).getTime();
+  const t0 = startOfDay(today).getTime();
+  const diff = Math.round((d0 - t0) / 86_400_000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Tomorrow";
+  if (diff === -1) return "Yesterday";
+  return date.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function timeRange(start: Date, end: Date): string {
+  const fmt: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
+  return `${start.toLocaleTimeString(undefined, fmt)} – ${end.toLocaleTimeString(undefined, fmt)}`;
+}
+
+function isZoomUrl(url?: string | null): boolean {
+  return !!url && /(^|\.)zoom\.us\//i.test(url);
+}
+
+function meetingProviderOf(url?: string | null): "Google Meet" | "Zoom" | "Video call" {
+  if (!url) return "Video call";
+  if (/meet\.google\.com/i.test(url)) return "Google Meet";
+  if (isZoomUrl(url)) return "Zoom";
+  return "Video call";
+}
+
 export default function MeetingsPage() {
   const { agent: myAgent } = useAuth();
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [provider, setProvider] = useState<MeetingProvider>("google_meet");
   const [joinCode, setJoinCode] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [openReminderFor, setOpenReminderFor] = useState<string | null>(null);
+  const reminderMenuRef = useRef<HTMLDivElement>(null);
 
+  const { scheduleReminder, cancelReminder, hasReminderFor } = useReminders();
+
+  // Live calendar fetch — re-poll every 60s for "real-time" feel.
   useEffect(() => {
     if (!myAgent) return;
-    fetchMeetings(myAgent.id)
-      .then(setMeetings)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const data = (await fetchWorkspaceCalendar(myAgent.id)) as CalendarEvent[];
+        if (cancelled) return;
+        setEvents(Array.isArray(data) ? data : []);
+        setLastSynced(new Date());
+      } catch {
+        if (cancelled) return;
+        setEvents([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    const id = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, [myAgent]);
+
+  // Close reminder menu on outside click / Esc.
+  useEffect(() => {
+    if (!openReminderFor) return;
+    const onClick = (e: MouseEvent) => {
+      if (!reminderMenuRef.current?.contains(e.target as Node)) {
+        setOpenReminderFor(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenReminderFor(null);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openReminderFor]);
+
+  const upcomingByDay = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - 30 * 60_000); // include events that started in the last 30 min
+    const within = events
+      .map((e) => ({ ...e, _start: new Date(e.start_time), _end: new Date(e.end_time) }))
+      .filter((e) => e._end >= cutoff)
+      .sort((a, b) => a._start.getTime() - b._start.getTime());
+
+    const groups = new Map<number, typeof within>();
+    for (const ev of within) {
+      const key = startOfDay(ev._start).getTime();
+      const arr = groups.get(key) ?? [];
+      arr.push(ev);
+      groups.set(key, arr);
+    }
+    return Array.from(groups.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([day, items]) => ({ day: new Date(day), items }));
+  }, [events]);
 
   const handleStart = () => {
     window.open(PROVIDER_LINKS[provider].start, "_blank", "noopener,noreferrer");
@@ -128,8 +208,6 @@ export default function MeetingsPage() {
     e.preventDefault();
     const code = joinCode.trim();
     if (!code) return;
-
-    // Accept full URLs or bare codes.
     const href = /^https?:\/\//i.test(code)
       ? code
       : PROVIDER_LINKS[provider].joinRoot(code.replace(/\s/g, ""));
@@ -137,13 +215,31 @@ export default function MeetingsPage() {
     setJoinCode("");
   };
 
+  const handleSetReminder = (
+    ev: CalendarEvent & { _start: Date },
+    minutesBefore: number,
+  ) => {
+    const fireAt = ev._start.getTime() - minutesBefore * 60_000;
+    scheduleReminder({
+      sourceKey: `event:${ev.id}`,
+      title: ev.title,
+      body:
+        minutesBefore === 0
+          ? "Starts now"
+          : `Starts in ${minutesBefore} minute${minutesBefore === 1 ? "" : "s"}`,
+      fireAt,
+      url: ev.meeting_url ?? undefined,
+    });
+    setOpenReminderFor(null);
+  };
+
   if (!myAgent) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen text-white">
-        <p className="text-sm text-zinc-500 mb-4">Sign in to view your meetings</p>
+      <div className="flex flex-col items-center justify-center h-screen text-bone">
+        <p className="text-sm text-smoke mb-4">Sign in to view your meetings</p>
         <Link
           href="/login"
-          className="bg-white text-black px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-zinc-200 transition press-scale"
+          className="bg-bone text-obsidian px-5 py-2.5 rounded-lg text-sm font-medium hover:opacity-90 transition press-scale"
         >
           Sign in
         </Link>
@@ -154,13 +250,13 @@ export default function MeetingsPage() {
   const providerInfo = PROVIDER_LINKS[provider];
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white">
+    <div className="min-h-screen bg-obsidian text-bone">
       {/* Header */}
       <header className="border-b border-white/[0.06] px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold font-display">Meetings</h1>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Start, create, or join — or import a transcript to extract tasks
+          <p className="text-xs text-smoke mt-0.5">
+            Live calendar — start, join, or set a reminder
           </p>
         </div>
         <Link
@@ -172,12 +268,12 @@ export default function MeetingsPage() {
         </Link>
       </header>
 
-      {/* Meeting actions bar */}
+      {/* Quick meeting */}
       <div className="px-6 pt-5">
         <div className="bg-surface border border-white/[0.06] rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Video className="w-4 h-4 text-zinc-400" />
+              <Video className="w-4 h-4 text-smoke" />
               <span className="text-sm font-medium">Quick meeting</span>
             </div>
             <div className="flex items-center gap-1 bg-elevated rounded-lg p-0.5">
@@ -187,8 +283,8 @@ export default function MeetingsPage() {
                   onClick={() => setProvider(p)}
                   className={`text-[11px] px-2.5 py-1 rounded-md transition ${
                     provider === p
-                      ? "bg-white/[0.1] text-white"
-                      : "text-zinc-500 hover:text-zinc-300"
+                      ? "bg-white/[0.1] text-bone"
+                      : "text-smoke hover:text-parchment"
                   }`}
                 >
                   {PROVIDER_LINKS[p].label}
@@ -200,12 +296,12 @@ export default function MeetingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <button
               onClick={handleStart}
-              className="flex items-center gap-2.5 bg-blue-600 hover:bg-blue-500 px-4 py-3 rounded-lg text-sm font-medium transition text-left"
+              className="flex items-center gap-2.5 bg-oxblood hover:bg-claret px-4 py-3 rounded-lg text-sm font-medium transition text-left text-white"
             >
               <Video className="w-4 h-4 shrink-0" />
               <div className="min-w-0">
                 <div>Start a meeting</div>
-                <div className="text-[10px] font-normal text-blue-100/75 mt-0.5">
+                <div className="text-[10px] font-normal text-white/75 mt-0.5">
                   Opens {providerInfo.label} now
                 </div>
               </div>
@@ -215,10 +311,10 @@ export default function MeetingsPage() {
               onClick={handleOpenCreate}
               className="flex items-center gap-2.5 bg-elevated hover:bg-white/[0.08] border border-white/[0.1] px-4 py-3 rounded-lg text-sm font-medium transition text-left"
             >
-              <CalendarPlus className="w-4 h-4 shrink-0 text-zinc-400" />
+              <CalendarPlus className="w-4 h-4 shrink-0 text-smoke" />
               <div className="min-w-0">
                 <div>Create for later</div>
-                <div className="text-[10px] font-normal text-zinc-500 mt-0.5">
+                <div className="text-[10px] font-normal text-smoke mt-0.5">
                   Get a shareable link
                 </div>
               </div>
@@ -226,15 +322,15 @@ export default function MeetingsPage() {
 
             <form
               onSubmit={handleJoin}
-              className="flex items-center gap-1 bg-elevated border border-white/[0.1] rounded-lg pl-3 pr-1 py-1 focus-within:border-blue-500 transition"
+              className="flex items-center gap-1 bg-elevated border border-white/[0.1] rounded-lg pl-3 pr-1 py-1 focus-within:border-claret transition"
             >
-              <LogIn className="w-4 h-4 shrink-0 text-zinc-400" />
+              <LogIn className="w-4 h-4 shrink-0 text-smoke" />
               <input
                 type="text"
                 value={joinCode}
                 onChange={(e) => setJoinCode(e.target.value)}
                 placeholder={`Join: ${providerInfo.joinHint}`}
-                className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-zinc-600 min-w-0"
+                className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-dusk min-w-0"
               />
               <button
                 type="submit"
@@ -245,19 +341,25 @@ export default function MeetingsPage() {
               </button>
             </form>
           </div>
-
-          <p className="text-[11px] text-zinc-600 mt-2.5">
-            Links open in a new tab. Real calendar scheduling lands once Google Calendar OAuth ships.
-          </p>
         </div>
       </div>
 
-      {/* Content */}
+      {/* Upcoming from your calendar — replaces the old imported-transcripts list */}
       <div className="p-6">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-zinc-300">Imported meetings</h2>
-          <span className="text-[11px] text-zinc-600">
-            {meetings.length} {meetings.length === 1 ? "meeting" : "meetings"}
+          <div>
+            <h2 className="text-sm font-medium text-parchment">From your calendar</h2>
+            <p className="text-[11px] text-smoke mt-0.5">
+              {lastSynced
+                ? `Synced ${lastSynced.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} · auto-refreshes every minute`
+                : "Live from Google Calendar"}
+            </p>
+          </div>
+          <span className="text-[11px] text-dusk">
+            {upcomingByDay.reduce((acc, g) => acc + g.items.length, 0)}{" "}
+            {upcomingByDay.reduce((acc, g) => acc + g.items.length, 0) === 1
+              ? "event"
+              : "events"}
           </span>
         </div>
 
@@ -265,71 +367,154 @@ export default function MeetingsPage() {
           <div className="flex items-center justify-center py-20">
             <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           </div>
-        ) : meetings.length === 0 ? (
+        ) : upcomingByDay.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="w-14 h-14 rounded-2xl bg-elevated border border-white/[0.1] flex items-center justify-center mb-4">
-              <Calendar className="w-7 h-7 text-zinc-600" />
+              <Calendar className="w-7 h-7 text-dusk" />
             </div>
-            <h2 className="text-base font-medium mb-1 font-display">No imported meetings yet</h2>
-            <p className="text-sm text-zinc-500 max-w-sm mb-6">
-              Import a meeting from Google Meet or paste a transcript to extract
-              your tasks automatically.
+            <h2 className="text-base font-medium mb-1 font-display">No upcoming meetings</h2>
+            <p className="text-sm text-smoke max-w-sm mb-6">
+              When events are on your calendar, they show up here with the same
+              detail Google Meet shows — title, time, attendees, and the description.
             </p>
             <Link
               href="/meetings/new"
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-lg text-sm font-medium transition"
+              className="flex items-center gap-2 bg-oxblood hover:bg-claret text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
             >
               <Plus className="w-4 h-4" />
-              Import transcript
+              Import a transcript instead
             </Link>
           </div>
         ) : (
-          <div className="space-y-3">
-            {meetings.map((m) => (
-              <Link
-                key={m.id}
-                href={`/meetings/${m.id}`}
-                className="block bg-surface border border-white/[0.06] hover:border-white/[0.12] rounded-xl p-4 transition"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-sm font-medium text-white truncate">
-                        {m.title}
-                      </h3>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-elevated text-zinc-400 border border-white/[0.1] shrink-0">
-                        {m.source === "google_meet" ? "Google Meet" : "Pasted"}
-                      </span>
-                    </div>
-                    {m.summary && (
-                      <p className="text-xs text-zinc-500 line-clamp-2 mb-2">
-                        {m.summary}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-4">
-                      <span className="flex items-center gap-1 text-[11px] text-zinc-500">
-                        <Clock className="w-3 h-3" />
-                        {m.created_at
-                          ? new Date(m.created_at).toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : ""}
-                      </span>
-                      {statusBadge(m)}
-                      {priorityCount(m)}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0 ml-4">
-                    <span className="text-2xl font-bold text-zinc-600">
-                      {m.tasks.length}
-                    </span>
-                    <div className="text-[10px] text-zinc-600">tasks</div>
-                  </div>
+          <div className="space-y-6">
+            {upcomingByDay.map(({ day, items }) => (
+              <section key={day.toISOString()}>
+                <div className="flex items-baseline gap-2 mb-2">
+                  <h3 className="text-[13px] font-semibold text-bone">
+                    {dayLabel(day, new Date())}
+                  </h3>
+                  <span className="text-[11px] text-dusk">
+                    {day.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </span>
                 </div>
-              </Link>
+                <div className="space-y-2.5">
+                  {items.map((ev) => {
+                    const sourceKey = `event:${ev.id}`;
+                    const reminderSet = hasReminderFor(sourceKey);
+                    const provider = meetingProviderOf(ev.meeting_url);
+                    return (
+                      <div
+                        key={ev.id}
+                        className="bg-surface border border-white/[0.06] hover:border-white/[0.12] rounded-xl p-4 transition"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <h4 className="text-sm font-medium text-bone truncate">
+                                {ev.title}
+                              </h4>
+                              {ev.meeting_url && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-elevated text-parchment border border-white/[0.1] shrink-0">
+                                  {provider}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-4 text-[11px] text-smoke mb-2 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {timeRange(ev._start, ev._end)}
+                              </span>
+                              {ev.attendees.length > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Users className="w-3 h-3" />
+                                  {ev.attendees.length}{" "}
+                                  {ev.attendees.length === 1 ? "attendee" : "attendees"}
+                                </span>
+                              )}
+                            </div>
+
+                            {ev.description && (
+                              <p className="text-[12px] text-parchment/85 leading-relaxed line-clamp-3 whitespace-pre-line mb-2">
+                                {ev.description}
+                              </p>
+                            )}
+
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {ev.meeting_url && (
+                                <a
+                                  href={ev.meeting_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-[11px] bg-oxblood hover:bg-claret text-white px-2.5 py-1 rounded-md transition"
+                                >
+                                  Join {provider}
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+
+                              <div className="relative">
+                                {reminderSet ? (
+                                  <button
+                                    onClick={() => cancelReminder(sourceKey)}
+                                    className="inline-flex items-center gap-1.5 text-[11px] bg-[var(--brand-soft)] border border-[var(--brand-ring)] text-[var(--brand-hover)] px-2.5 py-1 rounded-md transition hover:bg-[var(--brand-ring)]"
+                                  >
+                                    <BellOff className="w-3 h-3" />
+                                    Reminder set · cancel
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() =>
+                                      setOpenReminderFor(
+                                        openReminderFor === ev.id ? null : ev.id,
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-1.5 text-[11px] bg-elevated hover:bg-white/[0.08] border border-white/[0.1] text-parchment px-2.5 py-1 rounded-md transition"
+                                  >
+                                    <Bell className="w-3 h-3" />
+                                    Set reminder
+                                    <ChevronRight className="w-3 h-3 opacity-60" />
+                                  </button>
+                                )}
+                                {openReminderFor === ev.id && (
+                                  <div
+                                    ref={reminderMenuRef}
+                                    role="menu"
+                                    className="absolute left-0 top-full mt-1 w-44 bg-elevated border border-white/[0.1] rounded-lg shadow-[0_10px_40px_-12px_rgba(0,0,0,0.8)] py-1 z-20 animate-fade-up"
+                                    style={{ animationDuration: "140ms" }}
+                                  >
+                                    {REMINDER_OPTIONS.map((opt) => {
+                                      const fireAt =
+                                        ev._start.getTime() - opt.minutes * 60_000;
+                                      const past = fireAt < Date.now();
+                                      return (
+                                        <button
+                                          key={opt.minutes}
+                                          role="menuitem"
+                                          disabled={past}
+                                          onClick={() =>
+                                            handleSetReminder(ev, opt.minutes)
+                                          }
+                                          className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-[12px] text-parchment hover:bg-white/[0.05] disabled:opacity-40 disabled:cursor-not-allowed transition"
+                                        >
+                                          <span>{opt.label}</span>
+                                          {past && (
+                                            <span className="text-[10px] text-dusk">past</span>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
             ))}
           </div>
         )}
@@ -347,13 +532,13 @@ export default function MeetingsPage() {
             <div className="flex items-start justify-between mb-3">
               <div>
                 <h3 className="text-base font-medium">Meeting link ready</h3>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-smoke mt-0.5">
                   {providerInfo.label} · share this with attendees
                 </p>
               </div>
               <button
                 onClick={() => setCreateModalOpen(false)}
-                className="text-zinc-500 hover:text-white transition"
+                className="text-smoke hover:text-bone transition"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
@@ -390,7 +575,7 @@ export default function MeetingsPage() {
                 href={generatedLink}
                 target="_blank"
                 rel="noreferrer"
-                className="flex-1 text-center bg-blue-600 hover:bg-blue-500 text-sm px-4 py-2 rounded-lg font-medium transition"
+                className="flex-1 text-center bg-oxblood hover:bg-claret text-white text-sm px-4 py-2 rounded-lg font-medium transition"
               >
                 Open now
               </a>
@@ -401,10 +586,6 @@ export default function MeetingsPage() {
                 Save for later
               </button>
             </div>
-
-            <p className="text-[11px] text-zinc-600 mt-3">
-              Heads up: this is a generated link. Real calendar invites arrive once we wire up {providerInfo.label} scheduling.
-            </p>
           </div>
         </div>
       )}

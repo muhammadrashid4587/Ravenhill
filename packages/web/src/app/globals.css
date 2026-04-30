@@ -7,56 +7,113 @@
    Obsidian surfaces, oxblood brand, editorial typography.
    ============================================================ */
 
-:root {
-  /* Surfaces */
+/* ============================================================
+   THEME TOKENS — dark is default; [data-theme="light"] overrides.
+   Tailwind color tokens (obsidian, bone, oxblood, …) reference these
+   vars in tailwind.config.ts so flipping data-theme reskins the app.
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* Surfaces — true black-ish, deep ink */
   --bg-base: #0B0A0C;
   --bg-surface: #141316;
   --bg-elevated: #1C1B20;
   --bg-hover: #25242A;
 
+  /* Surface overlays — used by .glass / .btn-secondary / .btn-ghost / .input-dark.
+     A white tint on dark; a dark tint on light. */
+  --surface-overlay: rgba(255, 255, 255, 0.03);
+  --surface-overlay-hover: rgba(255, 255, 255, 0.06);
+  --surface-overlay-soft: rgba(255, 255, 255, 0.04);
+
   /* Borders */
-  --border: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(255, 255, 255, 0.12);
-  --border-strong: rgba(255, 255, 255, 0.18);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  --border-strong: rgba(255, 255, 255, 0.22);
+
+  /* Text — true white primary, white-tinted body */
+  --text-primary: #FFFFFF;
+  --text-body: #ECECEE;
+  --text-secondary: #A8A8B0;
+  --text-tertiary: #6B6B72;
+
+  /* Brand — red-orange */
+  --brand: #FF5A2C;          /* primary red-orange */
+  --brand-hover: #FF7A45;    /* lighter on hover */
+  --brand-pressed: #D9431B;  /* deeper on press */
+  --brand-soft: rgba(255, 90, 44, 0.12);
+  --brand-ring: rgba(255, 90, 44, 0.26);
+
+  /* Status */
+  --success: #3FA46A;
+  --warning: #E0A23A;
+  --danger: #E5563E;
+  --info: #5A8FCF;
+
+  --accent: var(--brand);
+  --accent-hover: var(--brand-hover);
+}
+
+[data-theme="light"] {
+  /* Surfaces — paper, warm whites */
+  --bg-base: #FAF8F5;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #F1EEE8;
+
+  /* Surface overlays — dark-ink tints on white */
+  --surface-overlay: rgba(20, 20, 24, 0.04);
+  --surface-overlay-hover: rgba(20, 20, 24, 0.08);
+  --surface-overlay-soft: rgba(20, 20, 24, 0.05);
+
+  /* Borders */
+  --border: rgba(20, 20, 24, 0.10);
+  --border-hover: rgba(20, 20, 24, 0.18);
+  --border-strong: rgba(20, 20, 24, 0.28);
 
   /* Text */
-  --text-primary: #F5F0E6;
-  --text-body: #E8E4DC;
-  --text-secondary: #8A8A92;
-  --text-tertiary: #4A4A52;
+  --text-primary: #14131A;
+  --text-body: #2A2A33;
+  --text-secondary: #5C5C68;
+  --text-tertiary: #8A8A94;
 
-  /* Brand — oxblood */
-  --brand: #8B1E2F;
-  --brand-hover: #B23246;
-  --brand-pressed: #5D0F1D;
-  --brand-soft: rgba(139, 30, 47, 0.10);
-  --brand-ring: rgba(139, 30, 47, 0.22);
+  /* Brand — same red-orange family, slightly deeper for AA on white */
+  --brand: #E64A19;
+  --brand-hover: #FF6B3D;
+  --brand-pressed: #B33812;
+  --brand-soft: rgba(230, 74, 25, 0.10);
+  --brand-ring: rgba(230, 74, 25, 0.22);
 
-  /* Status — muted, never neon */
-  --success: #3FA46A;
-  --warning: #C98A2B;
+  /* Status */
+  --success: #2E8B57;
+  --warning: #B8761F;
   --danger: #C9443A;
-  --info: #5A7FAE;
+  --info: #2C6CB0;
 
-  /* Back-compat: legacy `accent` var pointed at blue before. Point it at
-     the brand so any stale reference reads oxblood now. */
   --accent: var(--brand);
   --accent-hover: var(--brand-hover);
 }
 
 @layer base {
   html {
+    /* Bumped from browser default (16px) so all rem/em values scale. */
+    font-size: 17.5px;
     color-scheme: dark;
+  }
+  html[data-theme="light"] {
+    color-scheme: light;
   }
   body {
     background: var(--bg-base);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 200ms ease, color 200ms ease;
   }
-  /* Selection — oxblood tint */
+  /* Selection — brand tint */
   ::selection {
-    background: rgba(139, 30, 47, 0.35);
+    background: var(--brand-soft);
     color: var(--text-primary);
   }
 }
@@ -132,11 +189,11 @@
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--border-hover);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--border-strong);
 }
 
 /* ============================================================
@@ -214,18 +271,18 @@
    resolve to oxblood now, with slight intensity variation.
    ============================================================ */
 
-.glow-brand { --glow-color: rgba(139, 30, 47, 0.20); }
-.glow-blue { --glow-color: rgba(139, 30, 47, 0.16); }
-.glow-emerald { --glow-color: rgba(139, 30, 47, 0.12); }
-.glow-violet { --glow-color: rgba(139, 30, 47, 0.20); }
-.glow-amber { --glow-color: rgba(139, 30, 47, 0.10); }
-.glow-neutral { --glow-color: rgba(255, 255, 255, 0.06); }
+.glow-brand { --glow-color: var(--brand-ring); }
+.glow-blue { --glow-color: var(--brand-soft); }
+.glow-emerald { --glow-color: var(--brand-soft); }
+.glow-violet { --glow-color: var(--brand-ring); }
+.glow-amber { --glow-color: var(--brand-soft); }
+.glow-neutral { --glow-color: var(--border); }
 
 .card-glow {
   transition: box-shadow 300ms ease, transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .card-glow:hover {
-  box-shadow: 0 0 32px -4px var(--glow-color, rgba(139, 30, 47, 0.12));
+  box-shadow: 0 0 32px -4px var(--glow-color, var(--brand-soft));
 }
 
 /* ============================================================
@@ -259,8 +316,8 @@
   transform: translateX(-50%);
   background: radial-gradient(
     ellipse at center,
-    rgba(139, 30, 47, 0.16) 0%,
-    rgba(93, 15, 29, 0.08) 30%,
+    var(--brand-ring) 0%,
+    var(--brand-soft) 30%,
     transparent 65%
   );
   filter: blur(60px);
@@ -276,8 +333,8 @@
 }
 .input-focus-glow:focus {
   outline: none;
-  border-color: rgba(139, 30, 47, 0.6);
-  box-shadow: 0 0 0 3px rgba(139, 30, 47, 0.18);
+  border-color: var(--brand-hover);
+  box-shadow: 0 0 0 3px var(--brand-ring);
 }
 
 /* ============================================================
@@ -296,7 +353,7 @@
   width: 3px;
   height: 16px;
   border-radius: 0 2px 2px 0;
-  background: linear-gradient(180deg, #B23246, #8B1E2F);
+  background: linear-gradient(180deg, var(--brand-hover), var(--brand));
   opacity: 0;
   transition: opacity 250ms ease;
 }
@@ -324,7 +381,7 @@
   background: conic-gradient(
     from var(--border-angle, 0deg),
     transparent 25%,
-    rgba(139, 30, 47, 0.45) 50%,
+    var(--brand) 50%,
     transparent 75%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -362,22 +419,22 @@
 
 .btn-primary {
   background: var(--brand);
-  color: #F5F0E6;
+  color: #FFFFFF;
   border: 1px solid transparent;
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--brand-hover);
-  box-shadow: 0 0 0 3px rgba(139, 30, 47, 0.18);
+  box-shadow: 0 0 0 3px var(--brand-ring);
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-overlay);
   color: var(--text-primary);
   border: 1px solid var(--border);
   backdrop-filter: blur(12px);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--surface-overlay-hover);
   border-color: var(--border-hover);
 }
 
@@ -388,11 +445,11 @@
 }
 .btn-ghost:hover:not(:disabled) {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-overlay-soft);
 }
 
 .input-dark {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-overlay);
   border: 1px solid var(--border);
   color: var(--text-primary);
   border-radius: 0.5rem;
@@ -448,9 +505,8 @@
   background:
     radial-gradient(
       circle 480px at var(--spot-x, 50%) var(--spot-y, 40%),
-      rgba(139, 30, 47, 0.16) 0%,
-      rgba(139, 30, 47, 0.08) 28%,
-      rgba(93, 15, 29, 0.04) 50%,
+      var(--brand-ring) 0%,
+      var(--brand-soft) 28%,
       transparent 72%
     );
   filter: blur(14px);
@@ -522,7 +578,7 @@
    ============================================================ */
 
 .glass {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-overlay);
   border: 1px solid var(--border);
   backdrop-filter: blur(10px);
 }
@@ -540,7 +596,7 @@
    ============================================================ */
 
 *:focus-visible {
-  outline: 2px solid rgba(178, 50, 70, 0.7);
+  outline: 2px solid var(--brand-hover);
   outline-offset: 2px;
   border-radius: 4px;
 }
