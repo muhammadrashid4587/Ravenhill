@@ -10,23 +10,23 @@ const config: Config = {
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       colors: {
-        // Surfaces
-        obsidian: "#0B0A0C",
-        ink: "#141316",
-        graphite: "#1C1B20",
-        fog: "#25242A",
+        // Surfaces — wired to CSS vars so [data-theme] flips the whole app.
+        obsidian: "var(--bg-base)",
+        ink: "var(--bg-surface)",
+        graphite: "var(--bg-elevated)",
+        fog: "var(--bg-hover)",
         // Brand
-        oxblood: "#8B1E2F",
-        claret: "#B23246",
-        ember: "#5D0F1D",
+        oxblood: "var(--brand)",
+        claret: "var(--brand-hover)",
+        ember: "var(--brand-pressed)",
         // Text
-        bone: "#F5F0E6",
-        parchment: "#E8E4DC",
-        smoke: "#8A8A92",
-        dusk: "#4A4A52",
+        bone: "var(--text-primary)",
+        parchment: "var(--text-body)",
+        smoke: "var(--text-secondary)",
+        dusk: "var(--text-tertiary)",
         // Aliases used by existing pages — kept for back-compat.
-        surface: "#141316",
-        elevated: "#1C1B20",
+        surface: "var(--bg-surface)",
+        elevated: "var(--bg-elevated)",
       },
       boxShadow: {
         "lift-sm": "0 8px 24px -8px rgba(0, 0, 0, 0.55)",

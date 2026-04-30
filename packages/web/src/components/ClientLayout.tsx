@@ -2,7 +2,10 @@
 
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import ReminderToasts from "@/components/ReminderToasts";
 import { AuthProvider } from "@/lib/AuthContext";
+import { ThemeProvider } from "@/lib/ThemeContext";
+import { RemindersProvider } from "@/lib/RemindersContext";
 
 const NO_NAV_ROUTES = ["/", "/login", "/home", "/manifesto", "/trust"];
 
@@ -21,15 +24,20 @@ export default function ClientLayout({
   const hideNav = isNoNavPath(pathname);
 
   return (
-    <AuthProvider>
-      {hideNav ? (
-        <>{children}</>
-      ) : (
-        <div className="flex flex-col h-screen overflow-hidden">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto">{children}</main>
-        </div>
-      )}
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <RemindersProvider>
+          {hideNav ? (
+            <>{children}</>
+          ) : (
+            <div className="flex flex-col h-screen overflow-hidden">
+              <Sidebar />
+              <main className="flex-1 overflow-y-auto">{children}</main>
+            </div>
+          )}
+          <ReminderToasts />
+        </RemindersProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

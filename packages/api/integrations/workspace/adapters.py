@@ -77,6 +77,7 @@ async def list_calendar_events(agent_id: str) -> list[dict[str, Any]]:
             events.append({
                 "id": e["id"],
                 "title": e.get("summary", "Untitled"),
+                "description": e.get("description"),
                 "start_time": start,
                 "end_time": end,
                 "attendees": [a.get("email", "") for a in e.get("attendees", [])],
@@ -100,6 +101,7 @@ def _seed_calendar_events() -> list[dict[str, Any]]:
         {
             "id": "ev_seed_1",
             "title": "Weekly sync w/ Muhammad",
+            "description": "Standing weekly. Walk through this week's progress on V1, blockers, and what's queued for next week.",
             "start_time": iso(4),
             "end_time": iso(4.5),
             "attendees": ["muhammad@e-agent.ai", "me@e-agent.ai"],
@@ -109,6 +111,7 @@ def _seed_calendar_events() -> list[dict[str, Any]]:
         {
             "id": "ev_seed_2",
             "title": "SLS design partner kickoff",
+            "description": "First working session with the SLS team. Cover onboarding, integration scope, success criteria, and weekly cadence.",
             "start_time": iso(24),
             "end_time": iso(25),
             "attendees": ["team@sls.com", "max@e-agent.ai"],
@@ -118,6 +121,7 @@ def _seed_calendar_events() -> list[dict[str, Any]]:
         {
             "id": "ev_seed_3",
             "title": "V1 scope review",
+            "description": "Lock the V1 surface. Walk the demo flow end-to-end and confirm what ships in the public release vs. what defers.",
             "start_time": iso(48),
             "end_time": iso(49),
             "attendees": ["max@e-agent.ai", "muhammad@e-agent.ai", "me@e-agent.ai"],
@@ -126,6 +130,7 @@ def _seed_calendar_events() -> list[dict[str, Any]]:
         {
             "id": "ev_seed_4",
             "title": "Pricing deck finalization",
+            "description": "Final review of the pricing tiers, packaging, and the comparison slide before sending to design partners.",
             "start_time": iso(72),
             "end_time": iso(73),
             "attendees": ["karen@e-agent.ai", "jordan@e-agent.ai"],
