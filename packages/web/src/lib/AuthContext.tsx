@@ -18,6 +18,8 @@ function resolveApiBase(): string {
     if (
       host === "raven-hill.org" ||
       host === "www.raven-hill.org" ||
+      host === "ravenhillai.com" ||
+      host === "www.ravenhillai.com" ||
       host.endsWith(".vercel.app")
     ) {
       return PROD_API;

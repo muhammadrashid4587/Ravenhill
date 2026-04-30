@@ -63,6 +63,8 @@ app.add_middleware(
         "http://localhost:3002",
         "https://raven-hill.org",
         "https://www.raven-hill.org",
+        "https://ravenhillai.com",
+        "https://www.ravenhillai.com",
         "https://ravenhill-api.fly.dev",
     ],
     # Match every Vercel preview/production URL on this project so the
