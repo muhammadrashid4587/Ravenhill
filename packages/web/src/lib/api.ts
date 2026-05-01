@@ -285,6 +285,139 @@ export async function rotateOrgInviteCode(): Promise<{ invite_code: string }> {
   return res.json();
 }
 
+// ---- Behavior tracking + Weekly Report ----
+//
+// Privacy-aware (per CLAUDE.md): no message content, no email
+// content, no file names. Just `{event_type, object_type, object_id,
+// status}`. Captured via captureBehavior; aggregated via fetchWeeklyReport.
+
+export type BehaviorEventType =
+  | "meeting_clicked"
+  | "meeting_attended"
+  | "meeting_dismissed"
+  | "calendar_event_viewed"
+  | "task_created"
+  | "task_completed"
+  | "task_skipped"
+  | "task_reopened"
+  | "chat_replied"
+  | "chat_thread_opened"
+  | "document_opened"
+  | "document_shared"
+  | "inbox_item_opened";
+
+export async function captureBehavior(payload: {
+  event_type: BehaviorEventType;
+  object_type?: string;
+  object_id?: string;
+  status?: string;
+}): Promise<void> {
+  // Fire-and-forget: a failure here should never break user flow.
+  try {
+    await apiFetch("/api/behavior/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    /* swallow — telemetry mustn't crash the UI */
+  }
+}
+
+export interface WeeklyDayBucket {
+  date: string;
+  counts: Record<string, number>;
+  total: number;
+}
+
+export interface WeeklyReport {
+  week_start: string;
+  week_end: string;
+  days: WeeklyDayBucket[];
+  totals: Record<string, number>;
+  summary: string;
+  has_data: boolean;
+  generated_at: string;
+}
+
+export async function fetchWeeklyReport(): Promise<WeeklyReport> {
+  const res = await apiFetch("/api/behavior/weekly-report");
+  if (!res.ok) throw new Error(`weekly report fetch failed: ${res.status}`);
+  return res.json();
+}
+
+// ---- Manual tasks (Todoist-style; "Created Tasks" on the dashboard) ----
+
+export type TaskPriority = "high" | "medium" | "low";
+export type ManualTaskStatus = "pending" | "in_progress" | "done" | "blocked";
+
+export interface ManualTask {
+  id: string;
+  title: string;
+  description: string | null;
+  status: ManualTaskStatus;
+  priority: TaskPriority;
+  due_date: string | null;
+  source: "manual";
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function fetchManualTasks(includeDone = false): Promise<ManualTask[]> {
+  const qs = includeDone ? "?include_done=true" : "";
+  const res = await apiFetch(`/api/tasks/manual${qs}`);
+  if (!res.ok) throw new Error(`tasks fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createManualTask(payload: {
+  title: string;
+  description?: string;
+  priority?: TaskPriority;
+  due_date?: string;
+}): Promise<ManualTask> {
+  const res = await apiFetch("/api/tasks/manual", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `create task failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateManualTask(
+  id: string,
+  patch: Partial<{
+    title: string;
+    description: string;
+    status: ManualTaskStatus;
+    priority: TaskPriority;
+    due_date: string;
+  }>,
+): Promise<ManualTask> {
+  const res = await apiFetch(`/api/tasks/manual/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`update task failed: ${res.status}`);
+  return res.json();
+}
+
+export async function toggleManualTaskDone(id: string): Promise<ManualTask> {
+  const res = await apiFetch(`/api/tasks/manual/${id}/toggle`, { method: "POST" });
+  if (!res.ok) throw new Error(`toggle failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteManualTask(id: string): Promise<void> {
+  const res = await apiFetch(`/api/tasks/manual/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+}
+
 // ---- File summarization (real, server-side) ----
 //
 // Replaces the chat page's smartMockSummary canned text. Sends the

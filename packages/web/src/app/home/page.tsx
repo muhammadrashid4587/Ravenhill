@@ -17,6 +17,7 @@ import {
 import { useAuth } from "@/lib/AuthContext";
 import Button from "@/components/ui/Button";
 import DeptAvatar from "@/components/ui/DeptAvatar";
+import WeeklyReportModule from "@/components/WeeklyReport";
 import {
   fetchInboxTriage,
   fetchPreMeetingBrief,
@@ -455,6 +456,13 @@ export default function HomePage() {
             </ul>
           )}
         </div>
+      </div>
+
+      {/* Weekly Report — sits above Chat / Meetings / Organization
+          destinations, per the product spec. Self-renders empty state
+          when behavior_events table has nothing. */}
+      <div className="relative z-10 max-w-5xl mx-auto px-6 pt-2 pb-4">
+        <WeeklyReportModule />
       </div>
 
       {/* Destinations */}

@@ -7,8 +7,10 @@ from activity.router import router as activity_router
 from agents.router import router as agents_router
 from auth.router import router as auth_router
 from capabilities.router import router as capabilities_router
+from behavior.router import router as behavior_router
 from feedback.router import router as feedback_router
 from files.router import router as files_router
+from tasks.router import router as tasks_router
 from registry.router import router as registry_router
 from messaging.router import router as messaging_router
 from approvals.router import router as approvals_router
@@ -93,6 +95,8 @@ app.include_router(orgs_router, prefix="/api/orgs", tags=["orgs"])
 app.include_router(capabilities_router, prefix="/api/capabilities", tags=["capabilities"])
 app.include_router(feedback_router, prefix="/api/feedback", tags=["feedback"])
 app.include_router(files_router, prefix="/api/files", tags=["files"])
+app.include_router(behavior_router, prefix="/api/behavior", tags=["behavior"])
+app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
 
 
 @app.get("/health")

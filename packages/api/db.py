@@ -516,6 +516,68 @@ class MeetingFileRow(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class BehaviorEventRow(Base):
+    """Privacy-aware behavior tracking — what the user did, never what
+    they said. Powers the Weekly Report on /home.
+
+    Locked event types (extend the enum on the router side, not here):
+    - meeting_clicked, meeting_attended, meeting_dismissed
+    - task_created, task_completed, task_skipped
+    - chat_replied, chat_thread_opened
+    - document_opened, document_shared
+    - calendar_event_viewed, inbox_item_opened
+
+    Hard rule (per CLAUDE.md): NO message bodies, NO email content,
+    NO file names. `object_id` is a UUID/string for grouping; `status`
+    is a small enum-y string. `metadata` JSON is intentionally
+    omitted — temptation to stuff content there is too high.
+    """
+    __tablename__ = "behavior_events"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    org_id = Column(Uuid, ForeignKey("organizations.id"), nullable=False)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    event_type = Column(String(50), nullable=False)
+    object_type = Column(String(40), nullable=True)
+    object_id = Column(String(64), nullable=True)
+    status = Column(String(40), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_behavior_events_agent_time", "agent_id", "created_at"),
+        Index("ix_behavior_events_org_time", "org_id", "created_at"),
+        Index("ix_behavior_events_type", "event_type"),
+    )
+
+
+class ManualTaskRow(Base):
+    """User-entered tasks (Todoist-style). Distinct from `tasks` which
+    is meeting-derived. Splitting keeps the meaning clean: 'Your Tasks'
+    on the dashboard = meeting/calendar; 'Created Tasks' = these rows.
+
+    `due_date` is nullable (people add tasks without dates often).
+    `status` mirrors the meeting-task enum so the dashboard renderer
+    can union the two sources in one kanban without a translation step.
+    """
+    __tablename__ = "manual_tasks"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    org_id = Column(Uuid, ForeignKey("organizations.id"), nullable=False)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), default="pending")  # pending | in_progress | done | blocked
+    priority = Column(String(20), default="medium")  # high | medium | low
+    due_date = Column(Date, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_manual_tasks_agent", "agent_id"),
+        Index("ix_manual_tasks_org", "org_id"),
+    )
+
+
 class FeedbackSubmissionRow(Base):
     """User-submitted feedback / suggestions / bug reports.
 

@@ -24,6 +24,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
+import ManualTasksPanel from "@/components/ManualTasksPanel";
 import {
   fetchMeetings,
   fetchStats,
@@ -345,10 +346,14 @@ export default function DashboardPage() {
                 </div>
               </div>
 
+              {/* Created Tasks (manual) — sits above the meeting-derived
+                  list. Self-renders empty state. */}
+              <ManualTasksPanel />
+
               {sortedPending.length === 0 ? (
                 <div className="bg-ink border border-white/[0.06] rounded-xl p-8 text-center">
                   <CalendarCheck className="w-8 h-8 text-dusk mx-auto mb-3" />
-                  <p className="text-sm text-smoke mb-1">No open tasks</p>
+                  <p className="text-sm text-smoke mb-1">No meeting-derived tasks</p>
                   <p className="text-[11px] text-dusk mb-4">
                     Import a meeting to extract your tasks automatically
                   </p>
