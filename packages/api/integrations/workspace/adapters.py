@@ -1,14 +1,9 @@
 """Thin adapters over Google Calendar / Drive / Gmail APIs.
 
-Each adapter follows the same pattern as `integrations/google_meet.py`:
-
-    if not _is_configured() or no tokens for agent:
-        return seed_data()
-    else:
-        call the real Google API
-
-Keeps the frontend working in mock mode and makes the swap to live
-credentials a single code path.
+Each adapter checks `_has_real_connection()` first: if Google is not
+configured or the agent has no stored OAuth tokens the adapter returns
+an empty list so the frontend shows 'not connected'.  When credentials
+are present, the adapter calls the real Google API via a thread pool.
 """
 
 from __future__ import annotations
@@ -36,14 +31,6 @@ async def _has_real_connection(agent_id: str) -> bool:
     if not _is_configured():
         return False
     return await _has_tokens(agent_id)
-
-
-async def _use_seed(agent_id: str) -> bool:
-    """Deprecated alias kept so the in-flight call sites still compile.
-    Inverted to return True only when there's NO real connection — and
-    every call site below now returns [] in that branch instead of seed
-    data."""
-    return not await _has_real_connection(agent_id)
 
 
 # ---------------------------------------------------------------------------
@@ -107,135 +94,9 @@ async def list_calendar_events(agent_id: str) -> list[dict[str, Any]]:
     return await asyncio.to_thread(_fetch)
 
 
-def _seed_calendar_events() -> list[dict[str, Any]]:
-    now = datetime.now(timezone.utc)
-
-    def iso(delta_hours: float) -> str:
-        return (now + timedelta(hours=delta_hours)).isoformat()
-
-    return [
-        {
-            "id": "ev_seed_1",
-            "title": "Weekly sync w/ Muhammad",
-            "description": "Standing weekly. Walk through this week's progress on V1, blockers, and what's queued for next week.",
-            "start_time": iso(4),
-            "end_time": iso(4.5),
-            "attendees": ["muhammad@e-agent.ai", "me@e-agent.ai"],
-            "source": "google_calendar",
-            "meeting_url": "https://meet.google.com/abc-defg-hij",
-        },
-        {
-            "id": "ev_seed_2",
-            "title": "SLS design partner kickoff",
-            "description": "First working session with the SLS team. Cover onboarding, integration scope, success criteria, and weekly cadence.",
-            "start_time": iso(24),
-            "end_time": iso(25),
-            "attendees": ["team@sls.com", "max@e-agent.ai"],
-            "source": "google_calendar",
-            "has_transcript": True,
-        },
-        {
-            "id": "ev_seed_3",
-            "title": "V1 scope review",
-            "description": "Lock the V1 surface. Walk the demo flow end-to-end and confirm what ships in the public release vs. what defers.",
-            "start_time": iso(48),
-            "end_time": iso(49),
-            "attendees": ["max@e-agent.ai", "muhammad@e-agent.ai", "me@e-agent.ai"],
-            "source": "google_calendar",
-        },
-        {
-            "id": "ev_seed_4",
-            "title": "Pricing deck finalization",
-            "description": "Final review of the pricing tiers, packaging, and the comparison slide before sending to design partners.",
-            "start_time": iso(72),
-            "end_time": iso(73),
-            "attendees": ["karen@e-agent.ai", "jordan@e-agent.ai"],
-            "source": "google_calendar",
-            "meeting_url": "https://meet.google.com/xyz-abcd-efg",
-        },
-    ]
-
-
 # ---------------------------------------------------------------------------
 # Drive
 # ---------------------------------------------------------------------------
-
-
-_DRIVE_SEED_FILES: list[dict[str, Any]] = [
-    {
-        "id": "f1",
-        "name": "V1 Implementation Plan.md",
-        "mime_type": "text/markdown",
-        "owner": "max@e-agent.ai",
-        "last_modified": "2026-04-17T22:00:00Z",
-        "url": "https://drive.google.com/file/d/f1",
-        "source": "google_drive",
-    },
-    {
-        "id": "f2",
-        "name": "SLS Onboarding Checklist.gdoc",
-        "mime_type": "application/vnd.google-apps.document",
-        "owner": "max@e-agent.ai",
-        "last_modified": "2026-04-16T14:00:00Z",
-        "url": "https://drive.google.com/file/d/f2",
-        "source": "google_drive",
-    },
-    {
-        "id": "f3",
-        "name": "Permissions schema draft.md",
-        "mime_type": "text/markdown",
-        "owner": "muhammad@e-agent.ai",
-        "last_modified": "2026-04-17T08:00:00Z",
-        "url": "https://drive.google.com/file/d/f3",
-        "source": "google_drive",
-    },
-    {
-        "id": "f4",
-        "name": "Q2 Pricing Deck.gslides",
-        "mime_type": "application/vnd.google-apps.presentation",
-        "owner": "karen@e-agent.ai",
-        "last_modified": "2026-04-17T18:00:00Z",
-        "url": "https://drive.google.com/file/d/f4",
-        "source": "google_drive",
-    },
-    {
-        "id": "f5",
-        "name": "Focus group raw export.csv",
-        "mime_type": "text/csv",
-        "owner": "marco@e-agent.ai",
-        "last_modified": "2026-04-16T10:00:00Z",
-        "url": "https://drive.google.com/file/d/f5",
-        "source": "google_drive",
-    },
-    {
-        "id": "f6",
-        "name": "Board memo - April 2026.gdoc",
-        "mime_type": "application/vnd.google-apps.document",
-        "owner": "max@e-agent.ai",
-        "last_modified": "2026-04-14T12:00:00Z",
-        "url": "https://drive.google.com/file/d/f6",
-        "source": "google_drive",
-    },
-    {
-        "id": "f7",
-        "name": "SLS Demo Recording.mp4",
-        "mime_type": "video/mp4",
-        "owner": "likitha@e-agent.ai",
-        "last_modified": "2026-04-16T20:00:00Z",
-        "url": "https://drive.google.com/file/d/f7",
-        "source": "google_drive",
-    },
-]
-
-
-_DRIVE_SEED_FOLDERS: list[dict[str, Any]] = [
-    {"id": "root", "name": "My Drive", "file_ids": [f["id"] for f in _DRIVE_SEED_FILES]},
-    {"id": "shared", "name": "Shared with me", "file_ids": ["f4", "f5"],
-     "shared_with": ["karen@e-agent.ai", "marco@e-agent.ai"]},
-    {"id": "starred", "name": "Starred", "file_ids": ["f1", "f4"]},
-    {"id": "recent", "name": "Recent", "file_ids": ["f1", "f7", "f2", "f3"]},
-    {"id": "meet", "name": "Meet Recordings", "file_ids": ["f7"]},
-]
 
 
 async def list_drive_files(agent_id: str) -> list[dict[str, Any]]:
@@ -298,64 +159,6 @@ async def list_drive_folders(agent_id: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Gmail
 # ---------------------------------------------------------------------------
-
-
-_GMAIL_SEED: list[dict[str, Any]] = [
-    {
-        "id": "e1",
-        "subject": "Re: V1 scope — SLS deployment",
-        "from": "max@e-agent.ai",
-        "snippet": "Pushed the deadline by a week after the design partner call...",
-        "received_at": "2026-04-18T21:00:00Z",
-        "unread": True,
-        "thread_url": "https://mail.google.com/mail/u/0/#inbox/e1",
-    },
-    {
-        "id": "e2",
-        "subject": "Permissions schema — first pass",
-        "from": "muhammad@e-agent.ai",
-        "snippet": "Here's the ERD; let me know what the UI needs before I migrate.",
-        "received_at": "2026-04-18T14:30:00Z",
-        "unread": True,
-        "thread_url": "https://mail.google.com/mail/u/0/#inbox/e2",
-    },
-    {
-        "id": "e3",
-        "subject": "Design partner interview — SLS ops lead",
-        "from": "max@e-agent.ai",
-        "snippet": "Interview scheduled for Friday 3pm. Prep doc attached.",
-        "received_at": "2026-04-17T19:00:00Z",
-        "unread": False,
-        "thread_url": "https://mail.google.com/mail/u/0/#inbox/e3",
-    },
-    {
-        "id": "e4",
-        "subject": "Q2 pricing deck — revisions",
-        "from": "karen@e-agent.ai",
-        "snippet": "Revised draft in Drive. Jordan, can you QA the burn-rate slide?",
-        "received_at": "2026-04-17T15:00:00Z",
-        "unread": True,
-        "thread_url": "https://mail.google.com/mail/u/0/#inbox/e4",
-    },
-    {
-        "id": "e5",
-        "subject": "Contractor invoice — Devon Ray, April",
-        "from": "billing@e-agent.ai",
-        "snippet": "Invoice #R-0042, $5,200. Auto-pay scheduled for 2026-04-30.",
-        "received_at": "2026-04-16T10:00:00Z",
-        "unread": False,
-        "thread_url": "https://mail.google.com/mail/u/0/#inbox/e5",
-    },
-    {
-        "id": "e6",
-        "subject": "Slack adapter — OAuth decision",
-        "from": "priya@e-agent.ai",
-        "snippet": "Fernet for V1, KMS later — approved. PR ready for review.",
-        "received_at": "2026-04-16T08:30:00Z",
-        "unread": False,
-        "thread_url": "https://mail.google.com/mail/u/0/#inbox/e6",
-    },
-]
 
 
 async def list_gmail_threads(agent_id: str, limit: int = 25) -> list[dict[str, Any]]:

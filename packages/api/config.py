@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     # `admin_token` gates /api/auth/invite. Leave empty to disable admin
     # endpoints entirely (fail-closed). Generate with `openssl rand -hex 32`.
     admin_token: str = ""
+
+    # Self-serve workspace creation. When True (the default), any visitor
+    # can sign up at /api/auth/signup and mint their own workspace + become
+    # admin. When False (production for an enterprise-gated product),
+    # /api/auth/signup returns 403 and the frontend shows "Request Access"
+    # instead of "Create account". Invite-link signup + admin-provisioned
+    # tenant claim are unaffected.
+    #
+    # Set to False on Fly via:
+    #   flyctl secrets set ALLOW_SELF_SERVE_SIGNUP=false --app ravenhill-api
+    allow_self_serve_signup: bool = True
     session_cookie_name: str = "ravenhill_session"
     session_ttl_days: int = 30
     invite_ttl_days: int = 7

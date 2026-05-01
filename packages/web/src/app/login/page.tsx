@@ -50,13 +50,17 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const { agent, loading: authLoading, refresh } = useAuth();
 
-  // Invite code arrives via /login?invite=… link the workspace admin
-  // shares from the /account page. When present, the form switches to
-  // signup mode and posts to /api/auth/share-link-signup so the new
-  // user joins the existing workspace instead of minting their own.
+  // Three special query params:
+  //   ?invite=<code>  → share-link signup, joins inviter's workspace
+  //   ?setup=<token>  → admin tenant-claim, becomes admin of a
+  //                     provisioned workspace (POST /api/auth/claim-tenant)
+  //   ?mode=signup    → self-serve signup (gated by backend config)
   const inviteCode = (searchParams.get("invite") || "").trim();
+  const setupToken = (searchParams.get("setup") || "").trim();
   const initialMode: Mode =
-    inviteCode || searchParams.get("mode") === "signup" ? "signup" : "signin";
+    inviteCode || setupToken || searchParams.get("mode") === "signup"
+      ? "signup"
+      : "signin";
   const [mode, setMode] = useState<Mode>(initialMode);
 
   const [email, setEmail] = useState("");
@@ -99,18 +103,22 @@ function LoginPageInner() {
     setSubmitting(true);
     setError(null);
     try {
-      // Three signup paths:
-      //   - signin → /api/auth/login (no invite, just authenticating)
-      //   - signup, no invite → /api/auth/signup (mints a fresh workspace)
-      //   - signup, with invite → /api/auth/share-link-signup (joins
-      //     the inviter's workspace; this is the path teammates use
-      //     when an admin shares the /account invite link)
+      // Four paths:
+      //   - signin → /api/auth/login
+      //   - signup + invite → /api/auth/share-link-signup (joins org)
+      //   - signup + setup → /api/auth/claim-tenant (becomes admin of
+      //     a provisioned workspace)
+      //   - signup, no invite/setup → /api/auth/signup (self-serve;
+      //     backend returns 403 if ALLOW_SELF_SERVE_SIGNUP=false)
       const useShareLink = mode === "signup" && !!inviteCode;
-      const endpoint = useShareLink
-        ? "/api/auth/share-link-signup"
-        : mode === "signup"
-          ? "/api/auth/signup"
-          : "/api/auth/login";
+      const useSetup = mode === "signup" && !!setupToken;
+      const endpoint = useSetup
+        ? "/api/auth/claim-tenant"
+        : useShareLink
+          ? "/api/auth/share-link-signup"
+          : mode === "signup"
+            ? "/api/auth/signup"
+            : "/api/auth/login";
       const body: Record<string, string> = {
         email: email.trim(),
         password,
@@ -120,6 +128,9 @@ function LoginPageInner() {
       }
       if (useShareLink) {
         body.invite_code = inviteCode;
+      }
+      if (useSetup) {
+        body.setup_token = setupToken;
       }
       const res = await fetch(`${resolveApiBase()}${endpoint}`, {
         method: "POST",
@@ -143,6 +154,14 @@ function LoginPageInner() {
         } else if (code === "invite_invalid") {
           setError(
             "This invite link is invalid or has expired. Ask the admin who shared it for a fresh link.",
+          );
+        } else if (code === "setup_token_invalid" || code === "setup_token_expired") {
+          setError(
+            "This setup link is invalid or has expired. Contact the Ravenhill team for a fresh one.",
+          );
+        } else if (code === "self_serve_disabled") {
+          setError(
+            "Self-serve signup isn't available. Ask your workspace admin for an invite link, or request access below.",
           );
         } else if (res.status === 422) {
           setError("Password must be at least 8 characters.");
@@ -252,23 +271,29 @@ function LoginPageInner() {
 
           <div className="animate-fade-up" style={{ animationDelay: "80ms" }}>
             <h1 className="text-2xl font-display font-normal tracking-tight text-bone mb-2">
-              {inviteCode
-                ? "Join your team"
-                : isSignup
-                  ? "Create your account"
-                  : "Welcome back"}
+              {setupToken
+                ? "Set up your workspace"
+                : inviteCode
+                  ? "Join your team"
+                  : isSignup
+                    ? "Create your account"
+                    : "Welcome back"}
             </h1>
             <p className="text-sm text-smoke mb-8">
-              {inviteCode
-                ? "Sign up with your work email — you'll land in your teammate's existing workspace."
-                : isSignup
-                  ? "Sign up with your work email. Your agent will be set up on first sign-in."
-                  : "Sign in with your email and password."}
+              {setupToken
+                ? "Create your admin account to claim this workspace. You'll be able to invite your team after."
+                : inviteCode
+                  ? "Sign up with your work email — you'll land in your teammate's existing workspace."
+                  : isSignup
+                    ? "Sign up with your work email. Your agent will be set up on first sign-in."
+                    : "Sign in with your email and password."}
             </p>
-            {inviteCode && (
+            {(inviteCode || setupToken) && (
               <div className="mb-4 px-3 py-2 rounded-md bg-oxblood/10 border border-oxblood/30 text-[12px] text-bone flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-oxblood" />
-                Joining via invite link — you'll share a workspace, agents, and approvals with the inviter.
+                {setupToken
+                  ? "Admin setup — you'll own this workspace and control who has access."
+                  : "Joining via invite link — you'll share a workspace, agents, and approvals with the inviter."}
               </div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3">

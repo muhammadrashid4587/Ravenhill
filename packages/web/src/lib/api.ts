@@ -285,6 +285,55 @@ export async function rotateOrgInviteCode(): Promise<{ invite_code: string }> {
   return res.json();
 }
 
+export async function renameOrg(name: string): Promise<OrgSummary> {
+  const res = await apiFetch("/api/orgs/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`rename failed: ${res.status}`);
+  return res.json();
+}
+
+export interface OrgMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  org_role: "admin" | "member";
+  seniority: string;
+  is_active: boolean;
+  created_at: string | null;
+}
+
+export async function fetchOrgMembers(): Promise<OrgMember[]> {
+  const res = await apiFetch("/api/orgs/members");
+  if (!res.ok) throw new Error(`members fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function claimTenant(payload: {
+  setup_token: string;
+  email: string;
+  password: string;
+  name: string;
+}): Promise<{
+  agent: Record<string, unknown>;
+  workspace_name: string;
+  session_token: string;
+}> {
+  const res = await apiFetch("/api/auth/claim-tenant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `claim failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ---- Behavior tracking + Weekly Report ----
 //
 // Privacy-aware (per CLAUDE.md): no message content, no email

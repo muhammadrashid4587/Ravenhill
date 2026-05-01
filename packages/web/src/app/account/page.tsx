@@ -11,11 +11,17 @@ import {
   Loader2,
   User,
   Briefcase,
+  Pencil,
+  Users,
+  Shield,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
   fetchMyOrg,
+  fetchOrgMembers,
+  renameOrg,
   rotateOrgInviteCode,
+  type OrgMember,
   type OrgSummary,
 } from "@/lib/api";
 
@@ -88,17 +94,38 @@ export default function AccountPage() {
   const [businessType, setBusinessType] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [members, setMembers] = useState<OrgMember[]>([]);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     if (!me) return;
     fetchMyOrg()
       .then(setOrg)
       .catch((e) => setOrgError((e as Error).message || "Couldn't load workspace"));
+    fetchOrgMembers()
+      .then(setMembers)
+      .catch(() => setMembers([]));
   }, [me]);
 
   useEffect(() => {
     setBusinessType(readBusinessType());
   }, []);
+
+  const handleRename = async () => {
+    if (!draftName.trim() || savingName) return;
+    setSavingName(true);
+    try {
+      const updated = await renameOrg(draftName.trim());
+      setOrg(updated);
+      setEditingName(false);
+    } catch {
+      /* swallow — shows stale name */
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const inviteUrl = useMemo(() => {
     if (!org?.invite_code) return null;
@@ -247,7 +274,46 @@ export default function AccountPage() {
                     <div className="text-[10px] uppercase tracking-wider text-dusk mb-1">
                       Workspace name
                     </div>
-                    <div className="text-[14px] text-bone">{org.name}</div>
+                    {editingName ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleRename();
+                            if (e.key === "Escape") setEditingName(false);
+                          }}
+                          autoFocus
+                          className="flex-1 bg-graphite border border-[color:var(--border)] rounded-md px-2 py-1 text-[13px] text-parchment focus:outline-none focus:border-oxblood transition"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRename}
+                          disabled={savingName}
+                          className="text-[11px] text-oxblood hover:text-claret transition disabled:opacity-50"
+                        >
+                          {savingName ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[14px] text-bone">{org.name}</span>
+                        {org.org_role === "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDraftName(org.name);
+                              setEditingName(true);
+                            }}
+                            className="text-dusk hover:text-parchment transition"
+                            title="Rename workspace"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-dusk mb-1">
@@ -324,6 +390,57 @@ export default function AccountPage() {
               </div>
             )}
           </section>
+
+          {/* Members — visible to all, actions admin-only */}
+          {members.length > 0 && (
+            <section className="bg-ink border border-[color:var(--border)] rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="w-3.5 h-3.5 text-dusk" />
+                <h2 className="text-[11px] uppercase tracking-widest text-dusk font-semibold">
+                  Team members
+                </h2>
+                <span className="text-[10px] text-dusk ml-auto">
+                  {members.length} member{members.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <ul className="space-y-1">
+                {members.map((m) => (
+                  <li
+                    key={m.id}
+                    className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-fog transition"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-graphite border border-[color:var(--border)] flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0">
+                      {m.name
+                        .split(" ")
+                        .map((w) => w[0])
+                        .join("")
+                        .toUpperCase()
+                        .slice(0, 2)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[13px] text-bone truncate">
+                          {m.name}
+                        </span>
+                        {m.org_role === "admin" && (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] text-oxblood border border-oxblood/30 rounded px-1 py-px">
+                            <Shield className="w-2 h-2" />
+                            Admin
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-dusk truncate">
+                        {m.role} · {m.email || "no email"}
+                      </div>
+                    </div>
+                    <span className="text-[9px] text-dusk uppercase tracking-wider shrink-0">
+                      {m.seniority}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* Business type */}
           <section className="bg-ink border border-[color:var(--border)] rounded-xl p-5">

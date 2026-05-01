@@ -1,11 +1,15 @@
 """Auth HTTP routes."""
 
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel
+from sqlalchemy import select
 
 from config import settings
-from db import AgentRow
+import db
+from db import AgentRow, AuthSessionRow, OrganizationRow
 
 from .deps import extract_session_token, get_current_agent_optional, require_admin_token
 from .email import send_signin_email
@@ -182,7 +186,19 @@ async def sign_in_request(payload: SignInRequestPayload) -> SignInRequestRespons
 @router.post("/signup")
 async def signup(payload: SignupPayload, response: Response) -> dict:
     """Create an account with email + password. Returns the current user
-    and sets the session cookie. 409 if email is already registered."""
+    and sets the session cookie. 409 if email is already registered.
+
+    When `ALLOW_SELF_SERVE_SIGNUP` is False (production enterprise mode),
+    returns 403 with `self_serve_disabled` so the frontend shows
+    "Request Access" instead. Invite-link signup and admin-provisioned
+    tenant claim are NOT affected by this gate — only standalone
+    "create your own workspace" signup.
+    """
+    if not settings.allow_self_serve_signup:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="self_serve_disabled",
+        )
     try:
         agent, session = await signup_with_password(
             payload.email, payload.password, payload.name
@@ -265,6 +281,95 @@ async def share_link_signup(
         "agent": _agent_to_current_user(agent).model_dump(),
         "expires_at": session.expires_at.isoformat(),
         "session_token": session.session_token,
+    }
+
+
+# ---------- Public: claim a provisioned tenant (become admin) ----------
+
+
+class ClaimTenantPayload(BaseModel):
+    setup_token: str
+    email: str
+    password: str
+    name: str = ""
+
+
+@router.post("/claim-tenant")
+async def claim_tenant(payload: ClaimTenantPayload, response: Response) -> dict:
+    """Exchange a setup_token for an admin account on the provisioned
+    workspace. Creates the AgentRow, sets org_role=admin, issues a
+    session. The setup_token is consumed (NULLed) so it can't be reused.
+
+    This is the production onboarding path for real customer admins.
+    """
+    from agents.seniority import derive_from_role
+    from auth.service import hash_password, _normalize_email, _generate_token
+
+    email_norm = _normalize_email(payload.email)
+    now = datetime.now(timezone.utc)
+
+    async with db.async_session() as session:
+        # Find the org by setup_token
+        result = await session.execute(
+            select(OrganizationRow).where(
+                OrganizationRow.setup_token == payload.setup_token
+            )
+        )
+        org = result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(status_code=404, detail="setup_token_invalid")
+        if org.setup_token_expires_at and org.setup_token_expires_at < now:
+            raise HTTPException(status_code=410, detail="setup_token_expired")
+
+        # Check email isn't already taken
+        existing = await session.execute(
+            select(AgentRow).where(AgentRow.email == email_norm)
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="email_taken"
+            )
+
+        # Create admin agent
+        display = (payload.name or "").strip() or email_norm.split("@")[0]
+        agent = AgentRow(
+            email=email_norm,
+            name=display,
+            role="Admin",
+            departments=["Executive"],
+            is_active=True,
+            password_hash=hash_password(payload.password),
+            org_id=org.id,
+            org_role="admin",
+            seniority=derive_from_role("Admin"),
+        )
+        session.add(agent)
+        await session.flush()
+
+        # Consume the setup token so it can't be reused
+        org.setup_token = None
+        org.setup_token_expires_at = None
+        org.updated_at = now
+
+        # Issue a session
+        session_row = AuthSessionRow(
+            session_token=_generate_token(),
+            agent_id=agent.id,
+            org_id=org.id,
+            email=email_norm,
+            expires_at=now + timedelta(days=settings.session_ttl_days),
+        )
+        session.add(session_row)
+        await session.commit()
+        await session.refresh(agent)
+        await session.refresh(session_row)
+
+    _set_session_cookie(response, session_row.session_token)
+    return {
+        "agent": _agent_to_current_user(agent).model_dump(),
+        "workspace_name": org.name,
+        "expires_at": session_row.expires_at.isoformat(),
+        "session_token": session_row.session_token,
     }
 
 

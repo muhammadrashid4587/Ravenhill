@@ -105,12 +105,18 @@ class OrganizationRow(Base):
     invite_code = Column(String(64), nullable=True)
     invite_code_expires_at = Column(DateTime(timezone=True), nullable=True)
     invite_approval_required = Column(Boolean, default=False, nullable=False)
+    # Admin-provisioned setup token: a one-time code the customer admin
+    # uses to claim this workspace as their own (POST /api/auth/claim-tenant).
+    # NULL means the tenant was either self-serve created or already claimed.
+    setup_token = Column(String(128), nullable=True, unique=True)
+    setup_token_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("ix_organizations_slug", "slug"),
         Index("ix_organizations_invite_code", "invite_code"),
+        Index("ix_organizations_setup_token", "setup_token"),
     )
 
 
@@ -732,6 +738,11 @@ async def alter_table_if_needed():
             #     where the table already exists from a prior create_all. ---
             "CREATE INDEX IF NOT EXISTS ix_google_oauth_tokens_agent ON google_oauth_tokens (agent_id)",
             "CREATE INDEX IF NOT EXISTS ix_google_oauth_tokens_org ON google_oauth_tokens (org_id)",
+
+            # --- Tenant provisioning: setup_token for admin-claimed onboarding ---
+            "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS setup_token VARCHAR(128)",
+            "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS setup_token_expires_at TIMESTAMPTZ",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_organizations_setup_token ON organizations (setup_token) WHERE setup_token IS NOT NULL",
 
             # --- Purge demo agents.
             #     Riley/Jordan/Sam/Alex were placeholders for the design-
