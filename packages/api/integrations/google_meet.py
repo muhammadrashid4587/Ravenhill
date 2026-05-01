@@ -105,6 +105,17 @@ async def get_auth_url() -> str:
         scopes=SCOPES,
     )
     flow.redirect_uri = settings.google_redirect_uri
+    # Disable PKCE for this flow. Without this, newer
+    # google-auth-oauthlib versions auto-generate a code_verifier and
+    # add a code_challenge to the auth URL — but the Flow instance
+    # holding the verifier is destroyed when this function returns,
+    # so the callback's fresh Flow can't replay it. Google then
+    # rejects the token exchange with "(invalid_grant) Missing code
+    # verifier". We're a confidential web client (have client_secret)
+    # so PKCE is optional; disabling here keeps OAuth working without
+    # plumbing the verifier through `state` or storing it server-side.
+    flow.autogenerate_code_verifier = False
+    flow.code_verifier = None
 
     auth_url, _ = flow.authorization_url(
         access_type="offline",

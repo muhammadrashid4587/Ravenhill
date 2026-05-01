@@ -50,8 +50,13 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const { agent, loading: authLoading, refresh } = useAuth();
 
+  // Invite code arrives via /login?invite=… link the workspace admin
+  // shares from the /account page. When present, the form switches to
+  // signup mode and posts to /api/auth/share-link-signup so the new
+  // user joins the existing workspace instead of minting their own.
+  const inviteCode = (searchParams.get("invite") || "").trim();
   const initialMode: Mode =
-    searchParams.get("mode") === "signup" ? "signup" : "signin";
+    inviteCode || searchParams.get("mode") === "signup" ? "signup" : "signin";
   const [mode, setMode] = useState<Mode>(initialMode);
 
   const [email, setEmail] = useState("");
@@ -94,13 +99,27 @@ function LoginPageInner() {
     setSubmitting(true);
     setError(null);
     try {
-      const endpoint = mode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+      // Three signup paths:
+      //   - signin → /api/auth/login (no invite, just authenticating)
+      //   - signup, no invite → /api/auth/signup (mints a fresh workspace)
+      //   - signup, with invite → /api/auth/share-link-signup (joins
+      //     the inviter's workspace; this is the path teammates use
+      //     when an admin shares the /account invite link)
+      const useShareLink = mode === "signup" && !!inviteCode;
+      const endpoint = useShareLink
+        ? "/api/auth/share-link-signup"
+        : mode === "signup"
+          ? "/api/auth/signup"
+          : "/api/auth/login";
       const body: Record<string, string> = {
         email: email.trim(),
         password,
       };
       if (mode === "signup" && name.trim()) {
         body.name = name.trim();
+      }
+      if (useShareLink) {
+        body.invite_code = inviteCode;
       }
       const res = await fetch(`${resolveApiBase()}${endpoint}`, {
         method: "POST",
@@ -120,6 +139,10 @@ function LoginPageInner() {
         } else if (code === "account_deactivated") {
           setError(
             "This account has been deactivated. Reach out to your admin.",
+          );
+        } else if (code === "invite_invalid") {
+          setError(
+            "This invite link is invalid or has expired. Ask the admin who shared it for a fresh link.",
           );
         } else if (res.status === 422) {
           setError("Password must be at least 8 characters.");
@@ -229,13 +252,25 @@ function LoginPageInner() {
 
           <div className="animate-fade-up" style={{ animationDelay: "80ms" }}>
             <h1 className="text-2xl font-display font-normal tracking-tight text-bone mb-2">
-              {isSignup ? "Create your account" : "Welcome back"}
+              {inviteCode
+                ? "Join your team"
+                : isSignup
+                  ? "Create your account"
+                  : "Welcome back"}
             </h1>
             <p className="text-sm text-smoke mb-8">
-              {isSignup
-                ? "Sign up with your work email. Your agent will be set up on first sign-in."
-                : "Sign in with your email and password."}
+              {inviteCode
+                ? "Sign up with your work email — you'll land in your teammate's existing workspace."
+                : isSignup
+                  ? "Sign up with your work email. Your agent will be set up on first sign-in."
+                  : "Sign in with your email and password."}
             </p>
+            {inviteCode && (
+              <div className="mb-4 px-3 py-2 rounded-md bg-oxblood/10 border border-oxblood/30 text-[12px] text-bone flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-oxblood" />
+                Joining via invite link — you'll share a workspace, agents, and approvals with the inviter.
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-3">
               {isSignup && (
                 <div>
