@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Network, Search, Users, Hash, MessageSquare } from "lucide-react";
 import { fetchExpertiseGraph } from "@/lib/api";
 import type { ExpertiseGraph, ExpertiseNode, ExpertiseEdge } from "@/lib/types";
+import { useTheme } from "@/lib/ThemeContext";
 
 type Filter = "all" | "person" | "topic";
 
@@ -22,7 +23,13 @@ const PERSON_COLOR = "#FACC15";
 const TOPIC_COLOR = "#F87171";
 const EDGE_EXPERT = "rgba(248,113,113,0.35)";
 const EDGE_COLLAB = "rgba(250,204,21,0.25)";
-const EDGE_MENTION = "rgba(255,255,255,0.10)";
+
+// Mention edges use the page "ink" color so they stay visible on both themes
+// (was rgba(255,255,255,*) which disappears on light bg). Caller passes the
+// already-resolved "r,g,b" tuple so we have one source of truth per render.
+function edgeMentionColor(inkRgb: string): string {
+  return `rgba(${inkRgb},0.10)`;
+}
 
 const EDGE_LABEL: Record<ExpertiseEdge["kind"], string> = {
   EXPERT_IN: "expert in",
@@ -30,13 +37,17 @@ const EDGE_LABEL: Record<ExpertiseEdge["kind"], string> = {
   MENTIONED: "mentions",
 };
 
-function edgeColor(kind: ExpertiseEdge["kind"]) {
+function edgeColor(kind: ExpertiseEdge["kind"], inkRgb: string) {
   if (kind === "EXPERT_IN") return EDGE_EXPERT;
   if (kind === "COLLABORATED_WITH") return EDGE_COLLAB;
-  return EDGE_MENTION;
+  return edgeMentionColor(inkRgb);
 }
 
 export default function ExpertisePage() {
+  const { theme } = useTheme();
+  // Theme-aware "ink" — the same flip used in OrgWeb.tsx so overlay colors
+  // (edges, label backgrounds) stay visible on light and dark backgrounds.
+  const inkRgb = theme === "light" ? "20,20,24" : "255,255,255";
   const [graph, setGraph] = useState<ExpertiseGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
@@ -269,7 +280,7 @@ export default function ExpertisePage() {
                       y1={a.y}
                       x2={b.x}
                       y2={b.y}
-                      stroke={active ? "#C9443A" : edgeColor(e.kind)}
+                      stroke={active ? "#C9443A" : edgeColor(e.kind, inkRgb)}
                       strokeWidth={
                         active ? 1.6 : Math.max(0.5, e.weight * 1.5)
                       }
@@ -315,7 +326,10 @@ export default function ExpertisePage() {
                           width={halfW * 2}
                           height={12}
                           rx={2}
-                          fill="#0A0A0A"
+                          // Background uses the page bg, not ink — flips to
+                          // a near-white plate on light mode so labels stay
+                          // legible instead of stamping a black blob.
+                          fill={theme === "light" ? "#F5F0E6" : "#0A0A0A"}
                           fillOpacity={0.8}
                         />
                         <text

@@ -28,8 +28,16 @@ import {
   fetchWorkspaceDriveFolders,
   type GoogleStatus,
 } from "@/lib/api";
-import type { DriveFolder } from "@/lib/mocks";
 import type { WorkspaceFile } from "@/lib/types";
+
+// Folder shape matches what `/api/workspace/drive/folders` returns.
+// (Inlined here so this page does not depend on `lib/mocks`.)
+interface DriveFolder {
+  id: string;
+  name: string;
+  file_ids: string[];
+  shared_with?: string[];
+}
 
 const FOLDER_ICONS: Record<string, typeof Folder> = {
   root: FolderOpen,
@@ -76,9 +84,13 @@ export default function DrivePage() {
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
 
   useEffect(() => {
-    // Real Google Drive — backend falls back to seed data automatically when
-    // the agent hasn't connected Google yet.
-    const id = myAgent?.id || "demo";
+    // Real Google Drive. Backend returns [] when the agent has not connected
+    // Google — see `9ef21d6` which removed sample-data fallbacks.
+    const id = myAgent?.id;
+    if (!id) {
+      setLoading(false);
+      return;
+    }
     Promise.all([
       fetchWorkspaceDriveFiles(id).catch(() => []),
       fetchWorkspaceDriveFolders(id).catch(() => []),
@@ -138,11 +150,11 @@ export default function DrivePage() {
           <div className="mt-3 flex items-center gap-2 text-[11px] text-dusk bg-ink border border-white/[0.06] rounded-md px-3 py-2">
             <AlertCircle className="w-3.5 h-3.5 text-[#FACC15]" />
             <span>
-              Showing demo data. Connect Google Drive in{" "}
+              Google Drive isn&apos;t connected yet.{" "}
               <Link href="/settings" className="text-claret hover:text-[#D6596C]">
-                Settings
+                Connect in Settings
               </Link>{" "}
-              to sync your real files.
+              to sync your files.
             </span>
           </div>
         )}
@@ -157,6 +169,29 @@ export default function DrivePage() {
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        </div>
+      ) : folders.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center px-6">
+          <div className="w-14 h-14 rounded-2xl bg-ink border border-white/[0.06] flex items-center justify-center mb-4">
+            <HardDriveUpload className="w-7 h-7 text-dusk" />
+          </div>
+          <h2 className="text-base font-medium text-bone mb-1">
+            {google?.connected ? "No files yet" : "Connect Google Drive"}
+          </h2>
+          <p className="text-sm text-smoke max-w-sm mb-6">
+            {google?.connected
+              ? "Your agent has read-only access but didn't find any files in your Drive yet."
+              : "Connect Google in Settings and your agent will surface files it can read here — no copies, no uploads."}
+          </p>
+          {!google?.connected && (
+            <Link
+              href="/settings"
+              className="flex items-center gap-2 bg-oxblood hover:bg-claret text-bone px-5 py-2.5 rounded-lg text-sm font-medium transition"
+            >
+              Open Settings
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-12 gap-0 min-h-[calc(100vh-65px)]">

@@ -282,11 +282,11 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 | 2 | Feedback / suggestions | **shipped wave 1** | Floating Feedback button bottom-right of every authed page → modal with category + body. POSTs to `/api/feedback` → persists to `feedback_submissions` table. No external delivery. Files: `components/FeedbackButton.tsx`, `packages/api/feedback/router.py`, `db.py::FeedbackSubmissionRow` |
 | 3 | Account section | **shipped wave 1 (business type localStorage-only)** | New `/account` route with profile, workspace (incl. invite-code rotate), business-type picker. Business type is localStorage-only until Muhammad OKs an `org.business_type` column. Sidebar secondary nav now includes "Account" above "Settings" |
 | 3b | Business onboarding (type-of-business) | **placeholder mock at `/onboarding`** | Currently uses `fetchOnboardingState`/`setOnboardingState` from `lib/mocks.ts` |
-| 4 | HR system | **partial mock** | `/settings/hris` exists with CSV import + agent creation. `fetchHRISProviders` is mock. Real `createAgent()` calls work |
-| 5 | Meetings | **mostly shipped** | Liki rebuilt `/meetings/page.tsx` around live `/api/workspace/calendar/events` polling. Reminders shipped (localStorage-only). "Imported Transcripts" section needs removal verification. Zoom tab already added |
+| 4 | HR system | **shipped wave 1.f (real surface, no automation)** | New `/hr` route with 4 connect-data cards (Onboarding → links to `/settings/hris` CSV path; Policy questions → `/drive`; HR docs finder → Drive search; People-ops tasks → `/dashboard` manual tasks). No sensitive automation, no new schema, no new OAuth scopes. `/settings/hris` provider list still mock — known, surfaced as a follow-up |
+| 5 | Meetings | **shipped** | Liki's rebuild + Wave 1.f sweep: "Imported Transcripts" verified removed. Empty state now branches on Google-connected vs Google-not-connected with explicit CTA. Reminders shipped (localStorage-only). Zoom tab in `/meetings/new` |
 | 6 | Knowledge graph + weekly report | **graph real, weekly report does not exist** | `/knowledge` ego graph uses real `fetchExpertiseGraph`; shadow-profile section still mock. Weekly report has zero scaffolding |
 | 7 | Dashboard Tasks block | **partial — meeting-derived only** | Backend `/api/meetings/tasks/mine` exists. Dashboard pulls it. No "Created Tasks" (manual) split. No `/tasks` standalone route |
-| 8 | Inbox / Drive / Meetings real-time | **mostly real** | `/inbox` calls real `fetchGmailThreads` (Gmail). `/drive` calls real `fetchDriveFolders`. Both empty-state correctly when not connected. Workspace adapters return `[]` not seed data after the demo-purge commit |
+| 8 | Inbox / Drive / Meetings real-time | **shipped** | All three swept (wave 1.f). `/inbox` empty-state branches: search-active / not-connected / inbox-zero, each with the right CTA. `/drive` removed the type import from `lib/mocks`, inlined `DriveFolder` interface, full-page connect-CTA when not connected. `/meetings` connect-Google primary CTA + import-transcript secondary CTA when not connected. Stale "showing demo data" copy gone everywhere |
 | 9 | File upload fallback | **shipped wave 1.c** | New `POST /api/files/summarize` extracts via `pypdf` (PDFs), `python-docx` (DOCX), or UTF-8 decode (text formats), then runs the real LLM. Image OCR explicitly out of scope — returns "needs OCR" state. Chat page wired through this; `smartMockSummary` no longer in the runFileSummary flow (still in file as dead code, scheduled for cleanup). Files: `packages/api/files/router.py`, `packages/web/src/lib/api.ts::summarizeFile` |
 
 ### Already shipped (this week, on `dev` and prod)
@@ -300,6 +300,8 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 - **Wave 1 (commit `afc1be8`)**: brand red `#DC2626`/`#B91C1C`, root font 18px, light `--bg-base` `#E0E2E5`, settings + agents/[id] + OrgWeb theme-aware
 - **Wave 1.b**: Feedback button + `/api/feedback` + `feedback_submissions` table, `/account` route with profile + workspace + business-type picker (localStorage-only)
 - **Wave 1.c**: `/api/files/summarize` via `pypdf` + `python-docx` + UTF-8 decode → real LLM summary; chat upload wired through it (no more canned text for binary files)
+- **Waves 1.d + 1.e**: `BehaviorEventRow` + `/api/behavior/{events,weekly-report,privacy}` endpoints; `WeeklyReportModule` on /home (dot graph + summary). `ManualTaskRow` + `/api/tasks/manual` CRUD; `ManualTasksPanel` on /dashboard with inline add + quick-toggle + capture hooks
+- **Wave 1.f (parallel agents)**: HR product surface at `/hr`; Inbox/Drive/Meetings mock sweep — empty states branch on Google-connected; `/expertise` canvas edges theme-aware
 
 ### Where the related code lives
 

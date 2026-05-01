@@ -10,11 +10,14 @@ import {
   Sparkles,
   CheckCircle2,
   Circle,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
   fetchGmailThreads,
+  fetchGoogleStatus,
   ingestGmailTopics,
+  type GoogleStatus,
 } from "@/lib/api";
 import type { WorkspaceEmail } from "@/lib/types";
 
@@ -46,12 +49,19 @@ export default function InboxPage() {
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [ingesting, setIngesting] = useState(false);
   const [ingest, setIngest] = useState<IngestResult | null>(null);
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
 
   useEffect(() => {
     fetchGmailThreads(myAgent?.id)
       .then(setThreads)
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, [myAgent]);
+
+  useEffect(() => {
+    fetchGoogleStatus(myAgent?.id)
+      .then(setGoogle)
+      .catch(() => setGoogle(null));
   }, [myAgent]);
 
   const filtered = useMemo(() => {
@@ -158,7 +168,7 @@ export default function InboxPage() {
             <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" />
             <span className="text-xs text-bone">
               Scanned {ingest.threads_scanned} threads · {ingest.topics_detected.length} topics forwarded to the graph
-              {!ingest.connected && " (mock ingestion — connect Gmail for live data)"}
+              {!ingest.connected && " — connect Gmail in Settings to scan real threads"}
             </span>
             <div className="flex items-center gap-1 flex-wrap ml-auto">
               {ingest.topics_detected.slice(0, 6).map((t) => (
@@ -187,11 +197,26 @@ export default function InboxPage() {
             {filtered.length === 0 ? (
               <div className="bg-ink border border-white/[0.06] rounded-xl p-10 text-center">
                 <Mail className="w-7 h-7 text-dusk mx-auto mb-3" />
-                <p className="text-sm text-smoke">
-                  {search || filter === "unread"
-                    ? "No threads match"
-                    : "Inbox zero"}
-                </p>
+                {search || filter === "unread" ? (
+                  <p className="text-sm text-smoke">No threads match</p>
+                ) : threads.length === 0 && google && !google.connected ? (
+                  <>
+                    <p className="text-sm text-bone mb-1">Connect Gmail to see threads</p>
+                    <p className="text-xs text-smoke max-w-xs mx-auto mb-4">
+                      Your agent reads Gmail in read-only mode and surfaces
+                      threads it can act on here.
+                    </p>
+                    <Link
+                      href="/settings"
+                      className="inline-flex items-center gap-1.5 text-xs bg-oxblood hover:bg-claret text-bone rounded-md px-3 py-1.5 transition"
+                    >
+                      Open Settings
+                      <ChevronRight className="w-3 h-3" />
+                    </Link>
+                  </>
+                ) : (
+                  <p className="text-sm text-smoke">Inbox zero</p>
+                )}
               </div>
             ) : (
               <div className="space-y-1.5 stagger">

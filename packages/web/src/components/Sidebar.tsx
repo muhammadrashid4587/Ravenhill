@@ -18,6 +18,7 @@ import {
   Settings,
   Network,
   UserCircle2,
+  UsersRound,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
@@ -42,6 +43,7 @@ const SECONDARY_NAV = [
   { href: "/drive", label: "Drive", icon: HardDriveUpload },
   { href: "/knowledge", label: "Knowledge", icon: Brain },
   { href: "/expertise", label: "Expertise map", icon: Network },
+  { href: "/hr", label: "HR", icon: UsersRound },
   { href: "/account", label: "Account", icon: UserCircle2 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

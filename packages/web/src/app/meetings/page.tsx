@@ -19,7 +19,11 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
-import { fetchWorkspaceCalendar } from "@/lib/api";
+import {
+  fetchGoogleStatus,
+  fetchWorkspaceCalendar,
+  type GoogleStatus,
+} from "@/lib/api";
 import type { CalendarEvent, MeetingProvider } from "@/lib/types";
 import { useReminders } from "@/lib/RemindersContext";
 
@@ -112,8 +116,15 @@ export default function MeetingsPage() {
   const [copied, setCopied] = useState(false);
   const [openReminderFor, setOpenReminderFor] = useState<string | null>(null);
   const reminderMenuRef = useRef<HTMLDivElement>(null);
+  const [google, setGoogle] = useState<GoogleStatus | null>(null);
 
   const { scheduleReminder, cancelReminder, hasReminderFor } = useReminders();
+
+  useEffect(() => {
+    fetchGoogleStatus(myAgent?.id)
+      .then(setGoogle)
+      .catch(() => setGoogle(null));
+  }, [myAgent]);
 
   // Live calendar fetch — re-poll every 60s for "real-time" feel.
   useEffect(() => {
@@ -372,18 +383,49 @@ export default function MeetingsPage() {
             <div className="w-14 h-14 rounded-2xl bg-elevated border border-white/[0.1] flex items-center justify-center mb-4">
               <Calendar className="w-7 h-7 text-dusk" />
             </div>
-            <h2 className="text-base font-medium mb-1 font-display">No upcoming meetings</h2>
-            <p className="text-sm text-smoke max-w-sm mb-6">
-              When events are on your calendar, they show up here with the same
-              detail Google Meet shows — title, time, attendees, and the description.
-            </p>
-            <Link
-              href="/meetings/new"
-              className="flex items-center gap-2 bg-oxblood hover:bg-claret text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
-            >
-              <Plus className="w-4 h-4" />
-              Import a transcript instead
-            </Link>
+            {google && !google.connected ? (
+              <>
+                <h2 className="text-base font-medium mb-1 font-display">
+                  Connect Google Calendar
+                </h2>
+                <p className="text-sm text-smoke max-w-sm mb-6">
+                  Connect Google in Settings and your upcoming events will
+                  appear here — title, time, attendees, and description, the
+                  same detail Google Meet shows.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap justify-center">
+                  <Link
+                    href="/settings"
+                    className="flex items-center gap-2 bg-oxblood hover:bg-claret text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                  >
+                    Open Settings
+                  </Link>
+                  <Link
+                    href="/meetings/new"
+                    className="flex items-center gap-2 bg-elevated hover:bg-white/[0.08] border border-white/[0.1] text-parchment px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Import a transcript
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-base font-medium mb-1 font-display">No upcoming meetings</h2>
+                <p className="text-sm text-smoke max-w-sm mb-6">
+                  When events are on your calendar, they show up here with the
+                  same detail Google Meet shows — title, time, attendees, and
+                  the description.
+                </p>
+                <Link
+                  href="/meetings/new"
+                  className="flex items-center gap-2 bg-oxblood hover:bg-claret text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Import a transcript instead
+                </Link>
+              </>
+            )}
           </div>
         ) : (
           <div className="space-y-6">
