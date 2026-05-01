@@ -285,6 +285,41 @@ export async function rotateOrgInviteCode(): Promise<{ invite_code: string }> {
   return res.json();
 }
 
+// ---- File summarization (real, server-side) ----
+//
+// Replaces the chat page's smartMockSummary canned text. Sends the
+// raw upload to /api/files/summarize, which extracts text via pypdf /
+// python-docx / utf-8 decode and runs the LLM. Returns markdown.
+
+export interface FileSummaryResult {
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  extracted_chars: number;
+  summary: string;
+  extractor: string;
+  truncated: boolean;
+}
+
+export async function summarizeFile(file: File): Promise<FileSummaryResult> {
+  const form = new FormData();
+  form.append("file", file);
+  // Don't override Content-Type — the browser sets multipart boundary.
+  const sessionToken =
+    typeof document !== "undefined" ? readSessionToken() : "";
+  const res = await fetch(`${API_BASE}/api/files/summarize`, {
+    method: "POST",
+    body: form,
+    credentials: sessionToken ? "omit" : "include",
+    headers: sessionToken ? { "X-Session-Token": sessionToken } : {},
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || `summarize failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ---- Feedback / suggestions ----
 //
 // Persisted to `feedback_submissions` on the backend. Anonymous-friendly:

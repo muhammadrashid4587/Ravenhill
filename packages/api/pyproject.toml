@@ -20,6 +20,12 @@ dependencies = [
     "google-api-python-client>=2.100.0",
     "google-auth-oauthlib>=1.2.0",
     "google-auth>=2.25.0",
+    # File-upload summarization — extracts text from PDFs and Word docs
+    # so chat uploads aren't summarized by canned templates.
+    "pypdf>=4.0.0",
+    "python-docx>=1.1.0",
+    # Required by FastAPI's UploadFile / multipart-form-data parsing.
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

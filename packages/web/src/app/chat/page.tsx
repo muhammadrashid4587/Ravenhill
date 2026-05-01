@@ -26,7 +26,6 @@ import ChatMessage from "@/components/ChatMessage";
 import ApprovalPopup from "@/components/ApprovalPopup";
 import { useAuth } from "@/lib/AuthContext";
 import {
-  orchestrate,
   orchestrateStream,
   submitApproval,
   completeDocRequest,
@@ -37,6 +36,7 @@ import {
   fetchAgentInbox,
   fetchAgentThread,
   parseFileMarker,
+  summarizeFile,
   type AgentLedgerMessage,
 } from "@/lib/api";
 import {
@@ -682,29 +682,44 @@ function ChatInner() {
         });
 
         let summaryText: string;
-        if (isTextual(att)) {
-          try {
-            const content = await readAttachmentAsText(att);
-            pushActivity(
-              "Asking the model to summarize",
-              `${content.length.toLocaleString()} chars`,
-              "step",
-              {
-                elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
-              },
-            );
-            const res = await orchestrate(myAgent.id, SUMMARY_PROMPT(att, content));
-            const answer =
-              typeof res?.answer === "string" && res.answer.trim().length > 0
-                ? res.answer
-                : null;
-            summaryText = answer ?? smartMockSummary(att);
-          } catch {
-            // Reading or model call failed — fall back to the honest mock.
-            summaryText = smartMockSummary(att);
-          }
-        } else {
-          summaryText = smartMockSummary(att);
+        try {
+          // Fetch the blob the chat page stashed via URL.createObjectURL,
+          // wrap as File, and let /api/files/summarize handle extraction
+          // (pypdf for PDF, python-docx for DOCX, utf-8 for text). The
+          // backend never returns canned text — if extraction fails or
+          // the LLM is unreachable, we surface that as a system message.
+          if (!att.url) throw new Error("attachment has no readable blob");
+          const blobRes = await fetch(att.url);
+          const blob = await blobRes.blob();
+          const file = new File([blob], att.name, {
+            type: att.mime_type || blob.type,
+          });
+          pushActivity(
+            "Extracting + summarizing on the server",
+            `${sizeKB} KB`,
+            "step",
+            {
+              elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+            },
+          );
+          const result = await summarizeFile(file);
+          summaryText = result.summary;
+          pushActivity(
+            "Done",
+            `Extracted ${result.extracted_chars.toLocaleString()} chars via ${result.extractor}` +
+              (result.truncated ? " (truncated)" : ""),
+            "step",
+            {
+              elapsed: `+${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+            },
+          );
+        } catch (err) {
+          const message = (err as Error)?.message || "unknown error";
+          summaryText =
+            `**${att.name}** — couldn't summarize this file (${message}). ` +
+            "Try uploading a `.pdf`, `.docx`, `.md`, `.txt`, `.csv`, " +
+            "`.json`, or code file. If this is a scanned PDF, OCR isn't " +
+            "wired up yet.";
         }
 
         removeMsg(thinkingId);

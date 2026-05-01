@@ -287,7 +287,7 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 | 6 | Knowledge graph + weekly report | **graph real, weekly report does not exist** | `/knowledge` ego graph uses real `fetchExpertiseGraph`; shadow-profile section still mock. Weekly report has zero scaffolding |
 | 7 | Dashboard Tasks block | **partial — meeting-derived only** | Backend `/api/meetings/tasks/mine` exists. Dashboard pulls it. No "Created Tasks" (manual) split. No `/tasks` standalone route |
 | 8 | Inbox / Drive / Meetings real-time | **mostly real** | `/inbox` calls real `fetchGmailThreads` (Gmail). `/drive` calls real `fetchDriveFolders`. Both empty-state correctly when not connected. Workspace adapters return `[]` not seed data after the demo-purge commit |
-| 9 | File upload fallback | **bug** | `chat/page.tsx::smartMockSummary` (lines 228–265) returns canned text for PDF/DOCX/images. Textual files (md, txt, csv, json, code) work via real LLM. **No backend endpoint for file extraction yet** |
+| 9 | File upload fallback | **shipped wave 1.c** | New `POST /api/files/summarize` extracts via `pypdf` (PDFs), `python-docx` (DOCX), or UTF-8 decode (text formats), then runs the real LLM. Image OCR explicitly out of scope — returns "needs OCR" state. Chat page wired through this; `smartMockSummary` no longer in the runFileSummary flow (still in file as dead code, scheduled for cleanup). Files: `packages/api/files/router.py`, `packages/web/src/lib/api.ts::summarizeFile` |
 
 ### Already shipped (this week, on `dev` and prod)
 
@@ -299,6 +299,7 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 - Chat empty-state fix: agent now answers conversationally instead of stonewalling
 - **Wave 1 (commit `afc1be8`)**: brand red `#DC2626`/`#B91C1C`, root font 18px, light `--bg-base` `#E0E2E5`, settings + agents/[id] + OrgWeb theme-aware
 - **Wave 1.b**: Feedback button + `/api/feedback` + `feedback_submissions` table, `/account` route with profile + workspace + business-type picker (localStorage-only)
+- **Wave 1.c**: `/api/files/summarize` via `pypdf` + `python-docx` + UTF-8 decode → real LLM summary; chat upload wired through it (no more canned text for binary files)
 
 ### Where the related code lives
 
