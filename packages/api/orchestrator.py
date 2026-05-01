@@ -463,27 +463,68 @@ async def _conversational_fallback(
                 + "\n".join(conversation_history[-6:])
             )
 
-        system = (
-            f"You are an AI agent for {agent.name}, {agent.role}. "
-            f"You searched across the organization and found NO relevant data "
-            f"for this message.\n\n"
-            f"STRICT RULES — follow these exactly:\n"
-            f"- If the message is a greeting (hi, hello, hey), greet back warmly "
-            f"and ask how you can help. 1 sentence.\n"
-            f"- If the message is a thank you or acknowledgment, say you're welcome. "
-            f"1 sentence.\n"
-            f"- For ANY other message: say you don't have information on that topic "
-            f"and list what you CAN help with: project status, sprint updates, "
-            f"blockers, team metrics, vendor relationships, or document sharing.\n"
-            f"- NEVER invent facts, people, numbers, percentages, project names, "
-            f"or status updates. If you don't have the data, say so.\n"
-            f"- Keep response to 1-2 sentences maximum.{history_block}"
-        )
+        # Knowledge sources we can actually ground in.
+        kb_lines: list[str] = []
+        for entry in (agent.knowledge_entries or []):
+            topic = entry.get("topic", "?") if isinstance(entry, dict) else getattr(entry, "topic", "?")
+            content = entry.get("content", "") if isinstance(entry, dict) else getattr(entry, "content", "")
+            if content:
+                kb_lines.append(f"- [{topic}] {content}")
+        if agent.knowledge_base:
+            kb_lines.append(f"- {agent.knowledge_base}")
+        if agent.role_description:
+            kb_lines.append(f"- About me: {agent.role_description}")
+        kb_text = "\n".join(kb_lines).strip()
+
+        # Two distinct empty-state postures:
+        # 1. The agent has SOME grounded knowledge (entries / role) — answer
+        #    from it, conversationally, like an assistant who knows you.
+        # 2. The agent is brand-new, no knowledge yet — be useful and warm
+        #    rather than stonewalling. Brainstorm, reason, suggest connecting
+        #    Google so the agent can learn from real data. The previous
+        #    prompt forced "I don't have information" on every non-greeting
+        #    message, which made the chat feel dead even when the LLM was up.
+        if kb_text:
+            system = (
+                f"You are {agent.name}'s personal AI agent. Speak in their voice.\n\n"
+                f"What I know about {agent.name}:\n{kb_text}\n\n"
+                f"Answer the user's question using the knowledge above when "
+                f"relevant. For greetings or chit-chat, be warm and brief. "
+                f"For questions you can't answer from the knowledge above, "
+                f"say so honestly and offer to help in a different way "
+                f"(e.g., 'I haven't seen that in your Drive yet — want to "
+                f"connect Google so I can?'). NEVER invent facts about "
+                f"{agent.name}, their team, or their company. Keep answers "
+                f"under 80 words."
+                f"{history_block}"
+            )
+        else:
+            # Brand-new user with empty knowledge. Be a useful generalist
+            # assistant + nudge them to connect data so the agent gets
+            # smarter over time. Critically: do NOT pretend to know facts
+            # about their team or work. World knowledge + reasoning is
+            # fine; specific claims about their org are not.
+            system = (
+                f"You are {agent.name}'s personal AI agent. They just signed "
+                f"up — you don't yet have any data about their work, team, "
+                f"calendar, or files.\n\n"
+                f"Be a useful, thoughtful assistant: answer general questions, "
+                f"brainstorm, reason through problems, draft text, summarize "
+                f"things they paste. The one rule: NEVER invent facts about "
+                f"{agent.name}'s specific team, projects, meetings, or "
+                f"colleagues — you don't know any of that yet. If they ask "
+                f"about their work specifically, gently mention they can "
+                f"connect Google in /settings so you can read their "
+                f"calendar/drive/gmail and become useful for that.\n\n"
+                f"For greetings, greet warmly in 1 sentence. Otherwise keep "
+                f"answers conversational, under 100 words."
+                f"{history_block}"
+            )
         result = await call_llm(
             system=system,
             user_message=message,
-            model_tier="fast",
-            max_tokens=200,
+            model_tier="reasoning",
+            max_tokens=400,
         )
         if result:
             return result
