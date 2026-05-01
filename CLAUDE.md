@@ -259,3 +259,110 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 - Frontend API client is in `packages/web/src/lib/api.ts` — add new endpoints there.
 - Test orchestration changes with `pytest tests/test_orchestrator.py -v`.
 - The demo has a "Reset Demo" button/endpoint that clears all in-memory state.
+
+---
+
+## Current Ravenhill Product Changes
+
+**Active spec:** make Ravenhill feel like a real Google-Workspace-connected agent platform, not a mock dashboard. Beta with Rob is **Monday**. Every page that shows data must show *real data, an empty/connect state, or an error state* — never canned mock content.
+
+**Hard rules for this spec:**
+- Do NOT reintroduce demo agents (Riley/Jordan/Sam/Alex). They were purged in commit `9ef21d6`.
+- Do NOT reintroduce sample-data fallbacks in workspace adapters. Empty-array on no-connection is the rule.
+- Do NOT add external tools (analytics, Slack notifications, email delivery), DB schemas, OAuth scope changes, or background jobs without an explicit OK from Muhammad in chat.
+- Do NOT capture message content, email content, file names, or any sensitive user behavior in analytics without an explicit OK.
+- Mobile-Safari auth fix (`lib/session.ts` localStorage backup) MUST stay — don't delete it.
+- Per-statement transactions in `db.py::alter_table_if_needed` MUST stay — single-transaction was a prod-outage cause.
+
+### Status by item
+
+| # | Item | State | Notes |
+|---|------|-------|-------|
+| 1 | Theme/UI polish | **partly shipped, work pending** | Liki's CSS-var theme is in. **`/settings/page.tsx` is hardcoded `bg-gray-900` / `text-gray-100`** — it doesn't flip in light mode. Settings subpages mixed (HRIS uses theme tokens, others don't). `OrgWeb.tsx` (org page 2D canvas) and `/expertise/page.tsx` use hardcoded hex (no theme). Brand color is currently red-orange (`#FF5A2C` dark, `#E64A19` light) — user wants more red, less orange |
+| 2 | Feedback / suggestions | **does not exist** | No module anywhere. Build UI-only first; Muhammad to decide on persistence |
+| 3 | Account section | **does not exist** | No `/account` route. Settings exists at `/settings`. Need to know if Account is separate or alias |
+| 3b | Business onboarding (type-of-business) | **placeholder mock at `/onboarding`** | Currently uses `fetchOnboardingState`/`setOnboardingState` from `lib/mocks.ts` |
+| 4 | HR system | **partial mock** | `/settings/hris` exists with CSV import + agent creation. `fetchHRISProviders` is mock. Real `createAgent()` calls work |
+| 5 | Meetings | **mostly shipped** | Liki rebuilt `/meetings/page.tsx` around live `/api/workspace/calendar/events` polling. Reminders shipped (localStorage-only). "Imported Transcripts" section needs removal verification. Zoom tab already added |
+| 6 | Knowledge graph + weekly report | **graph real, weekly report does not exist** | `/knowledge` ego graph uses real `fetchExpertiseGraph`; shadow-profile section still mock. Weekly report has zero scaffolding |
+| 7 | Dashboard Tasks block | **partial — meeting-derived only** | Backend `/api/meetings/tasks/mine` exists. Dashboard pulls it. No "Created Tasks" (manual) split. No `/tasks` standalone route |
+| 8 | Inbox / Drive / Meetings real-time | **mostly real** | `/inbox` calls real `fetchGmailThreads` (Gmail). `/drive` calls real `fetchDriveFolders`. Both empty-state correctly when not connected. Workspace adapters return `[]` not seed data after the demo-purge commit |
+| 9 | File upload fallback | **bug** | `chat/page.tsx::smartMockSummary` (lines 228–265) returns canned text for PDF/DOCX/images. Textual files (md, txt, csv, json, code) work via real LLM. **No backend endpoint for file extraction yet** |
+
+### Already shipped (this week, on `dev` and prod)
+
+- Multi-tenant `with_org()` chokepoint, real agent-to-agent messaging, auto-reply gated on capabilities (shadow), seniority-aware routing
+- Demo-agent purge from prod DB + sample-data fallbacks removed
+- `ravenhillai.com` host allowlist in code (DNS/Vercel domain panel still TODO at registrar)
+- Theme-aware verification badges (no more amber-on-cream clash)
+- Manifesto → Guidelines rename (label only; route stays `/manifesto`)
+- Chat empty-state fix: agent now answers conversationally instead of stonewalling
+
+### Where the related code lives
+
+| Area | Frontend | Backend |
+|------|----------|---------|
+| Theme tokens | `packages/web/src/app/globals.css` (`:root`, `[data-theme="dark"]`, `[data-theme="light"]`); `packages/web/src/lib/ThemeContext.tsx`; toggle in `components/ui/ThemeToggle.tsx` | n/a |
+| Org 3D/2D graph | `packages/web/src/components/organization/OrgWeb.tsx` (no theme awareness) | n/a |
+| Expertise graph | `packages/web/src/app/expertise/page.tsx` (hardcoded hex `#FACC15`, `#F87171`) | `packages/api/graph/router.py` `/api/graph/{nodes,edges}` |
+| Settings | `packages/web/src/app/settings/*` — main page is `gray-900` hardcoded; HRIS uses theme tokens | n/a |
+| Inbox | `packages/web/src/app/inbox/page.tsx` → `lib/api.ts::fetchGmailThreads` | `packages/api/integrations/workspace/adapters.py::list_gmail_threads` |
+| Drive | `packages/web/src/app/drive/page.tsx` → `lib/api.ts::fetchDriveFolders/fetchWorkspaceFiles` | `packages/api/integrations/workspace/adapters.py::list_drive_*` |
+| Meetings | `packages/web/src/app/meetings/page.tsx` → `lib/api.ts::fetchWorkspaceCalendar` | `packages/api/integrations/workspace/adapters.py::list_calendar_events` + `packages/api/meetings/router.py` |
+| Reminders | `packages/web/src/lib/RemindersContext.tsx`, `components/ReminderToasts.tsx` (localStorage only) | n/a |
+| Knowledge | `packages/web/src/app/knowledge/page.tsx` (graph real, shadow profile mock from `lib/mocks.ts`) | `packages/api/graph/router.py` |
+| Tasks | `packages/web/src/app/dashboard/page.tsx` (meeting-derived list) | `packages/api/meetings/router.py::list_my_tasks` (`/api/meetings/tasks/mine`) |
+| Onboarding | `packages/web/src/app/onboarding/page.tsx` (mock state) | none — would need new endpoint to persist |
+| HRIS | `packages/web/src/app/settings/hris/page.tsx` (mock providers, real `createAgent`) | `packages/api/agents/router.py` |
+| Google integration | OAuth: `packages/api/integrations/workspace/router.py` `/google/{auth-url,callback,disconnect,status}`; tokens at `packages/api/integrations/google_tokens.py` | scopes set in OAuth flow — confirm in router code before adding new ones |
+| Slack integration | `packages/api/integrations/slack/{router,oauth,adapter,tokens}.py` (live). Frontend OAuth handoff in `/settings/integrations/slack` | gated on Fly secrets `SLACK_CLIENT_ID/SECRET/SIGNING_SECRET/BOT_TOKEN` |
+| File upload | `packages/web/src/app/chat/page.tsx::runFileSummary` (calls `orchestrate` for textual; falls to `smartMockSummary` for binary) | none yet — needs `/api/files/summarize` |
+| Activity / events | `packages/api/activity/router.py` exists. Used for orchestrator routing steps. Not currently capturing user behavior | the `activity` table is the place to extend if we add behavior tracking |
+| Capabilities (shadow permissions) | `packages/web/src/app/settings/shadow/page.tsx` | `packages/api/capabilities/{registry,service,router}.py` |
+| Seniority | `packages/api/agents/seniority.py` | derived from role on signup |
+
+### Decisions locked in (2026-05-01)
+
+| # | Decision |
+|---|----------|
+| 1 | Brand red: `#DC2626` (dark, Tailwind red-600), `#B91C1C` (light, red-700). Tweakable later — Muhammad said "my hex" meaning his call, defaulted to these |
+| 2 | Global root font-size: bump to **18px** (was 17.5px after Liki's bump) |
+| 3 | Light-mode `--bg-base`: **`#E0E2E5`** (the proposed midpoint) |
+| 4 | Feedback persistence: real DB-backed (new `feedback_submissions` table + `POST /api/feedback`). Free-text body + optional category. No external delivery for now |
+| 5 | Account: **separate `/account` route**, distinct from `/settings`. Settings = system/integration config; Account = profile/workspace identity/business type/onboarding |
+| 6 | File upload: **Option A** (server-side PDF + DOCX extraction via `pypdf` + `python-docx` → real LLM summary). Image OCR explicitly out of scope tonight — show "needs OCR" state |
+| 7 | Behavior event schema (privacy bar): `{event_type, timestamp, object_type, object_id, status, agent_id, org_id}` — NO message bodies, NO email content, NO file names. New `behavior_events` table (separate from `activity` which is orchestrator-only). Weekly Report renders on `/home` as a banner above the existing destination cards |
+| 8 | Manual Tasks: yes — new `manual_tasks` table (or extend existing `tasks` with `source: meeting | manual`) with `title, description, due_date, priority, status, source, created_at, updated_at`. Tasks block on dashboard splits "Your Tasks" (meeting/calendar) and "Created Tasks" (manual) |
+| 9 | HR system: **both** — keep `/settings/hris` placeholder AND add a real `/hr` product surface with connect-HRIS + manual roster + policies placeholder. No sensitive automation |
+| 10 | Slack creds: Muhammad to create the app — see "What I need from you for Slack" below |
+
+### What I need from you for Slack (item 10)
+
+Go to https://api.slack.com/apps → Create New App → From scratch → name it "Ravenhill" (or whatever) → pick your workspace.
+
+On the app's pages, copy these four values into chat for me to set as Fly secrets:
+1. **`SLACK_CLIENT_ID`** — Basic Information → App Credentials → "Client ID"
+2. **`SLACK_CLIENT_SECRET`** — Basic Information → App Credentials → "Client Secret" (click Show)
+3. **`SLACK_SIGNING_SECRET`** — Basic Information → App Credentials → "Signing Secret" (click Show)
+4. **`SLACK_BOT_TOKEN`** — Install App → "Bot User OAuth Token" (starts with `xoxb-`). Will only appear after you configure scopes + install to your workspace.
+
+Also configure on the app:
+- **OAuth & Permissions → Redirect URLs**: add `https://ravenhill-api.fly.dev/api/integrations/slack/callback`
+- **OAuth & Permissions → Bot Token Scopes**: add `channels:read`, `channels:history`, `chat:write`, `users:read`, `groups:read`, `im:read`
+- **Event Subscriptions** (optional, for incoming events): Request URL `https://ravenhill-api.fly.dev/api/integrations/slack/events`, subscribe to `message.channels`, `message.im`
+
+Drop those four secrets in chat when ready. I'll set them on Fly and verify the integration immediately.
+
+### Open questions still on Muhammad's plate (low urgency)
+
+- Slack credentials — see "What I need from you for Slack" above
+- Rob's email + company-folder ID/name — for Drive scoping when he OAuths Google
+- "momo-dev" / model name — disregarded for now per Muhammad's message
+
+### Update protocol for this section
+
+Whenever a meaningful change lands during the Rob-Monday push:
+1. Update the **Status by item** table.
+2. Add a one-line entry under **Already shipped** with the commit short-hash.
+3. Cross out / move out of **Open questions** anything Muhammad has answered.
+4. Add new questions as they surface.

@@ -83,12 +83,12 @@ export default function AgentDetailPage() {
     return (
       <div className="p-8 max-w-3xl">
         <div className="animate-pulse space-y-6">
-          <div className="h-4 bg-gray-800 rounded w-20" />
+          <div className="h-4 bg-graphite rounded w-20" />
           <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-gray-800" />
+            <div className="w-20 h-20 rounded-full bg-graphite" />
             <div className="space-y-2">
-              <div className="h-6 bg-gray-800 rounded w-40" />
-              <div className="h-4 bg-gray-800 rounded w-56" />
+              <div className="h-6 bg-graphite rounded w-40" />
+              <div className="h-4 bg-graphite rounded w-56" />
             </div>
           </div>
         </div>
@@ -101,13 +101,13 @@ export default function AgentDetailPage() {
       <div className="p-8 max-w-3xl">
         <Link
           href="/agents"
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition mb-8"
+          className="flex items-center gap-2 text-sm text-smoke hover:text-white transition mb-8"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Agents
         </Link>
         <div className="text-center py-16">
-          <p className="text-gray-500 text-sm">Agent not found or could not be loaded.</p>
+          <p className="text-dusk text-sm">Agent not found or could not be loaded.</p>
           <Link
             href="/agents"
             className="text-blue-400 hover:text-blue-300 text-sm mt-2 inline-block"
@@ -132,7 +132,7 @@ export default function AgentDetailPage() {
       {/* Back link */}
       <Link
         href="/agents"
-        className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition mb-8"
+        className="flex items-center gap-2 text-sm text-smoke hover:text-white transition mb-8"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Agents
@@ -150,16 +150,16 @@ export default function AgentDetailPage() {
             <h1 className="text-2xl font-semibold">{agent.name}</h1>
             <div className="flex items-center gap-1.5">
               <Circle
-                className={`w-2.5 h-2.5 fill-current ${agent.is_active ? "text-green-400" : "text-gray-600"}`}
+                className={`w-2.5 h-2.5 fill-current ${agent.is_active ? "text-green-400" : "text-dusk"}`}
               />
               <span
-                className={`text-xs ${agent.is_active ? "text-green-400" : "text-gray-500"}`}
+                className={`text-xs ${agent.is_active ? "text-green-400" : "text-dusk"}`}
               >
                 {agent.is_active ? "Online" : "Offline"}
               </span>
             </div>
           </div>
-          <p className="text-sm text-gray-400 mb-1">{agent.role}</p>
+          <p className="text-sm text-smoke mb-1">{agent.role}</p>
           <span
             className="inline-block text-[11px] px-2.5 py-0.5 rounded-full bg-white/[0.04] text-parchment border border-white/[0.08]"
           >
@@ -188,12 +188,12 @@ export default function AgentDetailPage() {
       {/* Knowledge Areas */}
       {(agent.knowledge_areas ?? []).length > 0 && (
         <section className="mb-6">
-          <h2 className="text-sm font-medium text-gray-400 mb-3">Knowledge Areas</h2>
+          <h2 className="text-sm font-medium text-smoke mb-3">Knowledge Areas</h2>
           <div className="flex flex-wrap gap-2">
             {(agent.knowledge_areas ?? []).map((area) => (
               <span
                 key={area}
-                className="text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-gray-300 border border-gray-800"
+                className="text-xs px-3 py-1.5 rounded-lg bg-ink text-parchment border border-gray-800"
               >
                 {area}
               </span>
@@ -205,9 +205,9 @@ export default function AgentDetailPage() {
       {/* Knowledge Base */}
       {agent.knowledge_base && (
         <section className="mb-6">
-          <h2 className="text-sm font-medium text-gray-400 mb-3">Knowledge Base</h2>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+          <h2 className="text-sm font-medium text-smoke mb-3">Knowledge Base</h2>
+          <div className="bg-ink border border-gray-800 rounded-xl p-4">
+            <div className="text-sm text-parchment leading-relaxed whitespace-pre-wrap">
               {agent.knowledge_base}
             </div>
           </div>
@@ -217,12 +217,12 @@ export default function AgentDetailPage() {
       {/* Scopes */}
       {agent.scopes.length > 0 && (
         <section className="mb-6">
-          <h2 className="text-sm font-medium text-gray-400 mb-3">Scopes</h2>
+          <h2 className="text-sm font-medium text-smoke mb-3">Scopes</h2>
           <div className="flex flex-wrap gap-2">
             {agent.scopes.map((scope) => (
               <span
                 key={scope}
-                className="text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-gray-300 border border-gray-800 font-mono"
+                className="text-xs px-3 py-1.5 rounded-lg bg-ink text-parchment border border-gray-800 font-mono"
               >
                 {scope}
               </span>
@@ -234,7 +234,7 @@ export default function AgentDetailPage() {
       {/* Recent Activity */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-gray-400">Recent Activity</h2>
+          <h2 className="text-sm font-medium text-smoke">Recent Activity</h2>
           {agentActivity.length > 10 && (
             <Link
               href="/activity"
@@ -244,7 +244,7 @@ export default function AgentDetailPage() {
             </Link>
           )}
         </div>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl px-5 py-2">
+        <div className="bg-ink border border-gray-800 rounded-xl px-5 py-2">
           {recentActivity.length > 0 ? (
             recentActivity.map((item, i) => (
               <ActivityItem
@@ -257,7 +257,7 @@ export default function AgentDetailPage() {
               />
             ))
           ) : (
-            <div className="text-center py-8 text-sm text-gray-600">
+            <div className="text-center py-8 text-sm text-dusk">
               No activity for this agent yet.
             </div>
           )}

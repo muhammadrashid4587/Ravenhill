@@ -38,12 +38,14 @@
   --text-secondary: #A8A8B0;
   --text-tertiary: #6B6B72;
 
-  /* Brand — red-orange */
-  --brand: #FF5A2C;          /* primary red-orange */
-  --brand-hover: #FF7A45;    /* lighter on hover */
-  --brand-pressed: #D9431B;  /* deeper on press */
-  --brand-soft: rgba(255, 90, 44, 0.12);
-  --brand-ring: rgba(255, 90, 44, 0.26);
+  /* Brand — red. Pulled away from orange per Muhammad's
+     readability pass; #DC2626 is Tailwind red-600, distinct from
+     status red (--danger) but in the same family. */
+  --brand: #DC2626;          /* primary red */
+  --brand-hover: #EF4444;    /* lighter red on hover (red-500) */
+  --brand-pressed: #B91C1C;  /* deeper red on press (red-700) */
+  --brand-soft: rgba(220, 38, 38, 0.12);
+  --brand-ring: rgba(220, 38, 38, 0.26);
 
   /* Status */
   --success: #3FA46A;
@@ -56,11 +58,13 @@
 }
 
 [data-theme="light"] {
-  /* Surfaces — paper, warm whites */
-  --bg-base: #FAF8F5;
+  /* Surfaces — soft cool gray, slightly darker than 'paper' to feel like
+     a real product not a marketing page. Muhammad asked for a tone in
+     the #E8E9EB → #D3D3D3 range; #E0E2E5 sits in the middle. */
+  --bg-base: #E0E2E5;
   --bg-surface: #FFFFFF;
   --bg-elevated: #FFFFFF;
-  --bg-hover: #F1EEE8;
+  --bg-hover: #D5D7DB;
 
   /* Surface overlays — dark-ink tints on white */
   --surface-overlay: rgba(20, 20, 24, 0.04);
@@ -78,12 +82,13 @@
   --text-secondary: #5C5C68;
   --text-tertiary: #8A8A94;
 
-  /* Brand — same red-orange family, slightly deeper for AA on white */
-  --brand: #E64A19;
-  --brand-hover: #FF6B3D;
-  --brand-pressed: #B33812;
-  --brand-soft: rgba(230, 74, 25, 0.10);
-  --brand-ring: rgba(230, 74, 25, 0.22);
+  /* Brand — red. Tailwind red-700 (#B91C1C) for AA contrast on the
+     light gray bg; hover lightens to red-600. */
+  --brand: #B91C1C;
+  --brand-hover: #DC2626;
+  --brand-pressed: #991B1B;
+  --brand-soft: rgba(185, 28, 28, 0.10);
+  --brand-ring: rgba(185, 28, 28, 0.22);
 
   /* Status */
   --success: #2E8B57;
@@ -97,8 +102,9 @@
 
 @layer base {
   html {
-    /* Bumped from browser default (16px) so all rem/em values scale. */
-    font-size: 17.5px;
+    /* Bumped from browser default (16px) so all rem/em values scale.
+       Bumped again to 18px per readability pass for Rob's beta. */
+    font-size: 18px;
     color-scheme: dark;
   }
   html[data-theme="light"] {

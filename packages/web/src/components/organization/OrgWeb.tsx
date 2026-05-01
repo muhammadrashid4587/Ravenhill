@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent } from "@/lib/AuthContext";
+import { useTheme } from "@/lib/ThemeContext";
 
 // -----------------------------------------------------------------------------
 // OrgWeb — trapezoidal perspective coordination fabric.
@@ -98,6 +99,12 @@ export default function OrgWeb({
   searchQuery?: string;
   onSelect: (a: Agent) => void;
 }) {
+  const { theme } = useTheme();
+  // Grid + ambient lines are rendered as rgba so they overlay correctly on
+  // both backgrounds; the base RGB triplet flips so the fabric is visible
+  // on light mode (was rgba(255,255,255,*) which disappears on light bg).
+  const gridStroke = theme === "light" ? "20,20,24" : "255,255,255";
+
   const [hovered, setHovered] = useState<
     | { kind: "dept"; name: string }
     | { kind: "person"; id: string }
@@ -295,7 +302,7 @@ export default function OrgWeb({
               y1={gridY(r)}
               x2={rightX(t)}
               y2={gridY(r)}
-              stroke={`rgba(255,255,255,${(0.035 + 0.06 * t).toFixed(3)})`}
+              stroke={`rgba(${gridStroke},${(0.035 + 0.06 * t).toFixed(3)})`}
               strokeWidth={0.6}
             />
           );
@@ -309,7 +316,7 @@ export default function OrgWeb({
             y1={gridY(0)}
             x2={gridX(ROWS, c)}
             y2={gridY(ROWS)}
-            stroke="rgba(255,255,255,0.05)"
+            stroke={`rgba(${gridStroke},0.05)`}
             strokeWidth={0.5}
           />
         ))}

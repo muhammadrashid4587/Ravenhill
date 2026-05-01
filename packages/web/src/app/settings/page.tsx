@@ -132,7 +132,7 @@ export default function SettingsPage() {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-semibold mb-1">Settings</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-dusk">
           Configure your Ravenhill instance
         </p>
       </div>
@@ -141,47 +141,47 @@ export default function SettingsPage() {
         {/* Plan & billing — pick your tier (Stripe not live yet) */}
         <Link
           href="/settings/billing"
-          className="block bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-6 transition group"
+          className="block bg-ink border border-[color:var(--border)] hover:border-[color:var(--border-hover)] rounded-xl p-6 transition group"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-graphite border border-[color:var(--border-hover)] flex items-center justify-center">
                 <CreditCard className="w-4 h-4 text-[#E6BA75]" />
               </div>
               <div>
-                <div className="text-sm font-medium text-gray-100">
+                <div className="text-sm font-medium text-bone">
                   Plan &amp; billing
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs text-dusk mt-0.5">
                   Free, Team, Business, Enterprise — pick what fits.
                 </div>
               </div>
             </div>
-            <ArrowRight className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition" />
+            <ArrowRight className="w-4 h-4 text-dusk group-hover:text-parchment transition" />
           </div>
         </Link>
 
         {/* Shadow — what your agent is allowed to do on its own */}
         <Link
           href="/settings/shadow"
-          className="block bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl p-6 transition group"
+          className="block bg-ink border border-[color:var(--border)] hover:border-[color:var(--border-hover)] rounded-xl p-6 transition group"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-graphite border border-[color:var(--border-hover)] flex items-center justify-center">
                 <Eye className="w-4 h-4 text-claret" />
               </div>
               <div>
-                <div className="text-sm font-medium text-gray-100">
+                <div className="text-sm font-medium text-bone">
                   Shadow
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs text-dusk mt-0.5">
                   Set what your agent can do autonomously — read-only,
                   soft actions, and hard actions, each with Auto / Ask / Off.
                 </div>
               </div>
             </div>
-            <ArrowRight className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition" />
+            <ArrowRight className="w-4 h-4 text-dusk group-hover:text-parchment transition" />
           </div>
         </Link>
 
@@ -190,26 +190,26 @@ export default function SettingsPage() {
             invite the beta company to click into half-built screens. */}
 
         {/* Connection */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <section className="bg-ink border border-[color:var(--border)] rounded-xl p-6">
           <h2 className="text-sm font-medium mb-4">Connection</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs text-gray-400 mb-1.5">
+              <label className="block text-xs text-smoke mb-1.5">
                 API Server URL
               </label>
               <input
                 type="text"
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition"
+                className="w-full bg-graphite border border-[color:var(--border-hover)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-oxblood transition"
               />
-              <p className="text-[10px] text-gray-600 mt-1">
+              <p className="text-[10px] text-dusk mt-1">
                 The FastAPI backend URL. Default: http://localhost:8000
               </p>
               <button
                 onClick={testConnection}
                 disabled={connStatus === "testing"}
-                className="mt-2 text-xs px-3 py-1.5 rounded-lg border border-gray-700 hover:border-gray-600 transition disabled:opacity-50"
+                className="mt-2 text-xs px-3 py-1.5 rounded-lg border border-[color:var(--border-hover)] hover:border-[color:var(--border-strong)] transition disabled:opacity-50"
               >
                 {connStatus === "testing"
                   ? "Testing..."
@@ -224,22 +224,22 @@ export default function SettingsPage() {
         </section>
 
         {/* Agent Behavior */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <section className="bg-ink border border-[color:var(--border)] rounded-xl p-6">
           <h2 className="text-sm font-medium mb-4">Agent Behavior</h2>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-200">
+                <div className="text-sm text-bone">
                   Require approval for document sharing
                 </div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-xs text-dusk mt-0.5">
                   Human-in-the-loop for all cross-department file shares
                 </div>
               </div>
               <button
                 onClick={() => setApprovalRequired(!approvalRequired)}
                 className={`w-10 h-6 rounded-full transition relative ${
-                  approvalRequired ? "bg-blue-600" : "bg-gray-700"
+                  approvalRequired ? "bg-blue-600" : "bg-fog"
                 }`}
               >
                 <span
@@ -252,15 +252,15 @@ export default function SettingsPage() {
 
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-200">Notifications</div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <div className="text-sm text-bone">Notifications</div>
+                <div className="text-xs text-dusk mt-0.5">
                   Show notifications when agents complete actions
                 </div>
               </div>
               <button
                 onClick={() => setNotificationsEnabled(!notificationsEnabled)}
                 className={`w-10 h-6 rounded-full transition relative ${
-                  notificationsEnabled ? "bg-blue-600" : "bg-gray-700"
+                  notificationsEnabled ? "bg-blue-600" : "bg-fog"
                 }`}
               >
                 <span
@@ -274,14 +274,14 @@ export default function SettingsPage() {
         </section>
 
         {/* Integrations */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+        <section className="bg-ink border border-[color:var(--border)] rounded-xl p-6">
           <h2 className="text-sm font-medium mb-4">Integrations</h2>
 
           {/* Google Workspace — one OAuth unlocks Calendar + Drive + Gmail */}
-          <div className="bg-gray-950/60 border border-gray-800 rounded-lg p-4 mb-3">
+          <div className="bg-obsidian/60 border border-[color:var(--border)] rounded-lg p-4 mb-3">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center shrink-0">
+                <div className="w-9 h-9 rounded-lg bg-graphite border border-[color:var(--border-hover)] flex items-center justify-center shrink-0">
                   <svg viewBox="0 0 24 24" className="w-4 h-4">
                     <path fill="#4285F4" d="M22.5 12.3c0-.75-.07-1.47-.2-2.16H12v4.1h5.9a5.05 5.05 0 0 1-2.19 3.32v2.76h3.54c2.07-1.9 3.25-4.72 3.25-8.02z" />
                     <path fill="#34A853" d="M12 23c2.95 0 5.43-.98 7.24-2.66l-3.54-2.76c-.98.66-2.24 1.05-3.7 1.05a6.47 6.47 0 0 1-6.08-4.48H2.27v2.84A10.97 10.97 0 0 0 12 23z" />
@@ -291,7 +291,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <div className="text-sm font-medium text-gray-100">
+                    <div className="text-sm font-medium text-bone">
                       Google Workspace
                     </div>
                     {google?.connected && (
@@ -305,7 +305,7 @@ export default function SettingsPage() {
                       </span>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
+                  <div className="text-xs text-dusk mt-0.5">
                     One consent unlocks Calendar, Drive, and Gmail (read-only).
                   </div>
                 </div>
@@ -314,7 +314,7 @@ export default function SettingsPage() {
                 <button
                   onClick={handleDisconnectGoogle}
                   disabled={googleBusy}
-                  className="flex items-center gap-1.5 text-xs text-gray-300 hover:text-white border border-gray-700 hover:border-gray-600 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                  className="flex items-center gap-1.5 text-xs text-parchment hover:text-white border border-[color:var(--border-hover)] hover:border-[color:var(--border-strong)] px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                 >
                   <LogOut className="w-3 h-3" /> Disconnect
                 </button>
@@ -346,10 +346,10 @@ export default function SettingsPage() {
               ].map((s) => (
                 <div
                   key={s.scope}
-                  className="bg-gray-900 border border-gray-800 rounded-md px-2.5 py-1.5"
+                  className="bg-ink border border-[color:var(--border)] rounded-md px-2.5 py-1.5"
                 >
-                  <div className="text-[11px] text-gray-200">{s.label}</div>
-                  <div className="text-[10px] text-gray-600 font-mono truncate">
+                  <div className="text-[11px] text-bone">{s.label}</div>
+                  <div className="text-[10px] text-dusk font-mono truncate">
                     {s.scope}
                   </div>
                 </div>
@@ -362,11 +362,11 @@ export default function SettingsPage() {
               </div>
             )}
             {google && !google.configured && !googleError && (
-              <p className="mt-3 text-[11px] text-gray-500">
+              <p className="mt-3 text-[11px] text-dusk">
                 Server-side credentials are missing. Set{" "}
-                <code className="text-gray-300">GOOGLE_CLIENT_ID</code> and{" "}
-                <code className="text-gray-300">GOOGLE_CLIENT_SECRET</code> in{" "}
-                <code className="text-gray-300">packages/api/.env</code> and
+                <code className="text-parchment">GOOGLE_CLIENT_ID</code> and{" "}
+                <code className="text-parchment">GOOGLE_CLIENT_SECRET</code> in{" "}
+                <code className="text-parchment">packages/api/.env</code> and
                 restart the API.
               </p>
             )}
@@ -376,8 +376,8 @@ export default function SettingsPage() {
           <div className="border-t border-white/[0.06] pt-4 mt-2">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-200">Slack</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">
+                <div className="text-sm text-bone">Slack</div>
+                <div className="text-[11px] text-dusk mt-0.5">
                   {slack?.connected ? (
                     <>
                       <CheckCircle2 className="w-3 h-3 text-[#4ADE80] inline -mt-0.5 mr-1" />
@@ -395,14 +395,14 @@ export default function SettingsPage() {
                   <>
                     <Link
                       href="/settings/integrations/slack"
-                      className="text-xs text-gray-300 border border-gray-800 hover:border-gray-700 px-3 py-1.5 rounded-lg"
+                      className="text-xs text-parchment border border-[color:var(--border)] hover:border-[color:var(--border-hover)] px-3 py-1.5 rounded-lg"
                     >
                       View channels
                     </Link>
                     <button
                       onClick={handleDisconnectSlack}
                       disabled={slackBusy}
-                      className="text-xs text-gray-300 border border-gray-800 hover:border-gray-700 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                      className="text-xs text-parchment border border-[color:var(--border)] hover:border-[color:var(--border-hover)] px-3 py-1.5 rounded-lg disabled:opacity-50"
                     >
                       Disconnect
                     </button>
@@ -425,11 +425,11 @@ export default function SettingsPage() {
               </div>
             )}
             {slack && !slack.configured && !slackError && (
-              <p className="mt-3 text-[11px] text-gray-500">
+              <p className="mt-3 text-[11px] text-dusk">
                 Server-side credentials are missing. Set{" "}
-                <code className="text-gray-300">SLACK_CLIENT_ID</code> and{" "}
-                <code className="text-gray-300">SLACK_CLIENT_SECRET</code> in{" "}
-                <code className="text-gray-300">packages/api/.env</code> and
+                <code className="text-parchment">SLACK_CLIENT_ID</code> and{" "}
+                <code className="text-parchment">SLACK_CLIENT_SECRET</code> in{" "}
+                <code className="text-parchment">packages/api/.env</code> and
                 restart the API.
               </p>
             )}
@@ -444,16 +444,16 @@ export default function SettingsPage() {
                   className="flex items-center justify-between py-2"
                 >
                   <div>
-                    <div className="text-sm text-gray-200">
+                    <div className="text-sm text-bone">
                       {integration.name}
                     </div>
-                    <div className="text-[10px] text-gray-600">
+                    <div className="text-[10px] text-dusk">
                       {integration.status}
                     </div>
                   </div>
                   <button
                     disabled
-                    className="text-xs text-gray-500 border border-gray-800 px-3 py-1.5 rounded-lg cursor-not-allowed"
+                    className="text-xs text-dusk border border-[color:var(--border)] px-3 py-1.5 rounded-lg cursor-not-allowed"
                   >
                     Soon
                   </button>
