@@ -608,3 +608,31 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   VERIFICATION BADGES — theme-aware tints. Prevents the amber-on-cream
+   clash the previous hardcoded #E6BA75 caused in light mode.
+   ============================================================ */
+
+.verification-badge--verified {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
+}
+.verification-badge--inferred {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 32%, transparent);
+}
+.verification-badge--unverified {
+  background: var(--surface-overlay);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.verification-badge .verification-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  display: inline-block;
+}

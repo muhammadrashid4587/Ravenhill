@@ -57,24 +57,22 @@ function timeAgo(iso: string): string {
 }
 
 function VerificationBadge({ status }: { status: VerificationStatus }) {
-  const styles: Record<VerificationStatus, string> = {
-    verified:
-      "bg-[rgba(63,164,106,0.12)] text-[#88D3A4] border-[rgba(63,164,106,0.32)]",
-    inferred:
-      "bg-[rgba(201,138,43,0.10)] text-[#E6BA75] border-[rgba(201,138,43,0.28)]",
-    unverified: "bg-white/[0.04] text-smoke border-white/[0.08]",
-  };
-  const dot: Record<VerificationStatus, string> = {
-    verified: "bg-[#3FA46A]",
-    inferred: "bg-[#C98A2B]",
-    unverified: "bg-smoke",
+  // Theme-aware: --success / --warning / muted resolve to different
+  // hex values via [data-theme] in globals.css, so the badge stays
+  // legible on both dark and light backgrounds. The previous
+  // hardcoded #E6BA75 (amber-yellow) clashed against the warm paper
+  // background in light mode.
+  const stylesByStatus: Record<VerificationStatus, string> = {
+    verified: "verification-badge verification-badge--verified",
+    inferred: "verification-badge verification-badge--inferred",
+    unverified: "verification-badge verification-badge--unverified",
   };
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border ${styles[status]}`}
+      className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border ${stylesByStatus[status]}`}
       title={`Verification: ${status}`}
     >
-      <span className={`w-1 h-1 rounded-full ${dot[status]}`} />
+      <span className="verification-dot" />
       {status}
     </span>
   );

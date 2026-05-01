@@ -261,7 +261,7 @@ export default function TrustPage() {
             longer accurate, that&apos;s on us — tell us and we&apos;ll fix it.
           </p>
           <Link href="/manifesto" className="btn btn-ghost text-sm px-4 py-2">
-            Read the manifesto →
+            Read the guidelines →
           </Link>
         </div>
       </main>
@@ -273,7 +273,7 @@ export default function TrustPage() {
             Home
           </Link>
           <Link href="/manifesto" className="text-smoke hover:text-parchment transition">
-            Manifesto
+            Guidelines
           </Link>
           <Link href="/login" className="text-smoke hover:text-parchment transition">
             Sign in

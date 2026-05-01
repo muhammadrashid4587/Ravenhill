@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Manifesto",
+  title: "Guidelines",
   description:
     "Most of the work inside a company is routing work. Ravenhill is the quiet substrate underneath.",
 };
@@ -39,7 +39,7 @@ export default function ManifestoPage() {
 
       {/* Hero */}
       <header className="max-w-3xl mx-auto px-6 pt-16 pb-12 animate-fade-up">
-        <div className="eyebrow mb-3">Manifesto</div>
+        <div className="eyebrow mb-3">Guidelines</div>
         <h1 className="font-display font-normal text-display-lg text-bone leading-[1.05] tracking-tight">
           Most of the work inside a company is{" "}
           <span className="display-italic text-claret">routing work.</span>

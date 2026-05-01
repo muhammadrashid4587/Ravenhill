@@ -49,7 +49,7 @@ export default function LandingPage() {
             href="/manifesto"
             className="hidden sm:inline-flex btn btn-ghost text-[13px] px-3 py-1.5"
           >
-            Manifesto
+            Guidelines
           </Link>
           <Link
             href="/trust"
@@ -259,7 +259,7 @@ export default function LandingPage() {
         <Wordmark />
         <div className="flex items-center gap-5 text-[13px]">
           <Link href="/manifesto" className="text-smoke hover:text-parchment transition">
-            Manifesto
+            Guidelines
           </Link>
           <Link href="/trust" className="text-smoke hover:text-parchment transition">
             Trust
