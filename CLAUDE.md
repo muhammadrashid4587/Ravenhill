@@ -279,8 +279,8 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 | # | Item | State | Notes |
 |---|------|-------|-------|
 | 1 | Theme/UI polish | **partly shipped, work pending** | Liki's CSS-var theme is in. **`/settings/page.tsx` is hardcoded `bg-gray-900` / `text-gray-100`** — it doesn't flip in light mode. Settings subpages mixed (HRIS uses theme tokens, others don't). `OrgWeb.tsx` (org page 2D canvas) and `/expertise/page.tsx` use hardcoded hex (no theme). Brand color is currently red-orange (`#FF5A2C` dark, `#E64A19` light) — user wants more red, less orange |
-| 2 | Feedback / suggestions | **does not exist** | No module anywhere. Build UI-only first; Muhammad to decide on persistence |
-| 3 | Account section | **does not exist** | No `/account` route. Settings exists at `/settings`. Need to know if Account is separate or alias |
+| 2 | Feedback / suggestions | **shipped wave 1** | Floating Feedback button bottom-right of every authed page → modal with category + body. POSTs to `/api/feedback` → persists to `feedback_submissions` table. No external delivery. Files: `components/FeedbackButton.tsx`, `packages/api/feedback/router.py`, `db.py::FeedbackSubmissionRow` |
+| 3 | Account section | **shipped wave 1 (business type localStorage-only)** | New `/account` route with profile, workspace (incl. invite-code rotate), business-type picker. Business type is localStorage-only until Muhammad OKs an `org.business_type` column. Sidebar secondary nav now includes "Account" above "Settings" |
 | 3b | Business onboarding (type-of-business) | **placeholder mock at `/onboarding`** | Currently uses `fetchOnboardingState`/`setOnboardingState` from `lib/mocks.ts` |
 | 4 | HR system | **partial mock** | `/settings/hris` exists with CSV import + agent creation. `fetchHRISProviders` is mock. Real `createAgent()` calls work |
 | 5 | Meetings | **mostly shipped** | Liki rebuilt `/meetings/page.tsx` around live `/api/workspace/calendar/events` polling. Reminders shipped (localStorage-only). "Imported Transcripts" section needs removal verification. Zoom tab already added |
@@ -297,6 +297,8 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 - Theme-aware verification badges (no more amber-on-cream clash)
 - Manifesto → Guidelines rename (label only; route stays `/manifesto`)
 - Chat empty-state fix: agent now answers conversationally instead of stonewalling
+- **Wave 1 (commit `afc1be8`)**: brand red `#DC2626`/`#B91C1C`, root font 18px, light `--bg-base` `#E0E2E5`, settings + agents/[id] + OrgWeb theme-aware
+- **Wave 1.b**: Feedback button + `/api/feedback` + `feedback_submissions` table, `/account` route with profile + workspace + business-type picker (localStorage-only)
 
 ### Where the related code lives
 

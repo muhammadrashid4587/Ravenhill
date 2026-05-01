@@ -258,6 +258,57 @@ export async function fetchPendingItems() {
     }));
 }
 
+// ---- Org / workspace ("/me") ----
+
+export interface OrgSummary {
+  id: string;
+  name: string;
+  slug: string;
+  org_role: "admin" | "member";
+  member_count: number;
+  invite_code: string | null;
+  invite_code_expires_at: string | null;
+  invite_approval_required: boolean;
+}
+
+export async function fetchMyOrg(): Promise<OrgSummary> {
+  const res = await apiFetch("/api/orgs/me");
+  if (!res.ok) throw new Error(`org fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function rotateOrgInviteCode(): Promise<{ invite_code: string }> {
+  const res = await apiFetch("/api/orgs/rotate-invite-code", {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`rotate failed: ${res.status}`);
+  return res.json();
+}
+
+// ---- Feedback / suggestions ----
+//
+// Persisted to `feedback_submissions` on the backend. Anonymous-friendly:
+// submitting from a logged-out tab still works (org_id/agent_id stay null).
+
+export type FeedbackCategory = "bug" | "idea" | "praise" | "other";
+
+export async function submitFeedback(payload: {
+  category: FeedbackCategory;
+  body: string;
+  page_url?: string;
+}): Promise<{ id: string; status: string }> {
+  const res = await apiFetch("/api/feedback/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(detail || `feedback submit failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 // ---- Capabilities (powers /settings/shadow) ----
 //
 // Three-state per-tool permissions, scoped to the caller's agent. The

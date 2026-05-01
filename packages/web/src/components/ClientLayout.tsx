@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import ReminderToasts from "@/components/ReminderToasts";
+import FeedbackButton from "@/components/FeedbackButton";
 import { AuthProvider } from "@/lib/AuthContext";
 import { ThemeProvider } from "@/lib/ThemeContext";
 import { RemindersProvider } from "@/lib/RemindersContext";
@@ -33,6 +34,9 @@ export default function ClientLayout({
             <div className="flex flex-col h-screen overflow-hidden">
               <Sidebar />
               <main className="flex-1 overflow-y-auto">{children}</main>
+              {/* Floating feedback button — only on authed product surfaces.
+                  Hidden on the marketing routes via the hideNav branch. */}
+              <FeedbackButton />
             </div>
           )}
           <ReminderToasts />

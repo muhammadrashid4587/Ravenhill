@@ -516,6 +516,32 @@ class MeetingFileRow(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class FeedbackSubmissionRow(Base):
+    """User-submitted feedback / suggestions / bug reports.
+
+    `agent_id` and `org_id` are nullable so anonymous feedback (from a
+    logged-out visitor on the landing page) can still land here. When a
+    signed-in user submits, both are filled. `category` is a free
+    string for now (the UI offers: 'bug', 'idea', 'praise', 'other');
+    we can normalize to an enum once the categories settle.
+    """
+    __tablename__ = "feedback_submissions"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    org_id = Column(Uuid, ForeignKey("organizations.id"), nullable=True)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=True)
+    category = Column(String(40), default="other")
+    body = Column(Text, nullable=False)
+    page_url = Column(String(500), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_feedback_org", "org_id"),
+        Index("ix_feedback_agent", "agent_id"),
+    )
+
+
 class AgentCapabilityRow(Base):
     """Per-agent permission for each tool the agent can autonomously
     exercise. Drives the shadow-settings UI and gates real runtime paths

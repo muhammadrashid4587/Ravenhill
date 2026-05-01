@@ -7,6 +7,7 @@ from activity.router import router as activity_router
 from agents.router import router as agents_router
 from auth.router import router as auth_router
 from capabilities.router import router as capabilities_router
+from feedback.router import router as feedback_router
 from registry.router import router as registry_router
 from messaging.router import router as messaging_router
 from approvals.router import router as approvals_router
@@ -89,6 +90,7 @@ app.include_router(meetings_router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(orchestrator_router, prefix="/api/orchestrate", tags=["orchestrator"])
 app.include_router(orgs_router, prefix="/api/orgs", tags=["orgs"])
 app.include_router(capabilities_router, prefix="/api/capabilities", tags=["capabilities"])
+app.include_router(feedback_router, prefix="/api/feedback", tags=["feedback"])
 
 
 @app.get("/health")
