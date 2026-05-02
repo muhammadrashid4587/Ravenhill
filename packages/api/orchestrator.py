@@ -442,16 +442,87 @@ def _mock_personal_answer(message: str, personal_context: str) -> str | None:
     return None
 
 
+async def _hydrate_google_context(agent_id: str) -> str:
+    """Pull compact summaries from connected Google Workspace — Calendar
+    events, recent Gmail threads, and Drive files — and format them as
+    a context block the LLM can ground answers in.
+
+    Returns an empty string when Google isn't connected or on any failure.
+    This is the bridge that makes "what's on my calendar?" work in chat.
+    """
+    import asyncio
+    from integrations.workspace.adapters import (
+        _has_real_connection,
+        list_calendar_events,
+        list_drive_files,
+        list_gmail_threads,
+    )
+
+    if not await _has_real_connection(agent_id):
+        return ""
+
+    # Pull all three in parallel, with a 10s cap so chat doesn't hang.
+    try:
+        cal_task = asyncio.create_task(list_calendar_events(agent_id))
+        mail_task = asyncio.create_task(list_gmail_threads(agent_id, limit=10))
+        drive_task = asyncio.create_task(list_drive_files(agent_id))
+        results = await asyncio.wait_for(
+            asyncio.gather(cal_task, mail_task, drive_task, return_exceptions=True),
+            timeout=10.0,
+        )
+    except asyncio.TimeoutError:
+        return ""
+
+    cal_events = results[0] if isinstance(results[0], list) else []
+    mail_threads = results[1] if isinstance(results[1], list) else []
+    drive_files = results[2] if isinstance(results[2], list) else []
+
+    if not cal_events and not mail_threads and not drive_files:
+        return ""
+
+    lines: list[str] = []
+    lines.append("CONNECTED GOOGLE WORKSPACE DATA (real, live):")
+
+    if cal_events:
+        lines.append("\n📅 Upcoming calendar events:")
+        for ev in cal_events[:8]:
+            title = ev.get("title", "Untitled")
+            start = ev.get("start_time", "")
+            attendees = ev.get("attendees") or []
+            att_str = f" with {', '.join(attendees[:4])}" if attendees else ""
+            desc = ev.get("description") or ""
+            desc_snip = f" — {desc[:80]}..." if desc and len(desc) > 10 else ""
+            lines.append(f"  - {title} @ {start}{att_str}{desc_snip}")
+
+    if mail_threads:
+        lines.append("\n📧 Recent inbox threads:")
+        for th in mail_threads[:8]:
+            subj = th.get("subject", "(no subject)")
+            frm = th.get("from", "")
+            snippet = th.get("snippet", "")[:60]
+            lines.append(f"  - \"{subj}\" from {frm} — {snippet}")
+
+    if drive_files:
+        lines.append("\n📁 Recent Drive files:")
+        for f in drive_files[:10]:
+            name = f.get("name", "Untitled")
+            owner = f.get("owner", "")
+            modified = f.get("last_modified", "")
+            lines.append(f"  - {name} (owner: {owner}, modified: {modified})")
+
+    return "\n".join(lines)
+
+
 async def _conversational_fallback(
     agent: Agent,
     message: str,
     conversation_history: list[str],
 ) -> str:
-    """When no agents match a query, let the COO's agent respond directly.
+    """When no agents match a query, let the agent respond directly.
 
-    Uses the LLM with the agent's persona + conversation history for natural
-    conversation — greetings, casual messages, off-topic questions, etc.
-    Falls back to a friendly generic response if LLM is unavailable.
+    Uses the LLM with the agent's persona + Google Workspace context +
+    conversation history for natural conversation. Falls back to a
+    friendly generic response if LLM is unavailable.
     """
     from agents.llm_providers import call_llm, get_active_provider
 
@@ -462,6 +533,16 @@ async def _conversational_fallback(
                 "\n\nRecent conversation:\n"
                 + "\n".join(conversation_history[-6:])
             )
+
+        # Hydrate Google Workspace context if the user has connected.
+        # This is the bridge that makes "what's on my calendar?" work
+        # in chat — without it, the agent is blind to the user's
+        # Calendar, Drive, and Gmail even when connected.
+        google_block = ""
+        try:
+            google_block = await _hydrate_google_context(str(agent.id))
+        except Exception:
+            pass  # Google hydration is best-effort; never blocks chat
 
         # Knowledge sources we can actually ground in.
         kb_lines: list[str] = []
@@ -484,26 +565,34 @@ async def _conversational_fallback(
         #    Google so the agent can learn from real data. The previous
         #    prompt forced "I don't have information" on every non-greeting
         #    message, which made the chat feel dead even when the LLM was up.
+        # Build the system prompt. Three knowledge tiers:
+        #   1. knowledge_entries (manually set or seeded)
+        #   2. Google Workspace (calendar + inbox + drive — live data)
+        #   3. Neither (brand-new user, no data at all)
+        has_knowledge = bool(kb_text)
+        has_google = bool(google_block)
+        has_any_context = has_knowledge or has_google
+
+        context_parts: list[str] = []
         if kb_text:
+            context_parts.append(f"What I know about {agent.name}:\n{kb_text}")
+        if google_block:
+            context_parts.append(google_block)
+        full_context = "\n\n".join(context_parts)
+
+        if has_any_context:
             system = (
                 f"You are {agent.name}'s personal AI agent. Speak in their voice.\n\n"
-                f"What I know about {agent.name}:\n{kb_text}\n\n"
-                f"Answer the user's question using the knowledge above when "
-                f"relevant. For greetings or chit-chat, be warm and brief. "
-                f"For questions you can't answer from the knowledge above, "
-                f"say so honestly and offer to help in a different way "
-                f"(e.g., 'I haven't seen that in your Drive yet — want to "
-                f"connect Google so I can?'). NEVER invent facts about "
-                f"{agent.name}, their team, or their company. Keep answers "
-                f"under 80 words."
+                f"{full_context}\n\n"
+                f"Answer the user's question using the data above. Be specific — "
+                f"name real meetings, real files, real emails, real dates from "
+                f"the context. For greetings, be warm and brief. For questions "
+                f"outside the data above, say what you DO know and offer to "
+                f"help differently. NEVER invent facts. Keep answers under "
+                f"120 words."
                 f"{history_block}"
             )
         else:
-            # Brand-new user with empty knowledge. Be a useful generalist
-            # assistant + nudge them to connect data so the agent gets
-            # smarter over time. Critically: do NOT pretend to know facts
-            # about their team or work. World knowledge + reasoning is
-            # fine; specific claims about their org are not.
             system = (
                 f"You are {agent.name}'s personal AI agent. They just signed "
                 f"up — you don't yet have any data about their work, team, "
