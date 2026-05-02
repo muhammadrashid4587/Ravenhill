@@ -9,6 +9,7 @@ never cache decrypted tokens in process memory longer than one request.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from uuid import UUID
 
@@ -76,6 +77,38 @@ async def _slack_get(path: str, token: str, params: dict | None = None) -> dict[
     if not body.get("ok"):
         raise SlackAPIError(f"slack {path} failed: {body.get('error', 'unknown')}")
     return body
+
+
+async def resolve_user(token: str, user_id: str, cache: dict[str, str]) -> str:
+    """Resolve a Slack user ID to a display name. Cached per-request."""
+    if user_id in cache:
+        return cache[user_id]
+    try:
+        body = await _slack_get("users.info", token, params={"user": user_id})
+        user = body.get("user") or {}
+        name = (
+            user.get("real_name")
+            or user.get("profile", {}).get("display_name")
+            or user.get("name")
+            or user_id
+        )
+        cache[user_id] = name
+        return name
+    except Exception:
+        cache[user_id] = user_id
+        return user_id
+
+
+_USER_MENTION_RE = re.compile(r"<@(U[A-Z0-9]+)>")
+
+
+async def _resolve_mentions(text: str, token: str, cache: dict[str, str]) -> str:
+    """Replace <@U12345> mentions with real names."""
+    mentions = _USER_MENTION_RE.findall(text)
+    for uid in set(mentions):
+        name = await resolve_user(token, uid, cache)
+        text = text.replace(f"<@{uid}>", f"@{name}")
+    return text
 
 
 async def auth_test(agent_id: str) -> dict[str, Any]:
@@ -186,17 +219,29 @@ async def list_messages(
         else:
             raise
     messages = body.get("messages") or []
-    return [
-        {
+    # Resolve user IDs → display names and clean up mention format.
+    # Cache across all messages in this batch so we don't repeat lookups.
+    name_cache: dict[str, str] = {}
+    result: list[dict[str, Any]] = []
+    for m in messages:
+        uid = m.get("user") or ""
+        subtype = m.get("subtype")
+        text = m.get("text") or ""
+        # Resolve the author name
+        user_name = await resolve_user(bundle.bot_access_token, uid, name_cache) if uid else ""
+        # Resolve @mentions in the text
+        text = await _resolve_mentions(text, bundle.bot_access_token, name_cache)
+        result.append({
             "ts": m.get("ts"),
-            "user": m.get("user"),
-            "text": m.get("text") or "",
+            "user": uid,
+            "user_name": user_name,
+            "text": text,
             "thread_ts": m.get("thread_ts"),
             "reply_count": m.get("reply_count") or 0,
-            "subtype": m.get("subtype"),
-        }
-        for m in messages
-    ]
+            "subtype": subtype,
+            "is_system": subtype in ("channel_join", "channel_leave", "channel_topic", "channel_purpose", "bot_message"),
+        })
+    return result
 
 
 async def users_info(agent_id: str, user_id: str) -> dict[str, Any]:

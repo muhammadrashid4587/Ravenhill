@@ -1113,10 +1113,12 @@ export interface SlackChannel {
 export interface SlackChannelMessage {
   ts: string;
   user: string | null;
+  user_name?: string;
   text: string;
   thread_ts?: string | null;
   reply_count: number;
   subtype?: string | null;
+  is_system?: boolean;
 }
 
 export async function fetchSlackStatus(agentId: string): Promise<SlackStatus> {

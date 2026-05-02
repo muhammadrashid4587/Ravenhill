@@ -223,30 +223,60 @@ export default function SlackChannelsPage() {
                     No recent messages in this channel.
                   </p>
                 ) : (
-                  <ul className="space-y-3">
-                    {messages.map((m) => (
-                      <li
-                        key={m.ts}
-                        className="text-[12px] text-parchment leading-relaxed"
-                      >
-                        <div className="flex items-baseline gap-2 mb-0.5">
-                          <span className="text-[10px] font-mono text-dusk">
-                            {formatSlackTs(m.ts)}
-                          </span>
-                          {m.user && (
-                            <span className="text-[11px] text-smoke">
-                              {m.user}
+                  <ul className="space-y-1">
+                    {messages.map((m) => {
+                      const name = m.user_name || m.user || "";
+                      const isSystem = m.is_system;
+                      const initials = name
+                        .split(" ")
+                        .map((w) => w[0])
+                        .join("")
+                        .toUpperCase()
+                        .slice(0, 2);
+
+                      if (isSystem) {
+                        return (
+                          <li
+                            key={m.ts}
+                            className="flex items-center gap-2 py-1 text-[11px] text-dusk italic"
+                          >
+                            <span className="text-[9px] font-mono">
+                              {formatSlackTs(m.ts)}
                             </span>
-                          )}
-                        </div>
-                        <div className="whitespace-pre-wrap">{m.text}</div>
-                        {m.reply_count > 0 && (
-                          <div className="text-[10px] text-dusk mt-0.5">
-                            {m.reply_count} {m.reply_count === 1 ? "reply" : "replies"}
+                            <span>{m.text}</span>
+                          </li>
+                        );
+                      }
+
+                      return (
+                        <li
+                          key={m.ts}
+                          className="flex items-start gap-2.5 py-2 hover:bg-fog/50 rounded-md px-1 transition"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-graphite border border-[color:var(--border)] flex items-center justify-center text-[9px] font-semibold text-parchment shrink-0 mt-0.5">
+                            {initials || "?"}
                           </div>
-                        )}
-                      </li>
-                    ))}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2 mb-0.5">
+                              <span className="text-[12px] font-medium text-bone">
+                                {name}
+                              </span>
+                              <span className="text-[9px] font-mono text-dusk">
+                                {formatSlackTs(m.ts)}
+                              </span>
+                            </div>
+                            <div className="text-[13px] text-parchment whitespace-pre-wrap leading-relaxed">
+                              {m.text}
+                            </div>
+                            {m.reply_count > 0 && (
+                              <div className="text-[10px] text-oxblood mt-1">
+                                {m.reply_count} {m.reply_count === 1 ? "reply" : "replies"}
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </>
