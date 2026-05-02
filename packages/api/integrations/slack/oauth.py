@@ -150,6 +150,17 @@ async def handle_auth_callback(code: str, state: str) -> dict:
         raise ValueError(str(exc))
 
     log.info("Slack OAuth tokens stored for agent %s (team %s)", uid, team.get("id"))
+
+    # Auto-join all public channels so the bot can read history
+    # immediately — the user shouldn't have to /invite @Ravenhill
+    # in every channel manually.
+    try:
+        from integrations.slack.adapter import join_all_public_channels
+        joined = await join_all_public_channels(str(uid))
+        log.info("Auto-joined %d public Slack channels for agent %s", joined, uid)
+    except Exception:
+        log.exception("Auto-join channels failed (non-fatal)")
+
     return {
         "status": "connected",
         "agent_id": str(uid),

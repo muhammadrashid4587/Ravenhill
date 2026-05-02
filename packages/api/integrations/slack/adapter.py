@@ -29,6 +29,20 @@ class SlackAPIError(Exception):
     """Raised when Slack returns ok=false or an HTTP error."""
 
 
+async def _slack_post(path: str, token: str, data: dict | None = None) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            f"{SLACK_API_BASE}/{path}",
+            headers={"Authorization": f"Bearer {token}"},
+            data=data or {},
+        )
+    resp.raise_for_status()
+    body = resp.json()
+    if not body.get("ok"):
+        raise SlackAPIError(f"slack {path} failed: {body.get('error', 'unknown')}")
+    return body
+
+
 def _coerce_agent_uuid(agent_id: str | UUID) -> UUID | None:
     if not agent_id or agent_id == "demo":
         return None
@@ -104,19 +118,73 @@ async def list_channels(agent_id: str, *, limit: int = 100) -> list[dict[str, An
     ]
 
 
+async def join_channel(agent_id: str, channel_id: str) -> bool:
+    """Join a public channel. Returns True if joined (or already a member).
+    Silently returns False for private channels (bots can't self-join those).
+    """
+    try:
+        bundle = await _tokens(agent_id)
+        await _slack_post(
+            "conversations.join",
+            bundle.bot_access_token,
+            data={"channel": channel_id},
+        )
+        return True
+    except SlackAPIError as exc:
+        err = str(exc).lower()
+        if "already_in_channel" in err:
+            return True
+        if "method_not_supported_for_channel_type" in err or "is_private" in err:
+            return False
+        log.warning("join_channel failed for %s: %s", channel_id, exc)
+        return False
+    except Exception:
+        return False
+
+
+async def join_all_public_channels(agent_id: str) -> int:
+    """Auto-join every public channel the bot can see. Called after OAuth
+    so users don't have to manually /invite @Ravenhill in each channel.
+    Returns the count of channels joined."""
+    channels = await list_channels(agent_id)
+    joined = 0
+    for ch in channels:
+        if not ch.get("is_private") and not ch.get("is_member"):
+            if await join_channel(agent_id, ch["id"]):
+                joined += 1
+    return joined
+
+
 async def list_messages(
     agent_id: str,
     channel_id: str,
     *,
     limit: int = 30,
 ) -> list[dict[str, Any]]:
-    """Recent messages in a channel. Caller resolves user names separately."""
+    """Recent messages in a channel. Auto-joins public channels on
+    'not_in_channel' so the user never has to /invite manually."""
     bundle = await _tokens(agent_id)
-    body = await _slack_get(
-        "conversations.history",
-        bundle.bot_access_token,
-        params={"channel": channel_id, "limit": str(limit)},
-    )
+    try:
+        body = await _slack_get(
+            "conversations.history",
+            bundle.bot_access_token,
+            params={"channel": channel_id, "limit": str(limit)},
+        )
+    except SlackAPIError as exc:
+        err = str(exc).lower()
+        if "not_in_channel" in err:
+            # Try to auto-join, then retry once.
+            joined = await join_channel(agent_id, channel_id)
+            if joined:
+                body = await _slack_get(
+                    "conversations.history",
+                    bundle.bot_access_token,
+                    params={"channel": channel_id, "limit": str(limit)},
+                )
+            else:
+                raise
+        else:
+            raise
     messages = body.get("messages") or []
     return [
         {
