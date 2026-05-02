@@ -781,6 +781,28 @@ async def alter_table_if_needed():
             # Per-statement transaction means we keep going regardless.
 
 
+async def pre_migrate_org_columns():
+    """Add new columns to the organizations table BEFORE seed_default_org
+    runs. Without this, any ORM query on OrganizationRow would SELECT
+    columns that don't exist on the DB yet and crash — this was the root
+    cause of two prod outages (seniority, setup_token).
+
+    This is intentionally small and fast: only org-table columns that
+    are new since the last deploy. Per-statement transactions so one
+    failure doesn't poison the rest.
+    """
+    org_alters = [
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS setup_token VARCHAR(128)",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS setup_token_expires_at TIMESTAMPTZ",
+    ]
+    for stmt in org_alters:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(stmt))
+        except Exception:
+            pass  # Column already exists, or SQLite in tests
+
+
 async def seed_default_org():
     """Ensure the default organization exists. Idempotent by primary key.
 
@@ -796,7 +818,7 @@ async def seed_default_org():
         session.add(
             OrganizationRow(
                 id=DEFAULT_ORG_ID,
-                name="Ravenhill Demo",
+                name="Ravenhill Default",
                 slug="default",
                 invite_code=None,
                 invite_approval_required=False,

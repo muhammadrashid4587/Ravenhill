@@ -29,22 +29,23 @@ async def lifespan(app: FastAPI):
         alter_table_if_needed,
         close_db,
         init_db,
+        pre_migrate_org_columns,
         seed_default_org,
     )
 
     print("Starting Ravenhill API...")
     # Order matters:
-    #   1. init_db()           — create tables (organizations, agents, ...).
-    #   2. seed_default_org()  — the org row exists for FK targets (the
-    #      default org is just a container — NO demo agents live in it
-    #      anymore. Real users always end up in their own workspace).
-    #   3. alter_table_if_needed() — add columns on existing prod
-    #      tables, backfill NULLs to the default org, swap constraints.
-    #
-    # Demo agents (Riley/Jordan/Sam/Alex) were removed: real customers
-    # never see them, and a real user opening the app should see only
-    # their actual teammates.
+    #   1. init_db()               — create tables.
+    #   2. pre_migrate_org_columns — add any NEW columns to the
+    #      organizations table BEFORE seed_default_org, so the ORM
+    #      doesn't crash trying to SELECT columns that don't exist yet
+    #      (this caused the seniority + setup_token prod outages).
+    #   3. seed_default_org()      — the org row exists for FK targets.
+    #   4. alter_table_if_needed() — add columns on ALL other tables,
+    #      backfill NULLs to the default org, swap constraints, purge
+    #      demo agents, create indexes.
     await init_db()
+    await pre_migrate_org_columns()
     await seed_default_org()
     await alter_table_if_needed()
     yield
