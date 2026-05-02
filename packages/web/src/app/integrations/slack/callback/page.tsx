@@ -31,7 +31,16 @@ function CallbackInner() {
       .then((res) => {
         setStatus("ok");
         setTeamName(res?.team_name ?? null);
-        setTimeout(() => router.push("/settings"), 1400);
+        // If we're in a popup (opened by the settings page's
+        // handleConnectSlack), close ourselves. The parent polls
+        // popup.closed and refreshes Slack status automatically.
+        // If we're NOT in a popup (direct navigation), redirect
+        // to settings as before.
+        if (window.opener) {
+          setTimeout(() => window.close(), 1200);
+        } else {
+          setTimeout(() => router.push("/settings"), 1400);
+        }
       })
       .catch((e) => {
         setStatus("fail");
