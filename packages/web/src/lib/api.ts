@@ -1177,7 +1177,7 @@ export async function listSlackChannelMessages(
   agentId: string,
   channelId: string,
   limit = 30,
-): Promise<{ messages: SlackChannelMessage[]; connected?: boolean }> {
+): Promise<{ messages: SlackChannelMessage[]; connected?: boolean; error?: string }> {
   const res = await fetch(
     `${API_BASE}/api/integrations/slack/channels/${encodeURIComponent(channelId)}/messages?agent_id=${encodeURIComponent(agentId)}&limit=${limit}`,
   );
