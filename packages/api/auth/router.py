@@ -1,5 +1,6 @@
 """Auth HTTP routes."""
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -213,6 +214,24 @@ async def signup(payload: SignupPayload, response: Response) -> dict:
         raise
 
     _set_session_cookie(response, session.session_token)
+
+    # Fire-and-forget verification email on signup.
+    try:
+        from .email import send_verification_email
+        from .service import _normalize_email
+        vtoken = secrets.token_urlsafe(32)
+        site = settings.site_url.rstrip("/")
+        verify_url = f"{site}/login/verify-email?token={vtoken}"
+        email_norm = _normalize_email(payload.email)
+        async with db.async_session() as s:
+            a = await s.get(AgentRow, agent.id)
+            if a:
+                a.email_verification_token = vtoken
+                await s.commit()
+        await send_verification_email(email_norm, agent.name, verify_url)
+    except Exception:
+        pass  # verification email failure must never block signup
+
     return {
         "agent": _agent_to_current_user(agent).model_dump(),
         "expires_at": session.expires_at.isoformat(),
@@ -400,6 +419,128 @@ async def verify_invite(payload: VerifyPayload, response: Response) -> dict:
         # (HttpOnly, SameSite=None) is still the real credential.
         "session_token": session.session_token,
     }
+
+
+# ---------- Email verification ----------
+
+
+class SendVerificationPayload(BaseModel):
+    email: str
+
+
+@router.post("/send-verification")
+async def send_verification(payload: SendVerificationPayload) -> dict:
+    """Send (or re-send) a verification email. Works for any registered
+    email — we don't reveal whether the account exists."""
+    from .email import send_verification_email
+    from .service import _normalize_email
+
+    email_norm = _normalize_email(payload.email)
+    token = secrets.token_urlsafe(32)
+    site = settings.site_url.rstrip("/")
+    verify_url = f"{site}/login/verify-email?token={token}"
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.email == email_norm)
+        )
+        agent = result.scalar_one_or_none()
+        if agent and not agent.email_verified:
+            agent.email_verification_token = token
+            await session.commit()
+            await send_verification_email(email_norm, agent.name, verify_url)
+
+    return {"status": "sent"}
+
+
+class VerifyEmailPayload(BaseModel):
+    token: str
+
+
+@router.post("/verify-email")
+async def verify_email(payload: VerifyEmailPayload) -> dict:
+    """Exchange a verification token for email_verified=True."""
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(
+                AgentRow.email_verification_token == payload.token
+            )
+        )
+        agent = result.scalar_one_or_none()
+        if not agent:
+            raise HTTPException(status_code=404, detail="token_invalid")
+        agent.email_verified = True
+        agent.email_verification_token = None
+        await session.commit()
+    return {"status": "verified"}
+
+
+# ---------- Password reset ----------
+
+
+class ForgotPasswordPayload(BaseModel):
+    email: str
+
+
+@router.post("/forgot-password")
+async def forgot_password(payload: ForgotPasswordPayload) -> dict:
+    """Send a password-reset link. Always returns 200 regardless of
+    whether the email exists — no account enumeration."""
+    from .email import send_password_reset_email
+    from .service import _normalize_email
+
+    email_norm = _normalize_email(payload.email)
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=30)
+    site = settings.site_url.rstrip("/")
+    reset_url = f"{site}/login/reset-password?token={token}"
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(AgentRow.email == email_norm)
+        )
+        agent = result.scalar_one_or_none()
+        if agent and agent.password_hash:
+            agent.password_reset_token = token
+            agent.password_reset_expires = expires
+            await session.commit()
+            await send_password_reset_email(email_norm, agent.name, reset_url)
+
+    return {"status": "sent"}
+
+
+class ResetPasswordPayload(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetPasswordPayload) -> dict:
+    """Exchange a reset token + new password. Token is consumed on use."""
+    from .service import hash_password
+
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=422, detail="password_too_short")
+
+    now = datetime.now(timezone.utc)
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(AgentRow).where(
+                AgentRow.password_reset_token == payload.token
+            )
+        )
+        agent = result.scalar_one_or_none()
+        if not agent:
+            raise HTTPException(status_code=404, detail="token_invalid")
+        if agent.password_reset_expires and agent.password_reset_expires < now:
+            raise HTTPException(status_code=410, detail="token_expired")
+
+        agent.password_hash = hash_password(payload.new_password)
+        agent.password_reset_token = None
+        agent.password_reset_expires = None
+        await session.commit()
+
+    return {"status": "password_updated"}
 
 
 # ---------- Me ----------

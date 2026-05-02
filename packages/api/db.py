@@ -149,6 +149,10 @@ class AgentRow(Base):
     scopes = Column(JSON, default=list)
     is_active = Column(Boolean, default=True)
     password_hash = Column(String(500), nullable=True)
+    email_verified = Column(Boolean, default=False, nullable=False)
+    email_verification_token = Column(String(128), nullable=True)
+    password_reset_token = Column(String(128), nullable=True)
+    password_reset_expires = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
@@ -679,6 +683,10 @@ async def alter_table_if_needed():
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_email_nonempty ON agents (LOWER(email)) WHERE email IS NOT NULL AND email <> ''",
             "ALTER TABLE auth_invites ADD COLUMN IF NOT EXISTS is_login_only BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS password_hash VARCHAR(500)",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS email_verification_token VARCHAR(128)",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(128)",
+            "ALTER TABLE agents ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ",
 
             # --- Multi-tenant: add org_id to every table ---
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS org_id UUID REFERENCES organizations(id)",

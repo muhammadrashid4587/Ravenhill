@@ -56,6 +56,98 @@ def _html_body(name: str | None, invite_url: str, expires_minutes: int) -> str:
 </html>"""
 
 
+def _verification_html(name: str | None, verify_url: str) -> str:
+    display_name = (name or "there").split(" ")[0]
+    return f"""<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#0B0A0C;font-family:-apple-system,BlinkMacSystemFont,Inter,sans-serif;color:#E8E4DC;">
+    <div style="max-width:520px;margin:0 auto;padding:40px 24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:32px;">
+        <div style="width:28px;height:28px;border-radius:6px;background:#DC2626;display:flex;align-items:center;justify-content:center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 12l9 10 9-10L12 2z" fill="#F5F0E6"/></svg>
+        </div>
+        <span style="font-size:14px;font-weight:600;color:#F5F0E6;">Ravenhill</span>
+      </div>
+      <h1 style="font-family:Georgia,serif;font-weight:400;font-size:26px;line-height:1.2;color:#F5F0E6;margin:0 0 12px 0;">
+        Verify your email, {display_name}.
+      </h1>
+      <p style="font-size:15px;line-height:1.55;color:#8A8A92;margin:0 0 24px 0;">
+        Click the button below to confirm your email address and activate your Ravenhill account.
+      </p>
+      <a href="{verify_url}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#DC2626;color:#F5F0E6;font-weight:500;text-decoration:none;font-size:14px;">Verify email &rarr;</a>
+      <p style="font-size:12px;color:#4A4A52;line-height:1.55;margin-top:32px;">
+        If you didn&rsquo;t create a Ravenhill account, you can ignore this email.
+      </p>
+    </div>
+  </body>
+</html>"""
+
+
+def _reset_html(name: str | None, reset_url: str) -> str:
+    display_name = (name or "there").split(" ")[0]
+    return f"""<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#0B0A0C;font-family:-apple-system,BlinkMacSystemFont,Inter,sans-serif;color:#E8E4DC;">
+    <div style="max-width:520px;margin:0 auto;padding:40px 24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:32px;">
+        <div style="width:28px;height:28px;border-radius:6px;background:#DC2626;display:flex;align-items:center;justify-content:center;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L3 12l9 10 9-10L12 2z" fill="#F5F0E6"/></svg>
+        </div>
+        <span style="font-size:14px;font-weight:600;color:#F5F0E6;">Ravenhill</span>
+      </div>
+      <h1 style="font-family:Georgia,serif;font-weight:400;font-size:26px;line-height:1.2;color:#F5F0E6;margin:0 0 12px 0;">
+        Reset your password, {display_name}.
+      </h1>
+      <p style="font-size:15px;line-height:1.55;color:#8A8A92;margin:0 0 24px 0;">
+        Click the button below to choose a new password. This link expires in 30 minutes.
+      </p>
+      <a href="{reset_url}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#DC2626;color:#F5F0E6;font-weight:500;text-decoration:none;font-size:14px;">Reset password &rarr;</a>
+      <p style="font-size:12px;color:#4A4A52;line-height:1.55;margin-top:32px;">
+        If you didn&rsquo;t request a password reset, you can ignore this email. Your password won&rsquo;t change.
+      </p>
+    </div>
+  </body>
+</html>"""
+
+
+async def send_verification_email(to: str, name: str | None, verify_url: str) -> EmailResult:
+    """Send email verification link."""
+    api_key = settings.resend_api_key.strip()
+    if not api_key:
+        log.warning("[auth.email] RESEND_API_KEY unset — to=%s url=%s", to, verify_url)
+        return EmailResult(sent=False, dev_url=verify_url)
+    body = _verification_html(name, verify_url)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        res = await client.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"from": settings.email_from, "to": [to], "subject": "Verify your Ravenhill email", "html": body},
+        )
+    if res.status_code >= 400:
+        log.error("[auth.email] Resend rejected verification. status=%s body=%s", res.status_code, res.text[:500])
+        return EmailResult(sent=False)
+    return EmailResult(sent=True)
+
+
+async def send_password_reset_email(to: str, name: str | None, reset_url: str) -> EmailResult:
+    """Send password reset link."""
+    api_key = settings.resend_api_key.strip()
+    if not api_key:
+        log.warning("[auth.email] RESEND_API_KEY unset — to=%s url=%s", to, reset_url)
+        return EmailResult(sent=False, dev_url=reset_url)
+    body = _reset_html(name, reset_url)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        res = await client.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"from": settings.email_from, "to": [to], "subject": "Reset your Ravenhill password", "html": body},
+        )
+    if res.status_code >= 400:
+        log.error("[auth.email] Resend rejected reset. status=%s body=%s", res.status_code, res.text[:500])
+        return EmailResult(sent=False)
+    return EmailResult(sent=True)
+
+
 async def send_signin_email(
     to: str,
     name: str | None,

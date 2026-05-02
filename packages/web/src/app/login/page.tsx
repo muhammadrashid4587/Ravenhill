@@ -340,6 +340,36 @@ function LoginPageInner() {
                   className={inputCls}
                 />
               </div>
+              {!isSignup && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!email.trim()) {
+                        setError("Enter your email first, then click Forgot password.");
+                        return;
+                      }
+                      setSubmitting(true);
+                      setError(null);
+                      try {
+                        await fetch(`${resolveApiBase()}/api/auth/forgot-password`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ email: email.trim() }),
+                        });
+                        setError("If that email exists, we sent a reset link. Check your inbox.");
+                      } catch {
+                        setError("Couldn't reach the server.");
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }}
+                    className="text-[11px] text-smoke hover:text-parchment transition"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
               {error && <p className="text-xs text-claret">{error}</p>}
               <button
                 type="submit"
