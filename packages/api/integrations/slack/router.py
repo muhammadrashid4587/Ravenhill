@@ -191,7 +191,11 @@ async def slack_channels(agent_id: str, limit: int = 100) -> dict[str, Any]:
     except slack_adapter.SlackNotConnected:
         return {"channels": [], "connected": False}
     except slack_adapter.SlackAPIError as exc:
+        logger.error("Slack channels SlackAPIError: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Slack channels unexpected error")
+        raise HTTPException(status_code=502, detail=f"unexpected: {exc}")
 
 
 @router.get("/channels/{channel_id}/messages")
