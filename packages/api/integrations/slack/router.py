@@ -202,8 +202,18 @@ async def slack_channel_messages(
 ) -> dict[str, Any]:
     try:
         messages = await slack_adapter.list_messages(agent_id, channel_id, limit=limit)
-        return {"messages": messages}
+        return {"messages": messages, "connected": True}
     except slack_adapter.SlackNotConnected:
         return {"messages": [], "connected": False}
     except slack_adapter.SlackAPIError as exc:
+        err = str(exc).lower()
+        if "not_in_channel" in err or "channel_not_found" in err:
+            return {
+                "messages": [],
+                "connected": True,
+                "error": (
+                    "The Ravenhill bot hasn't been added to this channel yet. "
+                    "In Slack, open the channel and type /invite @Ravenhill"
+                ),
+            }
         raise HTTPException(status_code=502, detail=str(exc))
