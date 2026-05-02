@@ -55,7 +55,14 @@ export default function SlackChannelsPage() {
     setMessages(null);
     setMessagesError(null);
     listSlackChannelMessages(myAgent.id, activeChannel.id)
-      .then((res) => setMessages(res.messages || []))
+      .then((res) => {
+        setMessages(res.messages || []);
+        // Surface the "bot not in channel" instruction if the backend
+        // returned an error field alongside an empty messages array.
+        if (res.error && (!res.messages || res.messages.length === 0)) {
+          setMessagesError(res.error);
+        }
+      })
       .catch((e) =>
         setMessagesError(
           e instanceof Error ? e.message : "Failed to load messages.",
