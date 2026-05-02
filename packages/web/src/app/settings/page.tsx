@@ -61,28 +61,34 @@ export default function SettingsPage() {
     setSlackError("");
     try {
       const { auth_url } = await fetchSlackAuthUrl(myAgent.id);
-      // Open in a popup window so the user can pick which Slack
-      // workspace to connect. A same-tab redirect auto-selects
-      // whichever workspace the browser is currently signed into;
-      // a popup lets them switch. The callback page auto-closes
-      // the popup and the settings page polls for status changes.
+      // Open a popup — first to Slack's workspace-sign-in page so the
+      // user can pick which workspace to connect. The browser's Slack
+      // session cookie auto-selects one workspace; if that's wrong,
+      // the user needs to sign into the right one first.
+      //
+      // Flow: popup opens → Slack sign-in (user picks workspace) →
+      // "Continue to Ravenhill" link on our intermediate page starts
+      // the OAuth → Slack shows the Allow/Deny screen → callback
+      // auto-closes the popup.
       const w = 600;
       const h = 700;
       const left = Math.max(0, (window.screen.width - w) / 2);
       const top = Math.max(0, (window.screen.height - h) / 2);
+      // Encode the real OAuth URL so the intermediate page can hand
+      // off to it after the user confirms their workspace.
+      const encodedAuth = encodeURIComponent(auth_url);
+      const intermediateUrl =
+        `/integrations/slack/connect?auth_url=${encodedAuth}`;
       const popup = window.open(
-        auth_url,
+        intermediateUrl,
         "ravenhill_slack_connect",
         `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no`,
       );
-      // Poll until the popup closes (user finished or cancelled),
-      // then refresh Slack status.
       if (popup) {
         const poll = window.setInterval(() => {
           if (popup.closed) {
             window.clearInterval(poll);
             setSlackBusy(false);
-            // Refresh status — the callback page already saved tokens
             if (myAgent?.id) {
               fetchSlackStatus(myAgent.id)
                 .then(setSlack)
@@ -91,7 +97,6 @@ export default function SettingsPage() {
           }
         }, 500);
       } else {
-        // Popup blocked — fall back to same-tab redirect
         window.location.href = auth_url;
       }
     } catch (e) {
