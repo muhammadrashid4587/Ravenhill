@@ -516,65 +516,76 @@ async def _hydrate_google_context(agent_id: str) -> str:
 async def _fetch_file_if_referenced(
     agent_id: str, message: str, google_block: str
 ) -> str:
-    """If the user's message references a file name that appears in the
-    google_block (Drive file list), fetch that file's actual content and
-    return it as a context block the LLM can answer from.
+    """If the user's message seems to ask about a specific file, search
+    Drive for a name match and download the content.
 
-    This is what makes 'what's in the RWA MVP Progress Plan?' work —
-    the metadata-only context shows the file exists, this function
-    downloads and reads it.
+    Uses the adapter's search function directly (doesn't parse the
+    google_block text). Triggers on messages containing file-related
+    keywords + at least 2 substantive words that could be a file name.
     """
-    if not google_block or "📁" not in google_block:
-        return ""
-
     from integrations.workspace.adapters import (
+        _has_real_connection,
+        list_drive_files,
         read_drive_file_content,
-        search_drive_file_by_name,
     )
 
-    # Extract file names from the google_block Drive section.
-    # Format: "  - FileName (owner: ..., modified: ...)"
-    file_names: list[str] = []
-    for line in google_block.split("\n"):
-        line = line.strip()
-        if line.startswith("- ") and "(owner:" in line:
-            name = line[2:].split(" (owner:")[0].strip()
-            if name:
-                file_names.append(name)
-
-    if not file_names:
+    if not await _has_real_connection(agent_id):
         return ""
 
-    # Check if the user's message references any known file name.
+    # Quick heuristic: does the message seem to be asking about a file?
     msg_lower = message.lower()
-    matched_name = None
-    for name in file_names:
-        # Match if ≥50% of the file name words appear in the message,
-        # OR the full name (case-insensitive) appears as a substring.
-        if name.lower() in msg_lower:
-            matched_name = name
+    file_keywords = {"file", "doc", "document", "spreadsheet", "sheet",
+                     "slide", "plan", "report", "what's in", "whats in",
+                     "contents of", "open", "read", "show me"}
+    if not any(kw in msg_lower for kw in file_keywords):
+        return ""
+
+    # Get the file list and try to match by name overlap.
+    try:
+        files = await list_drive_files(agent_id)
+    except Exception:
+        return ""
+
+    if not files:
+        return ""
+
+    msg_words = set(msg_lower.split())
+    best_match = None
+    best_score = 0
+    for f in files:
+        name = f.get("name", "")
+        name_lower = name.lower()
+        # Full substring match
+        if name_lower in msg_lower:
+            best_match = f
+            best_score = 100
             break
-        name_words = set(name.lower().split())
-        msg_words = set(msg_lower.split())
+        # Word overlap scoring
+        name_words = set(name_lower.split())
         overlap = name_words & msg_words
-        if len(overlap) >= max(2, len(name_words) * 0.5):
-            matched_name = name
-            break
+        # Need at least 2 overlapping words to avoid false matches
+        if len(overlap) >= 2 and len(overlap) > best_score:
+            best_score = len(overlap)
+            best_match = f
 
-    if not matched_name:
+    if not best_match or best_score < 2:
         return ""
 
-    # Found a match — fetch the file content.
-    file_meta = await search_drive_file_by_name(agent_id, matched_name)
-    if not file_meta or not file_meta.get("id"):
+    matched_name = best_match.get("name", "")
+    file_id = best_match.get("id", "")
+    if not file_id:
         return ""
 
-    result = await read_drive_file_content(agent_id, file_meta["id"])
+    try:
+        result = await read_drive_file_content(agent_id, file_id)
+    except Exception:
+        return f"\n📄 Tried to read '{matched_name}' but the download failed."
+
     content = result.get("content", "")
     if not content:
         error = result.get("error", "")
         if error:
-            return f"\n📄 FILE CONTENT for '{matched_name}': {error}"
+            return f"\n📄 FILE '{matched_name}': {error}"
         return ""
 
     truncated = " (truncated to 32KB)" if result.get("truncated") else ""
