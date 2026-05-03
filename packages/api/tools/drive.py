@@ -131,7 +131,8 @@ def format_search_for_llm(result: SearchResult) -> str:
     for f in result.files:
         owner_str = f" (owner: {f.owner})" if f.owner else ""
         mod_str = f", modified: {f.last_modified}" if f.last_modified else ""
-        lines.append(f"  - {f.name}{owner_str}{mod_str}")
+        url_str = f" | {f.url}" if f.url else ""
+        lines.append(f"  - {f.name}{owner_str}{mod_str}{url_str}")
     return "\n".join(lines)
 
 

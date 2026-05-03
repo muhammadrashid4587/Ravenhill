@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 from tools.drive import (
     DriveFile,
     ReadResult,
-    SearchResult,
     drive_read,
     drive_search,
     format_read_for_llm,
@@ -43,12 +42,12 @@ _DRIVE_TRIGGERS = re.compile(
     r"(files?\b|drive\b|doc(?:ument)?s?\b|sheets?\b|slides?\b|spreadsheet|"
     r"summarize|read\b|open\b|analyze|action\s+items|key\s+points|"
     r"what(?:'?s| is| are)?\s+in\b|contents?\b|recently\s+shared|"
-    r"my\s+files|shared\s+with\s+me)",
+    r"my\s+files|shared\s+with\s+me|download|bring\b|send\b|link\b)",
     re.IGNORECASE,
 )
 _REFERENCE_PATTERNS = re.compile(
     r"(that\s+file|those\s+files?|the\s+file|this\s+file|"
-    r"same\s+file|it\b.*(?:summarize|read|open|action|content))",
+    r"same\s+file|it\b.*(?:summarize|read|open|action|content|download|bring|send|link))",
     re.IGNORECASE,
 )
 _LIST_TRIGGERS = re.compile(
@@ -118,30 +117,27 @@ async def route_tools(
     if _REFERENCE_PATTERNS.search(message) and state.active_file_ids:
         log.info("[router] resolving reference — %d active files", len(state.active_file_ids))
 
-        if _READ_TRIGGERS.search(message):
-            for fid, fname in zip(state.active_file_ids, state.active_file_names):
-                if fid in state.file_content_cache:
-                    read = state.file_content_cache[fid]
-                else:
-                    read = await drive_read(agent_id, fid)
-                    if not read.error:
-                        state.file_content_cache[fid] = read
-                tools_called.append("drive.read")
-                context_parts.append(format_read_for_llm(read))
-                source_labels.append(f"Google Drive · {fname}")
-        else:
-            search = SearchResult(
-                files=[
-                    DriveFile(id=fid, name=fname)
-                    for fid, fname in zip(state.active_file_ids, state.active_file_names)
-                ],
-                query="(active files)",
-            )
-            context_parts.append(format_search_for_llm(search))
-            source_labels.append("Google Drive")
+        # Get full file info for URLs
+        full_search = await drive_search(agent_id, "", limit=50)
+        file_urls: dict[str, str] = {f.id: f.url for f in full_search.files if f.url}
+
+        for fid, fname in zip(state.active_file_ids, state.active_file_names):
+            url = file_urls.get(fid, "")
+            if fid in state.file_content_cache:
+                read = state.file_content_cache[fid]
+            else:
+                read = await drive_read(agent_id, fid)
+                if not read.error:
+                    state.file_content_cache[fid] = read
+            tools_called.append("drive.read")
+            ctx = format_read_for_llm(read)
+            if url:
+                ctx += f"\nDrive link: {url}"
+            context_parts.append(ctx)
+            source_labels.append(f"Google Drive · {fname}")
 
         return ToolExecution(
-            tools_called=tools_called or ["drive.reference"],
+            tools_called=tools_called,
             context_for_llm="\n\n".join(context_parts),
             source_labels=source_labels,
             state=state,

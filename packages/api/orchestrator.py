@@ -1288,7 +1288,71 @@ async def orchestrate_stream(request: OrchestrateRequest):
                 yield _sse({"type": "done", "trace_id": str(trace_id)})
                 return
 
-            # Step 0: Check personal data (meetings, tasks) first
+            # Step 0a: Tool routing — if the message triggers Drive/file
+            # tools, handle it directly without classify/route overhead.
+            from integrations.workspace.adapters import _has_real_connection
+            from tools.router import ToolState, route_tools
+
+            tool_state = _tool_states.get(session_id, ToolState())
+            google_ok = await _has_real_connection(str(source.id))
+            tool_exec = await route_tools(str(source.id), request.message, tool_state, google_ok)
+
+            if tool_exec:
+                log.info(f"[{trace_id}] tools fired early: {tool_exec.tools_called}")
+                _tool_states[session_id] = tool_exec.state
+
+                if tool_exec.clarification:
+                    yield _sse({"type": "step", "step": {
+                        "label": "Checked your connected data",
+                        "status": "done", "detail": "Google not connected",
+                    }})
+                    yield _sse({"type": "chunk", "text": tool_exec.clarification})
+                    _append_to_session(session_id, "assistant", tool_exec.clarification)
+                    yield _sse({"type": "done", "trace_id": str(trace_id)})
+                    return
+
+                yield _sse({"type": "step", "step": {
+                    "label": "Searching your files...",
+                    "status": "done",
+                    "detail": ", ".join(tool_exec.tools_called),
+                }})
+
+                from agents.llm_providers import call_llm
+
+                source_hint = ""
+                if tool_exec.source_labels:
+                    source_hint = (
+                        "\n\nEnd your answer with:\n"
+                        f"Source: {' · '.join(tool_exec.source_labels)}"
+                    )
+                system = (
+                    f"You are {source.name}'s personal AI agent (called 'Your Raven').\n\n"
+                    f"{tool_exec.context_for_llm}\n\n"
+                    f"Answer the user's question using ONLY the data above. "
+                    f"Be specific, cite file names and dates. "
+                    f"If file content is provided, summarize thoroughly. "
+                    f"If asked for action items, extract them. "
+                    f"If asked to download or open a file, provide the Google Drive link if available. "
+                    f"NEVER invent facts."
+                    f"{source_hint}"
+                )
+                max_tok = 800 if "drive.read" in tool_exec.tools_called else 400
+                answer = await call_llm(
+                    system=system, user_message=request.message,
+                    model_tier="reasoning", max_tokens=max_tok,
+                )
+                if not answer:
+                    answer = (
+                        "I found your files but my language model is temporarily "
+                        "unavailable. Try again in a moment."
+                    )
+                yield _sse({"type": "sources", "sources": tool_exec.source_labels})
+                yield _sse({"type": "chunk", "text": answer})
+                _append_to_session(session_id, "assistant", answer)
+                yield _sse({"type": "done", "trace_id": str(trace_id)})
+                return
+
+            # Step 0b: Check personal data (meetings, tasks)
             from meetings.context import build_personal_context, has_personal_data
 
             personal_context = ""
