@@ -548,7 +548,7 @@ export default function CalendarPage() {
           <div className="mt-3 flex items-center gap-2 text-[11px] text-dusk bg-ink border border-white/[0.06] rounded-md px-3 py-2">
             <AlertCircle className="w-3.5 h-3.5 text-[#FACC15]" />
             <span>
-              Showing demo data. Connect Google Calendar in{" "}
+              Calendar is not connected. Connect Google Calendar in{" "}
               <Link href="/settings" className="text-claret hover:text-[#D6596C]">
                 Settings
               </Link>{" "}

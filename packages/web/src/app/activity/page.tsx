@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+
 import {
   ArrowRight,
   MessageSquare,
@@ -230,12 +230,9 @@ export default function ActivityPage() {
             })}
           </div>
         ) : (
-          <div className="text-center py-12 text-sm text-zinc-600">
-            No activity yet.{" "}
-            <Link href="/demo" className="text-blue-400 hover:text-blue-300">
-              Try the Chat Demo
-            </Link>{" "}
-            to generate some.
+          <div className="text-center py-12 text-sm text-dusk">
+            No activity yet. Activity will appear here as your agent
+            processes requests.
           </div>
         )}
       </div>

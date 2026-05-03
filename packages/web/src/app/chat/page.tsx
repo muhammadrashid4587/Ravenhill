@@ -37,6 +37,9 @@ import {
   fetchAgentThread,
   parseFileMarker,
   summarizeFile,
+  fetchGoogleStatus,
+  fetchWorkspaceCalendar,
+  fetchGmailThreads,
   type AgentLedgerMessage,
 } from "@/lib/api";
 import {
@@ -155,10 +158,10 @@ interface PendingApproval {
 
 // ---- Constants ----
 
-const QUICK_PROMPTS = [
-  { label: "What's on my plate?", desc: "Your tasks" },
-  { label: "What's the Stripe API status?", desc: "Cross-team" },
-  { label: "Give me a standup update", desc: "Status report" },
+const FALLBACK_PROMPTS = [
+  { label: "What meetings do I have today?", desc: "Calendar", source: "calendar" as const },
+  { label: "Summarize my recent emails", desc: "Gmail", source: "gmail" as const },
+  { label: "What files were shared with me?", desc: "Drive", source: "drive" as const },
 ];
 
 // Department coloring is intentionally neutral in v1; identity is conveyed
@@ -288,6 +291,9 @@ function ChatInner() {
   const { agent: myAgent } = useAuth();
   const searchParams = useSearchParams();
   const urlToAgentId = searchParams.get("to");
+  const urlDriveFile = searchParams.get("drive_file");
+  const urlDriveName = searchParams.get("drive_name");
+  const driveAutoSentRef = useRef(false);
   const targetedForRef = useRef<string | null>(null);
   const [targetAgent, setTargetAgent] = useState<{
     id: string;
@@ -326,6 +332,55 @@ function ChatInner() {
       }
     };
   }, []);
+
+  // Data-grounded suggestion chips
+  const [suggestions, setSuggestions] = useState<
+    Array<{ label: string; desc: string; source: string }>
+  >([]);
+  useEffect(() => {
+    if (!myAgent) return;
+    let cancelled = false;
+    (async () => {
+      const chips: Array<{ label: string; desc: string; source: string }> = [];
+      try {
+        const gs = await fetchGoogleStatus().catch(() => null);
+        if (gs?.connected) {
+          const cal = await fetchWorkspaceCalendar().catch(() => []);
+          const events = Array.isArray(cal) ? cal : [];
+          if (events.length > 0) {
+            const next = events[0];
+            chips.push({
+              label: `Brief me on "${(next as { title?: string }).title}"`,
+              desc: "Calendar",
+              source: "calendar",
+            });
+          }
+          const threads = await fetchGmailThreads(5).catch(() => []);
+          const emails = Array.isArray(threads) ? threads : [];
+          if (emails.length > 0) {
+            chips.push({
+              label: "What needs my attention in my inbox?",
+              desc: "Gmail",
+              source: "gmail",
+            });
+          }
+          if (chips.length < 3) {
+            chips.push({
+              label: "What files were recently shared with me?",
+              desc: "Drive",
+              source: "drive",
+            });
+          }
+        }
+      } catch {
+        // fall through to fallbacks
+      }
+      if (!cancelled) {
+        setSuggestions(chips.length > 0 ? chips.slice(0, 3) : FALLBACK_PROMPTS);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [myAgent]);
 
   // Three-panel state
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
@@ -672,7 +727,7 @@ function ChatInner() {
     removeMsg(choiceMessageId);
     setLoading(true);
     const startTime = Date.now();
-    const thinkingId = pushMsg(myAgent.name, "Reading the file…", "thinking");
+    const thinkingId = pushMsg("Your Raven", "Reading the file…", "thinking");
 
     try {
       for (const att of attachments) {
@@ -723,7 +778,7 @@ function ChatInner() {
         }
 
         removeMsg(thinkingId);
-        pushMsg(myAgent.name, summaryText, "agent");
+        pushMsg("Your Raven", summaryText, "agent");
       }
 
       const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -878,6 +933,16 @@ function ChatInner() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!urlDriveFile || !urlDriveName || driveAutoSentRef.current || !myAgent) return;
+    driveAutoSentRef.current = true;
+    const timer = setTimeout(() => {
+      handleSend(`Summarize this Drive file: ${urlDriveName}`);
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlDriveFile, urlDriveName, myAgent]);
+
   const handleSend = async (text?: string) => {
     const message = text || input.trim();
     const attachmentsToSend = pendingAttachments;
@@ -945,7 +1010,7 @@ function ChatInner() {
       attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
     });
 
-    const thinkingId = pushMsg(myAgent.name, "Thinking...", "thinking");
+    const thinkingId = pushMsg("Your Raven", "Thinking...", "thinking");
     const startTime = Date.now();
 
     pushActivity(
@@ -1035,7 +1100,7 @@ function ChatInner() {
                 ...prev,
                 {
                   id: "streaming-response",
-                  sender: myAgent.name,
+                  sender: "Your Raven",
                   content: fullResponse,
                   isAgent: true,
                   timestamp: now(),
@@ -1361,12 +1426,12 @@ function ChatInner() {
                 <div
                   className={`w-8 h-8 rounded-full ${agentColor} flex items-center justify-center text-[10px] font-semibold`}
                 >
-                  {getInitials(myAgent.name)}
+                  YR
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <h1 className="text-sm font-medium text-bone">
-                      {myAgent.name}&apos;s agent
+                      Your Raven
                     </h1>
                     <span className="flex items-center gap-1 text-[10px] text-[#88D3A4]">
                       <span className="w-1.5 h-1.5 rounded-full bg-[#3FA46A]" />
@@ -1516,9 +1581,9 @@ function ChatInner() {
 
             {/* Quick prompts + Input */}
             <div className="border-t border-white/[0.06] p-4 shrink-0">
-              {messages.length === 0 && (
+              {messages.length === 0 && suggestions.length > 0 && (
                 <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-                  {QUICK_PROMPTS.map((prompt) => (
+                  {suggestions.map((prompt) => (
                     <button
                       key={prompt.label}
                       onClick={() => handleSend(prompt.label)}

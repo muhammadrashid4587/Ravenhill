@@ -346,7 +346,7 @@ function FilePreview({ file }: { file: WorkspaceFile }) {
           <ExternalLink className="w-3 h-3" /> Open in Drive
         </a>
         <Link
-          href="/chat"
+          href={`/chat?drive_file=${encodeURIComponent(file.id)}&drive_name=${encodeURIComponent(file.name)}`}
           className="flex-1 flex items-center justify-center gap-1.5 text-xs bg-oxblood hover:bg-claret text-bone rounded-md px-3 py-2 transition"
         >
           Ask agent about this
