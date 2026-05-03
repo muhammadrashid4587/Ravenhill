@@ -531,6 +531,16 @@ async def _hydrate_google_context(agent_id: str) -> str:
             email = c.get("email", "")
             lines.append(f"  - {name} <{email}>")
 
+    # Slack channels (if connected)
+    try:
+        from tools.slack import has_slack, slack_list_channels, format_channels_for_llm
+        if await has_slack(agent_id):
+            slack_result = await slack_list_channels(agent_id, limit=15)
+            if slack_result.channels:
+                lines.append(f"\n{format_channels_for_llm(slack_result)}")
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 

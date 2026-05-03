@@ -17,6 +17,13 @@ from tools.drive import (
     format_read_for_llm,
     format_search_for_llm,
 )
+from tools.slack import (
+    format_channels_for_llm,
+    format_messages_for_llm,
+    has_slack,
+    slack_channel_messages,
+    slack_list_channels,
+)
 
 log = logging.getLogger("tools.router")
 
@@ -220,4 +227,59 @@ async def route_tools(
             state=state,
         )
 
-    return None
+    # --- Slack tools ---
+    _SLACK_RE = re.compile(
+        r"(slack\b|channel|#\w+|what.*happening.*(?:team|channel|slack)|"
+        r"messages?\s+(?:in|from|on)\b)",
+        re.IGNORECASE,
+    )
+    if _SLACK_RE.search(message):
+        if not await has_slack(agent_id):
+            return ToolExecution(
+                tools_called=["slack.channels"],
+                context_for_llm="",
+                source_labels=[],
+                state=state,
+                clarification=(
+                    "Slack isn't connected yet. "
+                    "Connect Slack in Settings to let me read your channels."
+                ),
+            )
+
+        channel_match = re.search(r"#(\w[\w-]*)", message)
+        in_match = re.search(
+            r"(?:in|from|on)\s+(?:#?)([\w-]+)\s*(?:channel)?",
+            message, re.IGNORECASE,
+        )
+        channel_name = None
+        if channel_match:
+            channel_name = channel_match.group(1)
+        elif in_match:
+            candidate = in_match.group(1).lower()
+            if candidate not in ("my", "the", "a", "slack", "channel", "channels"):
+                channel_name = candidate
+
+        channels = await slack_list_channels(agent_id, limit=30)
+
+        if channel_name and channels.channels:
+            matched = next(
+                (c for c in channels.channels if c.name.lower() == channel_name.lower()),
+                None,
+            )
+            if matched:
+                msgs = await slack_channel_messages(agent_id, matched.id, limit=15)
+                return ToolExecution(
+                    tools_called=["slack.channels", "slack.messages"],
+                    context_for_llm=format_messages_for_llm(matched.name, msgs),
+                    source_labels=[f"Slack · #{matched.name}"],
+                    state=state,
+                )
+
+        return ToolExecution(
+            tools_called=["slack.channels"],
+            context_for_llm=format_channels_for_llm(channels),
+            source_labels=["Slack"],
+            state=state,
+        )
+
+    return None  # no tools matched
