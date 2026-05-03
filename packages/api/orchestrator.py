@@ -48,6 +48,7 @@ router = APIRouter()
 # Key: session_id (str) -> list of {"role": "user"|"assistant", "content": str}
 # Kept to last MAX_SESSION_MESSAGES per session. Cleared on demo reset.
 _conversation_sessions: dict[str, list[dict[str, str]]] = {}
+_tool_states: dict = {}
 
 MAX_SESSION_MESSAGES = 10
 
@@ -620,15 +621,41 @@ async def _conversational_fallback(
     agent: Agent,
     message: str,
     conversation_history: list[str],
+    session_id: str | None = None,
 ) -> str:
-    """When no agents match a query, let the agent respond directly.
+    """Respond using tools (Drive/Gmail/Calendar) + LLM.
 
-    Always attempts Google Workspace hydration + LLM call regardless of
-    the current provider state. Falls back to data-aware mock responses
-    only when the LLM is truly unavailable.
+    Flow:
+    1. Check Google connection
+    2. Route tools (drive.search, drive.read) based on message
+    3. If tools fired, build focused prompt with tool results
+    4. Otherwise, hydrate broad Google context for general questions
+    5. Call LLM with the assembled context
     """
     from agents.llm_providers import call_llm
+    from tools.router import ToolState, route_tools
 
+    agent_id_str = str(agent.id)
+
+    # Get or create per-session tool state
+    tool_state = _tool_states.get(session_id, ToolState()) if session_id else ToolState()
+
+    # Check Google connection
+    from integrations.workspace.adapters import _has_real_connection
+    google_connected = await _has_real_connection(agent_id_str)
+    log.info(f"[chat] agent={agent_id_str[:8]} google={google_connected}")
+
+    # --- Tool routing ---
+    tool_exec = await route_tools(agent_id_str, message, tool_state, google_connected)
+
+    if tool_exec:
+        log.info(f"[chat] tools fired: {tool_exec.tools_called}")
+        if session_id:
+            _tool_states[session_id] = tool_exec.state
+        if tool_exec.clarification:
+            return tool_exec.clarification
+
+    # --- Build context ---
     history_block = ""
     if conversation_history:
         history_block = (
@@ -636,27 +663,9 @@ async def _conversational_fallback(
             + "\n".join(conversation_history[-6:])
         )
 
-    google_block = ""
-    try:
-        agent_id_str = str(agent.id)
-        log.info(f"[chat-hydrate] agent_id={agent_id_str} — starting Google context hydration")
-        google_block = await _hydrate_google_context(agent_id_str)
-        if google_block:
-            line_count = google_block.count("\n")
-            log.info(f"[chat-hydrate] agent_id={agent_id_str} — got {line_count} context lines")
-        else:
-            log.info(f"[chat-hydrate] agent_id={agent_id_str} — empty (not connected or no data)")
-    except Exception as exc:
-        log.warning(f"[chat-hydrate] agent_id={str(agent.id)} — failed: {exc}")
+    context_parts: list[str] = []
 
-    file_content_block = ""
-    try:
-        file_content_block = await _fetch_file_if_referenced(
-            str(agent.id), message, google_block
-        )
-    except Exception:
-        pass
-
+    # Knowledge entries
     kb_lines: list[str] = []
     for entry in (agent.knowledge_entries or []):
         topic = entry.get("topic", "?") if isinstance(entry, dict) else getattr(entry, "topic", "?")
@@ -668,62 +677,67 @@ async def _conversational_fallback(
     if agent.role_description:
         kb_lines.append(f"- About me: {agent.role_description}")
     kb_text = "\n".join(kb_lines).strip()
-
-    has_knowledge = bool(kb_text)
-    has_google = bool(google_block)
-    has_any_context = has_knowledge or has_google
-
-    context_parts: list[str] = []
     if kb_text:
         context_parts.append(f"What I know about {agent.name}:\n{kb_text}")
-    if google_block:
-        context_parts.append(google_block)
-    if file_content_block:
-        context_parts.append(file_content_block)
+
+    if tool_exec and tool_exec.context_for_llm:
+        context_parts.append(tool_exec.context_for_llm)
+    elif google_connected:
+        # No tools fired — broad context for general questions
+        try:
+            google_block = await _hydrate_google_context(agent_id_str)
+            if google_block:
+                context_parts.append(google_block)
+        except Exception:
+            pass
+
+    has_any_context = bool(context_parts)
     full_context = "\n\n".join(context_parts)
+
+    source_hint = ""
+    if tool_exec and tool_exec.source_labels:
+        source_hint = (
+            "\n\nIMPORTANT: End your answer with a source line, e.g.:\n"
+            f"Source: {' · '.join(tool_exec.source_labels)}"
+        )
 
     if has_any_context:
         system = (
-            f"You are {agent.name}'s personal AI agent. Speak in their voice.\n\n"
+            f"You are {agent.name}'s personal AI agent (called 'Your Raven').\n\n"
             f"{full_context}\n\n"
-            f"Answer the user's question using the data above. Be specific — "
-            f"name real meetings, real files, real emails, real dates from "
-            f"the context. For greetings, be warm and brief. For questions "
-            f"outside the data above, say what you DO know and offer to "
-            f"help differently. NEVER invent facts. Keep answers under "
-            f"120 words."
-            f"{history_block}"
+            f"Answer the user's question using ONLY the data above. Be specific — "
+            f"name real files, emails, meetings, dates from the context. "
+            f"NEVER invent facts. If the file content is provided, summarize it "
+            f"thoroughly. If asked for action items, extract them from the content. "
+            f"Keep answers focused and under 200 words."
+            f"{source_hint}{history_block}"
         )
     else:
         system = (
-            f"You are {agent.name}'s personal AI agent. They just signed "
-            f"up — you don't yet have any data about their work, team, "
-            f"calendar, or files.\n\n"
-            f"Be a useful, thoughtful assistant: answer general questions, "
-            f"brainstorm, reason through problems, draft text, summarize "
-            f"things they paste. The one rule: NEVER invent facts about "
-            f"{agent.name}'s specific team, projects, meetings, or "
-            f"colleagues — you don't know any of that yet. If they ask "
-            f"about their work specifically, gently mention they can "
-            f"connect Google in /settings so you can read their "
-            f"calendar/drive/gmail and become useful for that.\n\n"
-            f"For greetings, greet warmly in 1 sentence. Otherwise keep "
-            f"answers conversational, under 100 words."
+            f"You are {agent.name}'s personal AI agent (called 'Your Raven'). "
+            f"They just signed up — you don't yet have any data about their "
+            f"work, team, calendar, or files.\n\n"
+            f"Be a useful assistant: answer general questions, brainstorm, "
+            f"reason through problems. NEVER invent facts about "
+            f"{agent.name}'s specific work. If they ask about their files, "
+            f"calendar, or emails, tell them to connect Google in Settings."
             f"{history_block}"
         )
+
+    max_tokens = 800 if (tool_exec and "drive.read" in tool_exec.tools_called) else 400
     result = await call_llm(
         system=system,
         user_message=message,
         model_tier="reasoning",
-        max_tokens=400,
+        max_tokens=max_tokens,
     )
     if result:
         return result
 
-    # LLM unavailable — return data-aware fallback instead of generic copy
+    # LLM unavailable — data-aware fallback
     msg_lower = message.lower().strip()
     if any(g in msg_lower for g in ("hello", "hi", "hey", "good morning", "good afternoon")):
-        if has_google:
+        if google_connected:
             return (
                 "Hey! I can see your Google Calendar, Drive, and Gmail. "
                 "Ask me about your meetings, files, or emails — I'm pulling from real data."
@@ -733,19 +747,17 @@ async def _conversational_fallback(
             "drive, and inbox. Until then I can help with general questions."
         )
     if any(g in msg_lower for g in ("thank", "thanks", "appreciate")):
-        return "You're welcome! Let me know if there's anything else you'd like to check on."
-    if any(g in msg_lower for g in ("bye", "goodbye", "see you", "that's all")):
-        return "Talk soon! I'm always here when you need an update."
-
-    if has_google:
+        return "You're welcome! Let me know if there's anything else."
+    if any(g in msg_lower for g in ("bye", "goodbye", "see you")):
+        return "Talk soon!"
+    if google_connected:
         return (
-            "I have your Google Workspace data loaded but my language model "
-            "is temporarily unavailable. Try again in a moment — I'll be able "
-            "to answer from your real calendar, drive, and inbox data."
+            "I have your Google data loaded but my language model is "
+            "temporarily unavailable. Try again in a moment."
         )
     return (
-        "Google isn't connected yet, so I can't see your calendar, files, or "
-        "emails. Connect Google in Settings → Google to unlock that."
+        "Google isn't connected yet. Connect in Settings → Google "
+        "so I can read your files, calendar, and emails."
     )
 
 
@@ -783,7 +795,7 @@ async def orchestrate(request: OrchestrateRequest):
     # Early exit for dismissive/acknowledgment messages — no need for LLM classify
     _clean = re.sub(r"[^\w\s]", " ", request.message.lower().strip()).split()
     if _clean and all(w in _DISMISS_WORDS for w in _clean):
-        answer = await _conversational_fallback(source, request.message, [])
+        answer = await _conversational_fallback(source, request.message, [], session_id)
         _append_to_session(session_id, "assistant", answer)
         steps.append(OrchestrateStep(label="Acknowledged", detail="casual"))
         return OrchestrateResponse(
@@ -868,7 +880,7 @@ async def orchestrate(request: OrchestrateRequest):
         # Instead of a dead-end error, let the COO's agent respond directly
         # using the LLM with the agent's persona and knowledge base
         fallback_answer = await _conversational_fallback(
-            source, request.message, synthesis_history
+            source, request.message, synthesis_history, session_id
         )
         steps.append(OrchestrateStep(
             label="Responding directly",
@@ -912,7 +924,7 @@ async def orchestrate(request: OrchestrateRequest):
     if not target_agents:
         log.info(f"[{trace_id}] seniority-filter dropped all candidates")
         fallback_answer = await _conversational_fallback(
-            source, request.message, synthesis_history
+            source, request.message, synthesis_history, session_id
         )
         steps.append(OrchestrateStep(
             label="Responding directly",
@@ -1270,7 +1282,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
             # Early exit for dismissive messages
             _clean_s = re.sub(r"[^\w\s]", " ", request.message.lower().strip()).split()
             if _clean_s and all(w in _DISMISS_WORDS for w in _clean_s):
-                answer = await _conversational_fallback(source, request.message, [])
+                answer = await _conversational_fallback(source, request.message, [], session_id)
                 yield _sse({"type": "chunk", "text": answer})
                 _append_to_session(session_id, "assistant", answer)
                 yield _sse({"type": "done", "trace_id": str(trace_id)})
@@ -1386,9 +1398,8 @@ async def orchestrate_stream(request: OrchestrateRequest):
             ranked_ids = [aid for aid in ranked_ids if aid != str(source.id)]
 
             if not ranked_ids:
-                # Let the agent respond conversationally instead of dead-ending
                 fallback = await _conversational_fallback(
-                    source, request.message, synthesis_history
+                    source, request.message, synthesis_history, session_id
                 )
                 yield _sse({"type": "chunk", "text": fallback})
                 _append_to_session(session_id, "assistant", fallback)
@@ -1418,7 +1429,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
             )
             if not target_agents:
                 fallback = await _conversational_fallback(
-                    source, request.message, synthesis_history
+                    source, request.message, synthesis_history, session_id
                 )
                 yield _sse({"type": "chunk", "text": fallback})
                 _append_to_session(session_id, "assistant", fallback)
