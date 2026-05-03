@@ -34,6 +34,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
+    # People API — read the user's saved contacts and auto-discovered
+    # "other contacts" (people they've corresponded with). Used by /api/people
+    # to show which Ravenhill agents the user already knows.
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/contacts.other.readonly",
 ]
 
 
