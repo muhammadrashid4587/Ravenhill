@@ -251,7 +251,7 @@ export default function CalendarPage() {
     Promise.all([
       // Real Google Calendar through the workspace adapter — backend falls back
       // to seed data automatically if the user hasn't connected Google yet.
-      fetchWorkspaceCalendar(myAgent?.id || "demo").catch(() => []),
+      fetchWorkspaceCalendar().catch(() => []),
       fetchPendingItems().catch(() => []),
       myAgent ? fetchMeetings(myAgent.id).catch(() => []) : Promise.resolve([]),
     ]).then(([ev, p, m]) => {
@@ -263,7 +263,7 @@ export default function CalendarPage() {
   }, [myAgent]);
 
   useEffect(() => {
-    fetchGoogleStatus(myAgent?.id)
+    fetchGoogleStatus()
       .then(setGoogle)
       .catch(() => setGoogle(null));
   }, [myAgent]);

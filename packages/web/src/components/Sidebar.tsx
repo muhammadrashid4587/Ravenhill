@@ -17,6 +17,7 @@ import {
   Inbox,
   Settings,
   UserCircle2,
+  Users,
   UsersRound,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
@@ -41,6 +42,7 @@ const SECONDARY_NAV = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/drive", label: "Drive", icon: HardDriveUpload },
   { href: "/knowledge", label: "Knowledge", icon: Brain },
+  { href: "/people", label: "People", icon: Users },
   { href: "/hr", label: "HR", icon: UsersRound },
   { href: "/account", label: "Account", icon: UserCircle2 },
   { href: "/settings", label: "Settings", icon: Settings },

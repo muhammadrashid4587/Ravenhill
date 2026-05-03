@@ -491,10 +491,10 @@ export const mockDriveFolders: DriveFolder[] = [
   { id: "meet", name: "Meet Recordings", file_ids: ["f7"] },
 ];
 
-export async function fetchDriveFolders(agentId?: string): Promise<DriveFolder[]> {
+export async function fetchDriveFolders(): Promise<DriveFolder[]> {
   try {
     const { fetchWorkspaceDriveFolders } = await import("./api");
-    const res = await fetchWorkspaceDriveFolders(agentId);
+    const res = await fetchWorkspaceDriveFolders();
     if (Array.isArray(res)) return res as DriveFolder[];
   } catch {
     /* fall through */
@@ -526,10 +526,10 @@ export const mockWorkspaceEmails: WorkspaceEmail[] = [
 // These three prefer the live backend when it's up; fall back to the canned
 // fixtures above so the frontend never breaks mid-demo. Once every consumer
 // is ported to api.ts directly, the seed constants can be deleted.
-export async function fetchCalendarEvents(agentId?: string): Promise<CalendarEvent[]> {
+export async function fetchCalendarEvents(): Promise<CalendarEvent[]> {
   try {
     const { fetchWorkspaceCalendar } = await import("./api");
-    const res = await fetchWorkspaceCalendar(agentId);
+    const res = await fetchWorkspaceCalendar();
     if (Array.isArray(res)) return res as CalendarEvent[];
   } catch {
     /* fall through */
@@ -537,10 +537,10 @@ export async function fetchCalendarEvents(agentId?: string): Promise<CalendarEve
   return mockCalendarEvents;
 }
 
-export async function fetchWorkspaceFiles(agentId?: string): Promise<WorkspaceFile[]> {
+export async function fetchWorkspaceFiles(): Promise<WorkspaceFile[]> {
   try {
     const { fetchWorkspaceDriveFiles } = await import("./api");
-    const res = await fetchWorkspaceDriveFiles(agentId);
+    const res = await fetchWorkspaceDriveFiles();
     if (Array.isArray(res)) return res as WorkspaceFile[];
   } catch {
     /* fall through */
@@ -548,10 +548,10 @@ export async function fetchWorkspaceFiles(agentId?: string): Promise<WorkspaceFi
   return mockWorkspaceFiles;
 }
 
-export async function fetchWorkspaceEmails(agentId?: string): Promise<WorkspaceEmail[]> {
+export async function fetchWorkspaceEmails(): Promise<WorkspaceEmail[]> {
   try {
     const { fetchGmailThreads } = await import("./api");
-    const res = await fetchGmailThreads(agentId);
+    const res = await fetchGmailThreads();
     if (Array.isArray(res)) return res as WorkspaceEmail[];
   } catch {
     /* fall through */

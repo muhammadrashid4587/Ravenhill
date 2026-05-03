@@ -16,10 +16,12 @@ import time
 from collections.abc import AsyncGenerator
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
+
+from auth.deps import get_current_agent
 
 from activity.models import ActivityEntry, log_activity
 from agents.discovery import build_topic_map, rank_agents
@@ -82,7 +84,7 @@ def _history_as_strings(
 
 class OrchestrateRequest(BaseModel):
     """Request body for the orchestrate endpoint."""
-    message: str
+    message: str = Field(max_length=10000)
     agent_id: UUID
     session_id: str | None = None
     conversation_history: list[str] = []
@@ -733,6 +735,15 @@ async def _conversational_fallback(
 
 
 @router.post("/", response_model=OrchestrateResponse)
+async def orchestrate_endpoint(
+    request: OrchestrateRequest,
+    caller: AgentRow = Depends(get_current_agent),
+):
+    if request.agent_id != caller.id:
+        raise HTTPException(status_code=403, detail="Cannot orchestrate as another agent")
+    return await orchestrate(request)
+
+
 async def orchestrate(request: OrchestrateRequest):
     """Full orchestration flow — classify, route via topic map, query agents, synthesize."""
     t_start = time.monotonic()
@@ -1204,6 +1215,15 @@ async def second_hop(request: SecondHopRequest):
 
 
 @router.post("/stream")
+async def orchestrate_stream_endpoint(
+    request: OrchestrateRequest,
+    caller: AgentRow = Depends(get_current_agent),
+):
+    if request.agent_id != caller.id:
+        raise HTTPException(status_code=403, detail="Cannot orchestrate as another agent")
+    return await orchestrate_stream(request)
+
+
 async def orchestrate_stream(request: OrchestrateRequest):
     """Streaming orchestration — SSE stream with steps, chunks, sources, second_hop."""
     source = await _get_agent(request.agent_id)

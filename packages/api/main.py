@@ -21,6 +21,7 @@ from integrations.workspace.router import router as workspace_router
 from meetings.router import router as meetings_router
 from orchestrator import router as orchestrator_router
 from orgs.router import router as orgs_router
+from people.router import router as people_router
 
 
 @asynccontextmanager
@@ -98,6 +99,7 @@ app.include_router(feedback_router, prefix="/api/feedback", tags=["feedback"])
 app.include_router(files_router, prefix="/api/files", tags=["files"])
 app.include_router(behavior_router, prefix="/api/behavior", tags=["behavior"])
 app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(people_router, prefix="/api/people", tags=["people"])
 
 
 @app.get("/health")

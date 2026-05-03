@@ -948,9 +948,8 @@ export async function fetchHealth() {
 
 // ---- Google Workspace (Calendar / Drive / Gmail) ----
 
-export async function fetchWorkspaceCalendar(agentId?: string) {
-  const params = agentId ? `?agent_id=${agentId}` : "";
-  const res = await fetch(`${API_BASE}/api/workspace/calendar/events${params}`);
+export async function fetchWorkspaceCalendar() {
+  const res = await apiFetch(`/api/workspace/calendar/events`);
   if (!res.ok) throw new Error(`calendar fetch failed: ${res.status}`);
   return res.json();
 }
@@ -964,13 +963,12 @@ export interface TriageItem {
   thread_url?: string | null;
 }
 
-export async function fetchInboxTriage(agentId?: string): Promise<{
+export async function fetchInboxTriage(): Promise<{
   agent_id: string;
   items: TriageItem[];
   source: string;
 }> {
-  const params = agentId ? `?agent_id=${agentId}` : "";
-  const res = await fetch(`${API_BASE}/api/workspace/gmail/triage${params}`);
+  const res = await apiFetch(`/api/workspace/gmail/triage`);
   if (!res.ok) throw new Error(`triage fetch failed: ${res.status}`);
   return res.json();
 }
@@ -995,45 +993,37 @@ export interface PreMeetingBrief {
 
 export async function fetchPreMeetingBrief(
   eventId: string,
-  agentId?: string,
 ): Promise<PreMeetingBrief> {
   const params = new URLSearchParams({ event_id: eventId });
-  if (agentId) params.set("agent_id", agentId);
-  const res = await fetch(
-    `${API_BASE}/api/workspace/calendar/brief?${params}`,
+  const res = await apiFetch(
+    `/api/workspace/calendar/brief?${params}`,
   );
   if (!res.ok) throw new Error(`brief fetch failed: ${res.status}`);
   return res.json();
 }
 
-export async function fetchWorkspaceDriveFiles(agentId?: string) {
-  const params = agentId ? `?agent_id=${agentId}` : "";
-  const res = await fetch(`${API_BASE}/api/workspace/drive/files${params}`);
+export async function fetchWorkspaceDriveFiles() {
+  const res = await apiFetch(`/api/workspace/drive/files`);
   if (!res.ok) throw new Error(`drive files failed: ${res.status}`);
   return res.json();
 }
 
-export async function fetchWorkspaceDriveFolders(agentId?: string) {
-  const params = agentId ? `?agent_id=${agentId}` : "";
-  const res = await fetch(`${API_BASE}/api/workspace/drive/folders${params}`);
+export async function fetchWorkspaceDriveFolders() {
+  const res = await apiFetch(`/api/workspace/drive/folders`);
   if (!res.ok) throw new Error(`drive folders failed: ${res.status}`);
   return res.json();
 }
 
-export async function fetchGmailThreads(agentId?: string, limit = 25) {
-  const params = new URLSearchParams();
-  if (agentId) params.set("agent_id", agentId);
-  params.set("limit", String(limit));
-  const res = await fetch(`${API_BASE}/api/workspace/gmail/threads?${params}`);
+export async function fetchGmailThreads(limit = 25) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(`/api/workspace/gmail/threads?${params}`);
   if (!res.ok) throw new Error(`gmail threads failed: ${res.status}`);
   return res.json();
 }
 
-export async function ingestGmailTopics(agentId?: string, limit = 25) {
-  const params = new URLSearchParams();
-  if (agentId) params.set("agent_id", agentId);
-  params.set("limit", String(limit));
-  const res = await fetch(`${API_BASE}/api/workspace/gmail/ingest?${params}`, {
+export async function ingestGmailTopics(limit = 25) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(`/api/workspace/gmail/ingest?${params}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`gmail ingest failed: ${res.status}`);
@@ -1049,15 +1039,14 @@ export interface GoogleStatus {
   scopes: string[];
 }
 
-export async function fetchGoogleStatus(agentId?: string): Promise<GoogleStatus> {
-  const params = agentId ? `?agent_id=${agentId}` : "";
-  const res = await fetch(`${API_BASE}/api/workspace/google/status${params}`);
+export async function fetchGoogleStatus(): Promise<GoogleStatus> {
+  const res = await apiFetch(`/api/workspace/google/status`);
   if (!res.ok) throw new Error(`google status failed: ${res.status}`);
   return res.json();
 }
 
 export async function fetchGoogleAuthUrl(): Promise<{ auth_url: string }> {
-  const res = await fetch(`${API_BASE}/api/workspace/google/auth-url`);
+  const res = await apiFetch(`/api/workspace/google/auth-url`);
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
     throw new Error(detail.detail || `auth-url failed: ${res.status}`);
@@ -1065,11 +1054,9 @@ export async function fetchGoogleAuthUrl(): Promise<{ auth_url: string }> {
   return res.json();
 }
 
-export async function submitGoogleCallback(code: string, agentId?: string) {
-  const params = new URLSearchParams();
-  params.set("code", code);
-  if (agentId) params.set("agent_id", agentId);
-  const res = await fetch(`${API_BASE}/api/workspace/google/callback?${params}`, {
+export async function submitGoogleCallback(code: string) {
+  const params = new URLSearchParams({ code });
+  const res = await apiFetch(`/api/workspace/google/callback?${params}`, {
     method: "POST",
   });
   if (!res.ok) {
@@ -1079,9 +1066,8 @@ export async function submitGoogleCallback(code: string, agentId?: string) {
   return res.json();
 }
 
-export async function disconnectGoogle(agentId?: string) {
-  const params = agentId ? `?agent_id=${agentId}` : "";
-  const res = await fetch(`${API_BASE}/api/workspace/google/disconnect${params}`, {
+export async function disconnectGoogle() {
+  const res = await apiFetch(`/api/workspace/google/disconnect`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(`disconnect failed: ${res.status}`);
@@ -1448,4 +1434,21 @@ export async function secondHopStream(
       }
     }
   }
+}
+
+// ---- People (Google Contacts ∩ Ravenhill agents) ----
+
+export interface Person {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  departments: string[];
+  sources: ("contact" | "domain")[];
+}
+
+export async function fetchPeople(): Promise<Person[]> {
+  const res = await apiFetch("/api/people/");
+  if (!res.ok) throw new Error(`people fetch failed: ${res.status}`);
+  return res.json();
 }

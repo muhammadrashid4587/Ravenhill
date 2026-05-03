@@ -106,13 +106,13 @@ export default function HomePage() {
   useEffect(() => {
     if (!myAgent) return;
     setEventsLoading(true);
-    fetchWorkspaceCalendar(myAgent.id)
+    fetchWorkspaceCalendar()
       .then((data) => setEvents((data || []) as CalendarEvent[]))
       .catch(() => setEvents([]))
       .finally(() => setEventsLoading(false));
 
     setTriageLoading(true);
-    fetchInboxTriage(myAgent.id)
+    fetchInboxTriage()
       .then((res) => setTriage(res.items || []))
       .catch(() => setTriage([]))
       .finally(() => setTriageLoading(false));
@@ -166,7 +166,7 @@ export default function HomePage() {
     setBriefError(null);
     setBrief(null);
     try {
-      const res = await fetchPreMeetingBrief(eventId, myAgent.id);
+      const res = await fetchPreMeetingBrief(eventId);
       setBrief(res);
     } catch {
       setBriefError(

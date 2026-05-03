@@ -150,9 +150,9 @@ export default function DashboardPage() {
       // Live Google Workspace — backend falls back to seed data automatically
       // when the agent hasn't connected Google yet, so a [] here means an
       // actual fetch error, not "not connected".
-      fetchWorkspaceCalendar(myAgent?.id || "demo").catch(() => []),
-      fetchWorkspaceDriveFiles(myAgent?.id || "demo").catch(() => []),
-      fetchGmailThreads(myAgent?.id || "demo").catch(() => []),
+      fetchWorkspaceCalendar().catch(() => []),
+      fetchWorkspaceDriveFiles().catch(() => []),
+      fetchGmailThreads().catch(() => []),
     ]).then(([s, a, m, p, ce, wf, we]) => {
       setStats(s);
       setActivity(a);

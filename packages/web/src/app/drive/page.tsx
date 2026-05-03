@@ -92,8 +92,8 @@ export default function DrivePage() {
       return;
     }
     Promise.all([
-      fetchWorkspaceDriveFiles(id).catch(() => []),
-      fetchWorkspaceDriveFolders(id).catch(() => []),
+      fetchWorkspaceDriveFiles().catch(() => []),
+      fetchWorkspaceDriveFolders().catch(() => []),
     ]).then(([f, fs]) => {
       setFiles((f || []) as WorkspaceFile[]);
       setFolders((fs || []) as DriveFolder[]);
@@ -102,7 +102,7 @@ export default function DrivePage() {
   }, [myAgent]);
 
   useEffect(() => {
-    fetchGoogleStatus(myAgent?.id)
+    fetchGoogleStatus()
       .then(setGoogle)
       .catch(() => setGoogle(null));
   }, [myAgent]);

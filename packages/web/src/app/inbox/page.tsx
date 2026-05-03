@@ -52,14 +52,14 @@ export default function InboxPage() {
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
 
   useEffect(() => {
-    fetchGmailThreads(myAgent?.id)
+    fetchGmailThreads()
       .then(setThreads)
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [myAgent]);
 
   useEffect(() => {
-    fetchGoogleStatus(myAgent?.id)
+    fetchGoogleStatus()
       .then(setGoogle)
       .catch(() => setGoogle(null));
   }, [myAgent]);
@@ -83,7 +83,7 @@ export default function InboxPage() {
   const handleIngest = async () => {
     setIngesting(true);
     try {
-      const res = await ingestGmailTopics(myAgent?.id);
+      const res = await ingestGmailTopics();
       setIngest(res as IngestResult);
     } catch {
       setIngest(null);

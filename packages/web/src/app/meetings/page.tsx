@@ -121,7 +121,7 @@ export default function MeetingsPage() {
   const { scheduleReminder, cancelReminder, hasReminderFor } = useReminders();
 
   useEffect(() => {
-    fetchGoogleStatus(myAgent?.id)
+    fetchGoogleStatus()
       .then(setGoogle)
       .catch(() => setGoogle(null));
   }, [myAgent]);
@@ -132,7 +132,7 @@ export default function MeetingsPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const data = (await fetchWorkspaceCalendar(myAgent.id)) as CalendarEvent[];
+        const data = (await fetchWorkspaceCalendar()) as CalendarEvent[];
         if (cancelled) return;
         setEvents(Array.isArray(data) ? data : []);
         setLastSynced(new Date());

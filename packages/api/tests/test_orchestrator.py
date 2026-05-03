@@ -7,8 +7,9 @@ import pytest
 
 from agents.seed import COO_ID, OPS_MANAGER_ID
 from approvals.router import ApprovalStatus
+from auth.deps import get_current_agent
 import db
-from db import ApprovalRow
+from db import AgentRow, ApprovalRow
 from orchestrator import (
     orchestrate,
     complete_doc_request,
@@ -24,6 +25,17 @@ def clear_sessions():
     _conversation_sessions.clear()
     yield
     _conversation_sessions.clear()
+
+
+def _override_auth(agent_id: UUID):
+    """Return a FastAPI dependency override that pretends the given agent is logged in."""
+    fake = AgentRow()
+    fake.id = agent_id
+
+    async def _fake_current_agent():
+        return fake
+
+    return _fake_current_agent
 
 
 @pytest.mark.asyncio
@@ -317,27 +329,31 @@ async def test_stream_marketplace_redesign():
     from httpx import ASGITransport, AsyncClient
     from main import app
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/api/orchestrate/stream",
-            json={
-                "message": "Are we on track for the marketplace redesign?",
-                "agent_id": str(COO_ID),
-            },
-        )
+    app.dependency_overrides[get_current_agent] = _override_auth(COO_ID)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/orchestrate/stream",
+                json={
+                    "message": "Are we on track for the marketplace redesign?",
+                    "agent_id": str(COO_ID),
+                },
+            )
 
-    assert resp.status_code == 200
-    assert resp.headers["content-type"] == "text/event-stream; charset=utf-8"
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "text/event-stream; charset=utf-8"
 
-    events = _parse_sse(resp.text)
-    types = [e["type"] for e in events]
+        events = _parse_sse(resp.text)
+        types = [e["type"] for e in events]
 
-    assert "session" in types  # session_id emitted first
-    assert "step" in types
-    assert "chunk" in types
-    assert "sources" in types
-    assert "done" in types
+        assert "session" in types
+        assert "step" in types
+        assert "chunk" in types
+        assert "sources" in types
+        assert "done" in types
+    finally:
+        app.dependency_overrides.pop(get_current_agent, None)
 
 
 @pytest.mark.asyncio
@@ -346,21 +362,25 @@ async def test_stream_returns_session_id():
     from httpx import ASGITransport, AsyncClient
     from main import app
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/api/orchestrate/stream",
-            json={
-                "message": "Are we on track for the marketplace redesign?",
-                "agent_id": str(COO_ID),
-            },
-        )
+    app.dependency_overrides[get_current_agent] = _override_auth(COO_ID)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/orchestrate/stream",
+                json={
+                    "message": "Are we on track for the marketplace redesign?",
+                    "agent_id": str(COO_ID),
+                },
+            )
 
-    events = _parse_sse(resp.text)
-    session_events = [e for e in events if e["type"] == "session"]
-    assert len(session_events) == 1
-    assert "session_id" in session_events[0]
-    assert len(session_events[0]["session_id"]) > 0
+        events = _parse_sse(resp.text)
+        session_events = [e for e in events if e["type"] == "session"]
+        assert len(session_events) == 1
+        assert "session_id" in session_events[0]
+        assert len(session_events[0]["session_id"]) > 0
+    finally:
+        app.dependency_overrides.pop(get_current_agent, None)
 
 
 @pytest.mark.asyncio
@@ -370,25 +390,29 @@ async def test_stream_preserves_provided_session_id():
     from main import app
 
     my_session = "my-custom-session-456"
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/api/orchestrate/stream",
-            json={
-                "message": "Are we on track for the marketplace redesign?",
-                "agent_id": str(COO_ID),
-                "session_id": my_session,
-            },
-        )
+    app.dependency_overrides[get_current_agent] = _override_auth(COO_ID)
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/orchestrate/stream",
+                json={
+                    "message": "Are we on track for the marketplace redesign?",
+                    "agent_id": str(COO_ID),
+                    "session_id": my_session,
+                },
+            )
 
-    events = _parse_sse(resp.text)
-    session_events = [e for e in events if e["type"] == "session"]
-    assert session_events[0]["session_id"] == my_session
+        events = _parse_sse(resp.text)
+        session_events = [e for e in events if e["type"] == "session"]
+        assert session_events[0]["session_id"] == my_session
+    finally:
+        app.dependency_overrides.pop(get_current_agent, None)
 
 
 @pytest.mark.asyncio
-async def test_stream_unknown_agent_returns_404():
-    """Streaming: Non-existent agent should return 404."""
+async def test_stream_unauthenticated_returns_401():
+    """Streaming: unauthenticated request should return 401."""
     from httpx import ASGITransport, AsyncClient
     from main import app
 
@@ -399,7 +423,7 @@ async def test_stream_unknown_agent_returns_404():
             "/api/orchestrate/stream",
             json={"message": "Hello", "agent_id": fake_id},
         )
-    assert resp.status_code == 404
+    assert resp.status_code == 401
 
 
 def _parse_sse(text: str) -> list[dict]:

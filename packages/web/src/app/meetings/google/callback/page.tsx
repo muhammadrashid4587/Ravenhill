@@ -27,7 +27,7 @@ function CallbackInner() {
       setDetail("No authorization code was returned by Google.");
       return;
     }
-    submitGoogleCallback(code, myAgent?.id)
+    submitGoogleCallback(code)
       .then(() => {
         setStatus("ok");
         // Auto-bounce back after a short moment so the user sees confirmation

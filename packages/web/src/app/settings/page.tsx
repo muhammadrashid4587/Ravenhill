@@ -9,7 +9,6 @@ import {
   AlertCircle,
   LogOut,
   ExternalLink,
-  CreditCard,
   Eye,
 } from "lucide-react";
 import {
@@ -42,7 +41,7 @@ export default function SettingsPage() {
   const [slackError, setSlackError] = useState<string>("");
 
   useEffect(() => {
-    fetchGoogleStatus(myAgent?.id)
+    fetchGoogleStatus()
       .then(setGoogle)
       .catch(() => setGoogle(null));
     if (myAgent?.id) {
@@ -140,8 +139,8 @@ export default function SettingsPage() {
   const handleDisconnectGoogle = async () => {
     setGoogleBusy(true);
     try {
-      await disconnectGoogle(myAgent?.id);
-      const status = await fetchGoogleStatus(myAgent?.id);
+      await disconnectGoogle();
+      const status = await fetchGoogleStatus();
       setGoogle(status);
     } finally {
       setGoogleBusy(false);
@@ -175,29 +174,6 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-8">
-        {/* Plan & billing — pick your tier (Stripe not live yet) */}
-        <Link
-          href="/settings/billing"
-          className="block bg-ink border border-[color:var(--border)] hover:border-[color:var(--border-hover)] rounded-xl p-6 transition group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-graphite border border-[color:var(--border-hover)] flex items-center justify-center">
-                <CreditCard className="w-4 h-4 text-[#E6BA75]" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-bone">
-                  Plan &amp; billing
-                </div>
-                <div className="text-xs text-dusk mt-0.5">
-                  Free, Team, Business, Enterprise — pick what fits.
-                </div>
-              </div>
-            </div>
-            <ArrowRight className="w-4 h-4 text-dusk group-hover:text-parchment transition" />
-          </div>
-        </Link>
-
         {/* Shadow — what your agent is allowed to do on its own */}
         <Link
           href="/settings/shadow"
