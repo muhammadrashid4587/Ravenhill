@@ -29,7 +29,7 @@ _MODELS = {
     "cerebras": {"fast": "llama3.1-8b", "reasoning": "qwen-3-235b-a22b-instruct-2507"},
     "groq": {"fast": "llama-3.3-70b-versatile", "reasoning": "llama-3.3-70b-versatile"},
     "anthropic": {"fast": "claude-haiku-4-5", "reasoning": "claude-sonnet-4-6"},
-    "gemini": {"fast": "gemini-2.5-flash", "reasoning": "gemini-2.5-pro"},
+    "gemini": {"fast": "gemini-2.5-flash", "reasoning": "gemini-2.5-flash"},
 }
 
 # Provider order for "auto" mode — fastest free tiers first
@@ -192,9 +192,9 @@ async def call_llm(
             log.warning(f"[llm] {p}/{model} timed out after {LLM_TIMEOUT}s, trying next")
         except Exception as e:
             err = str(e).lower()
-            if any(kw in err for kw in ("auth", "invalid", "credit", "quota", "api_key", "403")):
+            if any(kw in err for kw in ("auth", "invalid_api_key", "credit", "api_key")) and "rate" not in err:
                 _disabled.add(p)
-                log.warning(f"[llm] {p} disabled: {e}")
+                log.warning(f"[llm] {p} disabled (auth/billing): {e}")
             else:
                 log.warning(f"[llm] {p} error (will try next): {e}")
 
