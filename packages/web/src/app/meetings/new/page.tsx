@@ -20,7 +20,7 @@ import {
   type GoogleMeeting,
 } from "@/lib/api";
 
-type Tab = "paste" | "google";
+type Tab = "paste" | "google" | "zoom";
 
 export default function NewMeetingPage() {
   const router = useRouter();
@@ -127,6 +127,17 @@ export default function NewMeetingPage() {
             Google Meet
           </button>
           <button
+            onClick={() => setTab("zoom")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm transition ${
+              tab === "zoom"
+                ? "bg-elevated text-white"
+                : "text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            <Video className="w-4 h-4" />
+            Zoom
+          </button>
+          <button
             onClick={() => setTab("paste")}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm transition ${
               tab === "paste"
@@ -149,7 +160,44 @@ export default function NewMeetingPage() {
 
       {/* Tab content */}
       <div className="p-6">
-        {tab === "google" ? (
+        {tab === "zoom" ? (
+          <div>
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-elevated border border-white/[0.1] flex items-center justify-center mb-4">
+                <Video className="w-7 h-7 text-zinc-600" />
+              </div>
+              <h2 className="text-base font-medium mb-1 font-display">
+                Import from Zoom
+              </h2>
+              <p className="text-sm text-zinc-500 max-w-md mb-6">
+                Connect your Zoom account to pull recent recordings and
+                transcripts. Your agent will extract tasks automatically.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <a
+                  href="https://marketplace.zoom.us/develop/create"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                >
+                  <Video className="w-4 h-4" />
+                  Connect Zoom
+                </a>
+                <button
+                  onClick={() => setTab("paste")}
+                  className="flex items-center gap-2 bg-elevated hover:bg-white/[0.08] border border-white/[0.1] px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                >
+                  <FileText className="w-4 h-4" />
+                  Paste Zoom transcript instead
+                </button>
+              </div>
+              <p className="text-[11px] text-zinc-600 mt-4 max-w-md">
+                Heads up — Zoom OAuth is queued for the next release. Until
+                then, the fastest path is to paste a Zoom transcript directly.
+              </p>
+            </div>
+          </div>
+        ) : tab === "google" ? (
           <div>
             {!googleLoaded ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -160,26 +208,39 @@ export default function NewMeetingPage() {
                   Import from Google Meet
                 </h2>
                 <p className="text-sm text-zinc-500 max-w-md mb-6">
-                  Pull recent meeting transcripts from your Google Calendar.
-                  Your agent will extract tasks automatically.
+                  Connect your Google account to pull recent meeting
+                  transcripts. Your agent will extract tasks automatically.
                 </p>
-                <button
-                  onClick={handleLoadGoogle}
-                  disabled={loadingGoogle}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-elevated disabled:text-zinc-600 px-5 py-2.5 rounded-lg text-sm font-medium transition"
-                >
-                  {loadingGoogle ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Loading meetings...
-                    </>
-                  ) : (
-                    <>
-                      <Calendar className="w-4 h-4" />
-                      Load Recent Meetings
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={handleLoadGoogle}
+                    disabled={loadingGoogle}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-elevated disabled:text-zinc-600 px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                  >
+                    {loadingGoogle ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading meetings...
+                      </>
+                    ) : (
+                      <>
+                        <Calendar className="w-4 h-4" />
+                        Load Recent Meetings
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setTab("paste")}
+                    className="flex items-center gap-2 bg-elevated hover:bg-white/[0.08] border border-white/[0.1] px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Paste Google Meet transcript instead
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-600 mt-4 max-w-md">
+                  Pulls from your Google Calendar in real time. If a meeting
+                  is missing a transcript, paste it manually.
+                </p>
               </div>
             ) : googleMeetings.length === 0 ? (
               <div className="text-center py-16">
