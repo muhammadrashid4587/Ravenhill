@@ -413,9 +413,19 @@ export default function SettingsPage() {
                       View channels
                     </Link>
                     <button
+                      onClick={async () => {
+                        await handleDisconnectSlack();
+                        handleConnectSlack();
+                      }}
+                      disabled={slackBusy}
+                      className="text-xs text-white bg-[#4A154B] hover:bg-[#611f63] px-3 py-1.5 rounded-lg disabled:opacity-50"
+                    >
+                      Switch workspace
+                    </button>
+                    <button
                       onClick={handleDisconnectSlack}
                       disabled={slackBusy}
-                      className="text-xs text-parchment border border-[color:var(--border)] hover:border-[color:var(--border-hover)] px-3 py-1.5 rounded-lg disabled:opacity-50"
+                      className="text-xs text-dusk border border-[color:var(--border)] hover:border-[color:var(--border-hover)] px-3 py-1.5 rounded-lg disabled:opacity-50"
                     >
                       Disconnect
                     </button>
