@@ -1317,6 +1317,19 @@ async def orchestrate_stream(request: OrchestrateRequest):
                     "detail": ", ".join(tool_exec.tools_called),
                 }})
 
+                if "drive.read" in tool_exec.tools_called:
+                    yield _sse({"type": "step", "step": {
+                        "label": "Reading file content...",
+                        "status": "done",
+                        "detail": ", ".join(tool_exec.source_labels),
+                    }})
+
+                yield _sse({"type": "step", "step": {
+                    "label": "Analyzing with Your Raven...",
+                    "status": "in_progress",
+                    "detail": "Generating answer",
+                }})
+
                 from agents.llm_providers import call_llm
 
                 source_hint = ""
@@ -1614,7 +1627,14 @@ async def orchestrate_stream(request: OrchestrateRequest):
             })
             yield _sse({"type": "done", "trace_id": str(trace_id)})
 
-    return StreamingResponse(_generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/second-hop/stream")
@@ -1697,7 +1717,14 @@ async def second_hop_stream(request: SecondHopRequest):
             })
             yield _sse({"type": "done", "trace_id": str(trace_id)})
 
-    return StreamingResponse(_generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/approval/{approval_id}/complete", response_model=OrchestrateResponse)
