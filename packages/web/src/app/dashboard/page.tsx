@@ -105,7 +105,9 @@ export default function DashboardPage() {
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
   const [workspaceEmails, setWorkspaceEmails] = useState<WorkspaceEmail[]>([]);
   const [view, setView] = useState<"list" | "board">("list");
-  const [dashTab, setDashTab] = useState<"overview" | "workspace">("overview");
+  const [dashTab, setDashTab] = useState<
+    "overview" | "organization" | "workspace"
+  >("overview");
   const [loading, setLoading] = useState(true);
   const [showOverview, setShowOverview] = useState(true);
   const [showActivity, setShowActivity] = useState(true);
@@ -174,6 +176,18 @@ export default function DashboardPage() {
     in_progress: sortedPending.filter((p) => p.status === "in_progress"),
     done: sortedPending.filter((p) => p.status === "done"),
   };
+
+  // Calendar meetings starting in the next 48h, sorted by start time.
+  // Surfaced inline at the top of the task list so the user sees what's
+  // actually on their plate today without navigating away.
+  const now = new Date();
+  const meetingsHorizon = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const upcomingMeetings = calendarEvents
+    .map((e) => ({ ...e, _start: new Date(e.start_time), _end: new Date(e.end_time) }))
+    .filter((e) => e._end >= now && e._start <= meetingsHorizon)
+    .sort((a, b) => a._start.getTime() - b._start.getTime())
+    .slice(0, 5);
+
   // Meetings link surface kept; full integration via pending items lands when
   // Muhammad ships a unified endpoint.
   void meetings;
@@ -224,6 +238,18 @@ export default function DashboardPage() {
             </button>
             <button
               role="tab"
+              aria-selected={dashTab === "organization"}
+              onClick={() => setDashTab("organization")}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition ${
+                dashTab === "organization"
+                  ? "bg-white/[0.08] text-bone"
+                  : "text-smoke hover:text-parchment"
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" /> Organization
+            </button>
+            <button
+              role="tab"
               aria-selected={dashTab === "workspace"}
               onClick={() => setDashTab("workspace")}
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition ${
@@ -248,14 +274,16 @@ export default function DashboardPage() {
           files={workspaceFiles}
           emails={workspaceEmails}
         />
+      ) : dashTab === "organization" ? (
+        <OrganizationPanel agentCount={stats?.active_agents} />
       ) : (
         <div className="p-6 space-y-6">
           {/* Quick actions */}
           <div className="grid grid-cols-3 gap-3 stagger">
             {[
+              { href: "/calendar", icon: CalendarIcon, label: "Calendar", desc: "Today's events at a glance" },
+              { href: "/meetings", icon: CalendarCheck, label: "Meetings", desc: "Live calendar + transcripts" },
               { href: "/chat", icon: MessageSquare, label: "Chat", desc: "Ask your agent anything" },
-              { href: "/meetings/new", icon: CalendarCheck, label: "New meeting", desc: "Import & extract tasks" },
-              { href: "/organization", icon: Building2, label: "Organization", desc: "See the team" },
             ].map(({ href, icon: Icon, label, desc }) => (
               <Link
                 key={href}
@@ -345,7 +373,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {sortedPending.length === 0 ? (
+              {sortedPending.length === 0 && upcomingMeetings.length === 0 ? (
                 <div className="bg-ink border border-white/[0.06] rounded-xl p-8 text-center">
                   <CalendarCheck className="w-8 h-8 text-dusk mx-auto mb-3" />
                   <p className="text-sm text-smoke mb-1">No open tasks</p>
@@ -361,6 +389,9 @@ export default function DashboardPage() {
                 </div>
               ) : view === "list" ? (
                 <div className="space-y-2 stagger">
+                  {upcomingMeetings.map((m) => (
+                    <MeetingTaskRow key={`mtg-${m.id}`} meeting={m} />
+                  ))}
                   {sortedPending.slice(0, 10).map((item) => (
                     <PendingRow key={item.id} item={item} />
                   ))}
@@ -765,6 +796,102 @@ function BoardCard({ item }: { item: PendingItem }) {
             not ready
           </span>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Render a calendar event in the same shape as a PendingRow so it sits
+// inline in the task list. Click-through opens the Join URL when present.
+function MeetingTaskRow({
+  meeting,
+}: {
+  meeting: CalendarEvent & { _start: Date; _end: Date };
+}) {
+  const isJoinable = !!meeting.meeting_url;
+  const time = meeting._start.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const todayStr = new Date().toDateString();
+  const dayLabel =
+    meeting._start.toDateString() === todayStr
+      ? "Today"
+      : meeting._start.toLocaleDateString([], {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        });
+  return (
+    <div className="flex items-start gap-3 bg-ink border border-white/[0.06] hover:border-white/[0.12] rounded-lg px-4 py-3 transition card-lift animate-fade-up">
+      <CalendarCheck className="w-4 h-4 mt-0.5 text-claret shrink-0" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-bone truncate">{meeting.title}</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded border bg-white/[0.04] text-parchment border-white/[0.08]">
+            meeting
+          </span>
+        </div>
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+          <span className="text-[11px] text-dusk flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {dayLabel} · {time}
+          </span>
+          {meeting.attendees.length > 0 && (
+            <span className="text-[11px] text-dusk">
+              {meeting.attendees.length}{" "}
+              {meeting.attendees.length === 1 ? "attendee" : "attendees"}
+            </span>
+          )}
+          {isJoinable && (
+            <a
+              href={meeting.meeting_url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-claret hover:text-[#D6596C] flex items-center gap-1"
+            >
+              <Video className="w-3 h-3" /> Join
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Inline organization panel for the dashboard's Organization tab. Shows
+// a single summary card plus a CTA to the full /organization page.
+function OrganizationPanel({ agentCount }: { agentCount?: number }) {
+  return (
+    <div className="p-6 max-w-3xl">
+      <div className="bg-ink border border-white/[0.06] rounded-xl p-6 animate-fade-up">
+        <div className="flex items-start gap-4">
+          <div className="w-12 h-12 rounded-xl bg-elevated border border-white/[0.1] flex items-center justify-center shrink-0">
+            <Building2 className="w-5 h-5 text-claret" strokeWidth={1.75} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-medium text-bone">Your organization</h2>
+            <p className="text-xs text-smoke mt-0.5">
+              {typeof agentCount === "number"
+                ? `${agentCount} active ${agentCount === 1 ? "agent" : "agents"} across the team.`
+                : "Your team and how its agents talk to each other."}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href="/organization"
+                className="inline-flex items-center gap-1.5 text-xs bg-elevated hover:bg-white/[0.08] border border-white/[0.1] text-bone px-3 py-1.5 rounded-md transition"
+              >
+                Open the organization view <ArrowRight className="w-3 h-3" />
+              </Link>
+              <Link
+                href="/people"
+                className="inline-flex items-center gap-1.5 text-xs text-smoke hover:text-parchment transition"
+              >
+                See your people
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
