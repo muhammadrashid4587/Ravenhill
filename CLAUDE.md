@@ -308,6 +308,22 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 - **Billing removed (`4c3f3e7`)**: Plan & Billing page deleted, settings card removed
 - **UX polish (`3399828`)**: Drive "Ask agent about this" passes file context to chat (auto-sends summarize prompt), assistant display renamed to "Your Raven" everywhere, hardcoded suggestion chips replaced with data-grounded ones (real Calendar/Gmail), "Try the Chat Demo" + "Showing demo data" copy removed
 - **Contacts + calendar (`8371d8a`)**: Google Contacts hydrated into chat LLM prompt (up to 15 contacts alongside Calendar/Gmail/Drive); Drive file matching improved (handles underscores, extensions, more keywords); Calendar tabs renamed Agenda/Day/Week/Month, BoardView removed
+- **Chat-blind-to-Google fix (`1cd0139`)**: Root cause was `_conversational_fallback` gating all Google hydration behind `if get_active_provider() != "mock"` — when providers were temporarily exhausted the entire block was skipped. Removed the gate; Google data always hydrated now
+- **Drive tool loop (`0ecbeb5`–`fe6393d`)**: Server-side tool routing replaces prompt-stuffing. `tools/drive.py` (search, read), `tools/router.py` (message analysis, session state, file memory). Tool routing runs BEFORE classify in the streaming path so file references resolve without LLM overhead. Per-session tool state tracks active files for follow-ups ("that file")
+- **Chat persistence (`d63f31e`)**: Messages + session ID saved to localStorage. Survives page refresh. Clear button wipes both
+- **Markdown rendering (`c7fa241`)**: Agent messages render via `react-markdown` with styled headings, lists, bold, code blocks, links. User messages stay plain text
+- **SSE stability (`f6bac22`)**: Extra keepalive steps during tool+LLM wait, `X-Accel-Buffering: no` header prevents Fly proxy buffering
+- **LLM provider hardening (`b5176c5`)**: Gemini Flash is primary (both fast + reasoning). Gemma 4 26B tested but too slow for large file context (30s+ timeouts). Gemini 2.5 Pro has zero free-tier quota. Rate limit 429s no longer permanently disable providers — only auth/billing errors disable. Token limits: 2000 for file reads, 1000 for search/general
+
+### Beta LLM configuration (locked 2026-05-03)
+
+| Setting | Value |
+|---|---|
+| Primary provider | Gemini (gemini-2.5-flash for both tiers) |
+| Fallback order | gemini → cerebras → groq → anthropic |
+| LLM timeout | 30s per provider attempt |
+| Token limits | 2000 (file read), 1000 (search/general) |
+| Disable policy | Only on auth/billing errors, NOT on rate limits |
 
 ### Where the related code lives
 
