@@ -513,6 +513,77 @@ async def _hydrate_google_context(agent_id: str) -> str:
     return "\n".join(lines)
 
 
+async def _fetch_file_if_referenced(
+    agent_id: str, message: str, google_block: str
+) -> str:
+    """If the user's message references a file name that appears in the
+    google_block (Drive file list), fetch that file's actual content and
+    return it as a context block the LLM can answer from.
+
+    This is what makes 'what's in the RWA MVP Progress Plan?' work —
+    the metadata-only context shows the file exists, this function
+    downloads and reads it.
+    """
+    if not google_block or "📁" not in google_block:
+        return ""
+
+    from integrations.workspace.adapters import (
+        read_drive_file_content,
+        search_drive_file_by_name,
+    )
+
+    # Extract file names from the google_block Drive section.
+    # Format: "  - FileName (owner: ..., modified: ...)"
+    file_names: list[str] = []
+    for line in google_block.split("\n"):
+        line = line.strip()
+        if line.startswith("- ") and "(owner:" in line:
+            name = line[2:].split(" (owner:")[0].strip()
+            if name:
+                file_names.append(name)
+
+    if not file_names:
+        return ""
+
+    # Check if the user's message references any known file name.
+    msg_lower = message.lower()
+    matched_name = None
+    for name in file_names:
+        # Match if ≥50% of the file name words appear in the message,
+        # OR the full name (case-insensitive) appears as a substring.
+        if name.lower() in msg_lower:
+            matched_name = name
+            break
+        name_words = set(name.lower().split())
+        msg_words = set(msg_lower.split())
+        overlap = name_words & msg_words
+        if len(overlap) >= max(2, len(name_words) * 0.5):
+            matched_name = name
+            break
+
+    if not matched_name:
+        return ""
+
+    # Found a match — fetch the file content.
+    file_meta = await search_drive_file_by_name(agent_id, matched_name)
+    if not file_meta or not file_meta.get("id"):
+        return ""
+
+    result = await read_drive_file_content(agent_id, file_meta["id"])
+    content = result.get("content", "")
+    if not content:
+        error = result.get("error", "")
+        if error:
+            return f"\n📄 FILE CONTENT for '{matched_name}': {error}"
+        return ""
+
+    truncated = " (truncated to 32KB)" if result.get("truncated") else ""
+    return (
+        f"\n📄 FULL CONTENT of '{matched_name}'{truncated}:\n"
+        f"--- BEGIN FILE ---\n{content}\n--- END FILE ---"
+    )
+
+
 async def _conversational_fallback(
     agent: Agent,
     message: str,
@@ -543,6 +614,16 @@ async def _conversational_fallback(
             google_block = await _hydrate_google_context(str(agent.id))
         except Exception:
             pass  # Google hydration is best-effort; never blocks chat
+
+        # If the user seems to be asking about a specific file's CONTENT,
+        # try to fetch it from Drive and add the body to the context.
+        file_content_block = ""
+        try:
+            file_content_block = await _fetch_file_if_referenced(
+                str(agent.id), message, google_block
+            )
+        except Exception:
+            pass
 
         # Knowledge sources we can actually ground in.
         kb_lines: list[str] = []
@@ -578,6 +659,8 @@ async def _conversational_fallback(
             context_parts.append(f"What I know about {agent.name}:\n{kb_text}")
         if google_block:
             context_parts.append(google_block)
+        if file_content_block:
+            context_parts.append(file_content_block)
         full_context = "\n\n".join(context_parts)
 
         if has_any_context:

@@ -136,6 +136,86 @@ async def list_drive_files(agent_id: str) -> list[dict[str, Any]]:
     return await asyncio.to_thread(_fetch)
 
 
+async def read_drive_file_content(agent_id: str, file_id: str) -> dict[str, Any]:
+    """Download a Google Drive file's text content. For Google Docs/Sheets/
+    Slides, exports as plain text. For binary files (PDF, DOCX), exports
+    if possible. Returns {name, content, truncated, mime_type}.
+
+    Content is capped at 32KB to fit in LLM context windows.
+    """
+    if not await _has_real_connection(agent_id):
+        return {"name": "", "content": "", "error": "not_connected"}
+
+    import asyncio
+    from googleapiclient.discovery import build
+
+    creds = await _build_credentials(agent_id)
+    MAX_CONTENT = 32 * 1024
+
+    # Google Workspace MIME → export format mapping
+    EXPORT_MAP = {
+        "application/vnd.google-apps.document": ("text/plain", ".txt"),
+        "application/vnd.google-apps.spreadsheet": ("text/csv", ".csv"),
+        "application/vnd.google-apps.presentation": ("text/plain", ".txt"),
+    }
+
+    def _fetch() -> dict[str, Any]:
+        service = build("drive", "v3", credentials=creds)
+        # Get file metadata first
+        meta = service.files().get(fileId=file_id, fields="id,name,mimeType").execute()
+        name = meta.get("name", "Untitled")
+        mime = meta.get("mimeType", "")
+
+        content = ""
+        if mime in EXPORT_MAP:
+            export_mime, _ = EXPORT_MAP[mime]
+            data = service.files().export(fileId=file_id, mimeType=export_mime).execute()
+            if isinstance(data, bytes):
+                content = data.decode("utf-8", errors="replace")
+            else:
+                content = str(data)
+        elif mime.startswith("text/") or mime in (
+            "application/json", "application/xml", "application/javascript",
+        ):
+            data = service.files().get_media(fileId=file_id).execute()
+            if isinstance(data, bytes):
+                content = data.decode("utf-8", errors="replace")
+            else:
+                content = str(data)
+        else:
+            return {
+                "name": name,
+                "content": "",
+                "mime_type": mime,
+                "error": f"Can't extract text from {mime}. Try a Google Doc, Sheet, or text file.",
+                "truncated": False,
+            }
+
+        truncated = len(content) > MAX_CONTENT
+        if truncated:
+            content = content[:MAX_CONTENT]
+
+        return {
+            "name": name,
+            "content": content,
+            "mime_type": mime,
+            "truncated": truncated,
+        }
+
+    return await asyncio.to_thread(_fetch)
+
+
+async def search_drive_file_by_name(agent_id: str, query: str) -> dict[str, Any] | None:
+    """Find a Drive file by name substring, return its ID + metadata.
+    Returns None if no match."""
+    files = await list_drive_files(agent_id)
+    q_lower = query.lower()
+    for f in files:
+        if q_lower in f.get("name", "").lower():
+            return f
+    return None
+
+
 async def list_drive_folders(agent_id: str) -> list[dict[str, Any]]:
     """Virtual folders (My Drive / Shared / Starred / Recent / Meet).
 
