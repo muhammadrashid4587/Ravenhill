@@ -958,3 +958,20 @@ export async function secondHopStream(
     }
   }
 }
+
+// ---- People (Google Contacts ∩ Ravenhill agents) ----
+
+export interface Person {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  departments: string[];
+  sources: ("contact" | "domain")[];
+}
+
+export async function fetchPeople(): Promise<Person[]> {
+  const res = await apiFetch("/api/people/");
+  if (!res.ok) throw new Error(`people fetch failed: ${res.status}`);
+  return res.json();
+}

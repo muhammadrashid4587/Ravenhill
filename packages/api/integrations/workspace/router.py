@@ -122,6 +122,8 @@ async def google_status(agent_id: str = Query(default="demo")):
             "calendar.readonly",
             "drive.readonly",
             "gmail.readonly",
+            "contacts.readonly",
+            "contacts.other.readonly",
         ],
     }
 

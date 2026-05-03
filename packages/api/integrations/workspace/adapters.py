@@ -508,3 +508,92 @@ async def ingest_gmail_topics(agent_id: str, limit: int = 25) -> dict[str, Any]:
         "deduplicated": deduplicated,
         "connected": not await _use_seed(agent_id),
     }
+
+
+# ---------------------------------------------------------------------------
+# Contacts (Google People API)
+# ---------------------------------------------------------------------------
+
+
+_CONTACTS_SEED: list[dict[str, Any]] = [
+    {"name": "Muhammad Rashid", "email": "muhammad@e-agent.ai"},
+    {"name": "Max Chamuel", "email": "max@e-agent.ai"},
+    {"name": "Likitha Kambidi", "email": "likitha@e-agent.ai"},
+    {"name": "Riley Chen", "email": "riley@e-agent.ai"},
+    {"name": "Karen Park", "email": "karen@e-agent.ai"},
+]
+
+
+async def list_google_contacts(agent_id: str) -> list[dict[str, Any]]:
+    """Return the user's Google contacts as [{name, email}].
+
+    Reads both `connections` (the user's saved contacts) and `otherContacts`
+    (auto-discovered people they've corresponded with). De-duped by email.
+    Falls back to seed contacts when Google isn't configured/connected so
+    the People page is non-empty in dev.
+    """
+    if await _use_seed(agent_id):
+        return list(_CONTACTS_SEED)
+
+    import asyncio
+    from googleapiclient.discovery import build
+
+    creds = await _build_credentials(agent_id)
+
+    def _fetch() -> list[dict[str, Any]]:
+        service = build("people", "v1", credentials=creds)
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def _absorb(person: dict[str, Any]) -> None:
+            emails = person.get("emailAddresses") or []
+            if not emails:
+                return
+            email = (emails[0].get("value") or "").strip().lower()
+            if not email or email in seen:
+                return
+            names = person.get("names") or []
+            display = (names[0].get("displayName") or "") if names else ""
+            seen.add(email)
+            out.append({"name": display or email.split("@", 1)[0], "email": email})
+
+        # Saved contacts.
+        try:
+            page_token: str | None = None
+            for _ in range(5):  # cap pagination — 5 * 1000 = 5000 contacts
+                req = service.people().connections().list(
+                    resourceName="people/me",
+                    pageSize=1000,
+                    personFields="names,emailAddresses",
+                    pageToken=page_token,
+                )
+                res = req.execute()
+                for p in res.get("connections", []) or []:
+                    _absorb(p)
+                page_token = res.get("nextPageToken")
+                if not page_token:
+                    break
+        except Exception:  # pragma: no cover — log and fall through
+            log.exception("People.connections.list failed for agent %s", agent_id)
+
+        # Auto-discovered "other contacts" (Gmail correspondents, etc.).
+        try:
+            page_token = None
+            for _ in range(5):
+                req = service.otherContacts().list(
+                    pageSize=1000,
+                    readMask="names,emailAddresses",
+                    pageToken=page_token,
+                )
+                res = req.execute()
+                for p in res.get("otherContacts", []) or []:
+                    _absorb(p)
+                page_token = res.get("nextPageToken")
+                if not page_token:
+                    break
+        except Exception:  # pragma: no cover
+            log.exception("People.otherContacts.list failed for agent %s", agent_id)
+
+        return out
+
+    return await asyncio.to_thread(_fetch)
