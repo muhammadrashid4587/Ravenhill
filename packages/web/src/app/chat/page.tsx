@@ -1069,6 +1069,29 @@ function ChatInner() {
       attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
     });
 
+    // File upload + message → summarize the uploaded file, don't search Drive
+    if (attachmentsToSend.length > 0) {
+      setLoading(true);
+      const thinkId = pushMsg("Your Raven", "Reading the file…", "thinking");
+      try {
+        for (const att of attachmentsToSend) {
+          if (!att.url) continue;
+          const blobRes = await fetch(att.url);
+          const blob = await blobRes.blob();
+          const file = new File([blob], att.name, { type: att.mime_type || blob.type });
+          const result = await summarizeFile(file);
+          removeMsg(thinkId);
+          pushMsg("Your Raven", result.summary, "agent");
+        }
+      } catch {
+        removeMsg(thinkId);
+        pushMsg("Your Raven", "Couldn't process the uploaded file. Try again.", "agent");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const thinkingId = pushMsg("Your Raven", "Thinking...", "thinking");
     const startTime = Date.now();
 
@@ -1077,14 +1100,6 @@ function ChatInner() {
       message.length > 60 ? message.slice(0, 60) + "..." : message,
       "step",
     );
-
-    if (attachmentsToSend.length > 0) {
-      pushActivity(
-        `Attached ${attachmentsToSend.length} file${attachmentsToSend.length > 1 ? "s" : ""}`,
-        attachmentsToSend.map((a) => a.name).join(", "),
-        "step",
-      );
-    }
 
     let fullResponse = "";
 
