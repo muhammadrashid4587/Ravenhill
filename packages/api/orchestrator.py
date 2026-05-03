@@ -724,7 +724,7 @@ async def _conversational_fallback(
             f"{history_block}"
         )
 
-    max_tokens = 1200 if (tool_exec and "drive.read" in tool_exec.tools_called) else 800
+    max_tokens = 2000 if (tool_exec and "drive.read" in tool_exec.tools_called) else 1000
     result = await call_llm(
         system=system,
         user_message=message,
