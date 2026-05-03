@@ -20,7 +20,7 @@ from collections.abc import AsyncGenerator
 from config import settings
 
 # Maximum time (seconds) to wait for a single LLM call before falling back
-LLM_TIMEOUT = 15
+LLM_TIMEOUT = 30
 
 log = logging.getLogger("llm")
 
