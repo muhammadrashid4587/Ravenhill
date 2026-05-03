@@ -724,7 +724,7 @@ async def _conversational_fallback(
             f"{history_block}"
         )
 
-    max_tokens = 800 if (tool_exec and "drive.read" in tool_exec.tools_called) else 400
+    max_tokens = 1200 if (tool_exec and "drive.read" in tool_exec.tools_called) else 800
     result = await call_llm(
         system=system,
         user_message=message,
@@ -1349,7 +1349,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
                     f"NEVER invent facts."
                     f"{source_hint}"
                 )
-                max_tok = 800 if "drive.read" in tool_exec.tools_called else 400
+                max_tok = 1200 if "drive.read" in tool_exec.tools_called else 800
                 answer = await call_llm(
                     system=system, user_message=request.message,
                     model_tier="reasoning", max_tokens=max_tok,
