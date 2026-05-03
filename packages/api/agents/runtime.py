@@ -97,7 +97,24 @@ async def attempt_auto_reply(
             kb_lines.append(f"- [{topic}] {content} (updated: {updated})")
     if recipient.knowledge_base:
         kb_lines.append(f"- {recipient.knowledge_base}")
-    kb_text = "\n".join(kb_lines).strip() or "(no knowledge available — defer to human)"
+    kb_text = "\n".join(kb_lines).strip()
+
+    # Hydrate Google Workspace context so the agent can answer from
+    # real Calendar/Drive/Gmail data even with no knowledge entries.
+    google_block = ""
+    try:
+        from orchestrator import _hydrate_google_context
+        google_block = await _hydrate_google_context(str(recipient.id))
+    except Exception:
+        pass
+
+    knowledge_section = ""
+    if kb_text:
+        knowledge_section += f"KNOWLEDGE:\n{kb_text}\n\n"
+    if google_block:
+        knowledge_section += f"{google_block}\n\n"
+    if not knowledge_section:
+        knowledge_section = "(no knowledge available — defer to human)\n\n"
 
     system = f"""You are {recipient.name}'s personal AI agent. You speak in their voice and answer on their behalf, but ONLY from the knowledge below.
 
@@ -106,8 +123,7 @@ ABOUT {recipient.name.upper()}:
 - {recipient.role_description or ""}
 - Departments: {", ".join(recipient.departments or [])}
 
-KNOWLEDGE YOU CAN DRAW ON:
-{kb_text}
+{knowledge_section}
 
 A message has just arrived from {sender_name}'s agent. Decide what to do:
 
