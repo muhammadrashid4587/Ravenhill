@@ -307,6 +307,7 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 - **People surface (`4c3f3e7`)**: `/api/people` backend (auth-gated, Google Contacts ∩ same-domain agents), `/people` frontend page, `list_google_contacts` adapter (returns [] when not connected), `contacts.readonly` + `contacts.other.readonly` OAuth scopes, People link in sidebar
 - **Billing removed (`4c3f3e7`)**: Plan & Billing page deleted, settings card removed
 - **UX polish (`3399828`)**: Drive "Ask agent about this" passes file context to chat (auto-sends summarize prompt), assistant display renamed to "Your Raven" everywhere, hardcoded suggestion chips replaced with data-grounded ones (real Calendar/Gmail), "Try the Chat Demo" + "Showing demo data" copy removed
+- **Contacts + calendar (`8371d8a`)**: Google Contacts hydrated into chat LLM prompt (up to 15 contacts alongside Calendar/Gmail/Drive); Drive file matching improved (handles underscores, extensions, more keywords); Calendar tabs renamed Agenda/Day/Week/Month, BoardView removed
 
 ### Where the related code lives
 
