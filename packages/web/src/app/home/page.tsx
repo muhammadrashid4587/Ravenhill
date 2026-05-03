@@ -502,6 +502,7 @@ export default function HomePage() {
           onClick={() => {
             setBrief(null);
             setBriefError(null);
+            setBriefLoading(false);
           }}
         >
           <div
@@ -512,6 +513,7 @@ export default function HomePage() {
               onClick={() => {
                 setBrief(null);
                 setBriefError(null);
+                setBriefLoading(false);
               }}
               className="absolute top-4 right-4 w-7 h-7 rounded-md hover:bg-white/[0.04] flex items-center justify-center text-dusk hover:text-parchment transition"
             >
