@@ -53,7 +53,7 @@ function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
 }
 
 export async function fetchAgents() {
-  const res = await apiFetch("/api/agents");
+  const res = await apiFetch("/api/agents/");
   return res.json();
 }
 
