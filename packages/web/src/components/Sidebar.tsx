@@ -16,9 +16,10 @@ import {
   Brain,
   Inbox,
   Settings,
-  Network,
-  Bell,
-  Gauge,
+  BarChart3,
+  Users,
+  Contact,
+  CircleUser,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import DeptAvatar from "@/components/ui/DeptAvatar";
@@ -26,20 +27,21 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 
 const PRIMARY_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/organization", label: "Organization", icon: Building2 },
+  { href: "/chat", label: "Chats", icon: MessageSquare },
+  { href: "/meetings", label: "Meetings", icon: CalendarCheck },
+  { href: "/inbox", label: "Inbox", icon: Inbox },
 ];
 
 const SECONDARY_NAV = [
-  { href: "/notifications", label: "Notifications", icon: Bell },
-  { href: "/meetings", label: "Meetings", icon: CalendarCheck },
-  { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/drive", label: "Drive", icon: HardDriveUpload },
+  { href: "/approvals", label: "Approvals", icon: ShieldCheck },
+  { href: "/organization", label: "Organization", icon: Building2 },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/knowledge", label: "Knowledge", icon: Brain },
-  { href: "/expertise", label: "Expertise map", icon: Network },
-  { href: "/admin", label: "Admin", icon: Gauge },
+  { href: "/people", label: "People", icon: Contact },
+  { href: "/hr", label: "HR", icon: Users },
+  { href: "/account", label: "Account", icon: CircleUser },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
