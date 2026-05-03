@@ -28,15 +28,14 @@ import {
 } from "@/lib/api";
 import type { CalendarEvent, PendingItem } from "@/lib/types";
 
-type ViewMode = "month" | "week" | "list" | "board" | "agenda";
+type ViewMode = "agenda" | "day" | "week" | "month";
 type CalendarSource = "google" | "microsoft_teams";
 
 const VIEW_TABS: Array<{ id: ViewMode; label: string }> = [
-  { id: "month", label: "Month" },
-  { id: "week", label: "Week" },
-  { id: "list", label: "List" },
-  { id: "board", label: "Board" },
   { id: "agenda", label: "Agenda" },
+  { id: "day", label: "Day" },
+  { id: "week", label: "Week" },
+  { id: "month", label: "Month" },
 ];
 
 type EventPriority = "high" | "low";
@@ -419,7 +418,7 @@ export default function CalendarPage() {
     if (view === "month") {
       return cursor.toLocaleDateString([], { month: "long", year: "numeric" });
     }
-    if (view === "week" || view === "list" || view === "board") {
+    if (view === "week" || view === "day") {
       const wk = weekGrid(cursor);
       return `${wk[0].toLocaleDateString([], { month: "short", day: "numeric" })} – ${wk[6].toLocaleDateString([], { month: "short", day: "numeric" })}`;
     }
@@ -605,10 +604,8 @@ export default function CalendarPage() {
           actionItems={weekActionItems}
           now={now}
         />
-      ) : view === "list" ? (
+      ) : view === "day" ? (
         <ListView cursor={cursor} dayItems={dayItems} now={now} />
-      ) : view === "board" ? (
-        <BoardView cursor={cursor} dayItems={dayItems} now={now} />
       ) : view === "week" ? (
         <WeekView
           cursor={cursor}
@@ -627,7 +624,7 @@ export default function CalendarPage() {
         />
       )}
 
-      {view !== "agenda" && view !== "list" && view !== "board" && (
+      {view === "month" && (
         <DayDetailPanel day={selectedDay} items={dayItems(selectedDay)} />
       )}
     </div>
@@ -1242,103 +1239,3 @@ function ListView({
   );
 }
 
-function BoardView({
-  cursor,
-  dayItems,
-  now,
-}: {
-  cursor: Date;
-  dayItems: (d: Date) => CalendarItem[];
-  now: Date;
-}) {
-  const days = weekGrid(cursor);
-  return (
-    <div className="p-6 overflow-x-auto">
-      <div className="flex gap-3 min-w-max">
-        {days.map((d) => {
-          const its = dayItems(d);
-          const isToday = sameDay(d, now);
-          return (
-            <div
-              key={d.toISOString()}
-              className={`w-[260px] shrink-0 bg-ink border rounded-xl p-3 ${
-                isToday ? "border-claret/60" : "border-white/[0.06]"
-              }`}
-            >
-              <div className="flex items-baseline justify-between mb-3">
-                <span
-                  className={`text-[11px] uppercase tracking-wider ${
-                    isToday ? "text-claret" : "text-dusk"
-                  }`}
-                >
-                  {d.toLocaleDateString([], { weekday: "short" })}
-                </span>
-                <span
-                  className={`text-base tabular-nums ${
-                    isToday ? "text-claret font-semibold" : "text-parchment"
-                  }`}
-                >
-                  {d.getDate()}
-                </span>
-              </div>
-              {its.length === 0 ? (
-                <p className="text-[11px] text-dusk text-center py-6">
-                  Empty
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {its.map((it) => (
-                    <li
-                      key={it.id}
-                      className="bg-graphite border border-white/[0.06] rounded-md px-2.5 py-2"
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-[10px] font-mono text-dusk">
-                          {formatTime(it.start)}
-                        </span>
-                        {it.kind === "event" ? (
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 ${
-                              it.eventPriority === "high"
-                                ? "bg-[rgba(220,38,38,0.10)] text-[#F87171] border-[rgba(220,38,38,0.32)]"
-                                : "bg-white/[0.04] text-dusk border-white/[0.08]"
-                            }`}
-                          >
-                            {it.eventPriority}
-                          </span>
-                        ) : (
-                          <span
-                            className={`text-[9px] px-1.5 py-0.5 rounded border shrink-0 ${
-                              PRIORITY_CHIP[
-                                it.status === "done" ? "done" : it.priority
-                              ]
-                            }`}
-                          >
-                            {it.status === "done" ? "done" : it.priority}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[12px] text-parchment line-clamp-2">
-                        {it.title}
-                      </div>
-                      {it.kind === "event" && it.meeting_url && (
-                        <a
-                          href={it.meeting_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-claret hover:text-[#D6596C]"
-                        >
-                          <Video className="w-3 h-3" /> Join
-                        </a>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}

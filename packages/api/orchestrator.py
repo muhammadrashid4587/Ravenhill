@@ -458,18 +458,21 @@ async def _hydrate_google_context(agent_id: str) -> str:
         list_calendar_events,
         list_drive_files,
         list_gmail_threads,
+        list_google_contacts,
     )
 
     if not await _has_real_connection(agent_id):
         return ""
 
-    # Pull all three in parallel, with a 10s cap so chat doesn't hang.
+    # Pull all four in parallel, with a 10s cap so chat doesn't hang.
     try:
         cal_task = asyncio.create_task(list_calendar_events(agent_id))
         mail_task = asyncio.create_task(list_gmail_threads(agent_id, limit=10))
         drive_task = asyncio.create_task(list_drive_files(agent_id))
+        contacts_task = asyncio.create_task(list_google_contacts(agent_id))
         results = await asyncio.wait_for(
-            asyncio.gather(cal_task, mail_task, drive_task, return_exceptions=True),
+            asyncio.gather(cal_task, mail_task, drive_task, contacts_task,
+                           return_exceptions=True),
             timeout=10.0,
         )
     except asyncio.TimeoutError:
@@ -478,8 +481,9 @@ async def _hydrate_google_context(agent_id: str) -> str:
     cal_events = results[0] if isinstance(results[0], list) else []
     mail_threads = results[1] if isinstance(results[1], list) else []
     drive_files = results[2] if isinstance(results[2], list) else []
+    contacts = results[3] if isinstance(results[3], list) else []
 
-    if not cal_events and not mail_threads and not drive_files:
+    if not cal_events and not mail_threads and not drive_files and not contacts:
         return ""
 
     lines: list[str] = []
@@ -512,6 +516,13 @@ async def _hydrate_google_context(agent_id: str) -> str:
             modified = f.get("last_modified", "")
             lines.append(f"  - {name} (owner: {owner}, modified: {modified})")
 
+    if contacts:
+        lines.append("\n👥 Known contacts (from Google Contacts):")
+        for c in contacts[:15]:
+            name = c.get("name", "")
+            email = c.get("email", "")
+            lines.append(f"  - {name} <{email}>")
+
     return "\n".join(lines)
 
 
@@ -538,7 +549,8 @@ async def _fetch_file_if_referenced(
     msg_lower = message.lower()
     file_keywords = {"file", "doc", "document", "spreadsheet", "sheet",
                      "slide", "plan", "report", "what's in", "whats in",
-                     "contents of", "open", "read", "show me"}
+                     "contents of", "open", "read", "show me", "summarize",
+                     "drive file", "analyze"}
     if not any(kw in msg_lower for kw in file_keywords):
         return ""
 
@@ -551,21 +563,21 @@ async def _fetch_file_if_referenced(
     if not files:
         return ""
 
-    msg_words = set(msg_lower.split())
+    msg_words = set(re.split(r"[\s_\-./]+", msg_lower))
     best_match = None
     best_score = 0
     for f in files:
         name = f.get("name", "")
         name_lower = name.lower()
-        # Full substring match
-        if name_lower in msg_lower:
+        # Full substring match (strip common extensions first)
+        name_bare = re.sub(r"\.\w{1,5}$", "", name_lower)
+        if name_bare in msg_lower:
             best_match = f
             best_score = 100
             break
-        # Word overlap scoring
-        name_words = set(name_lower.split())
+        # Word overlap scoring — split on spaces, underscores, hyphens, dots
+        name_words = set(re.split(r"[\s_\-./]+", name_bare))
         overlap = name_words & msg_words
-        # Need at least 2 overlapping words to avoid false matches
         if len(overlap) >= 2 and len(overlap) > best_score:
             best_score = len(overlap)
             best_match = f
