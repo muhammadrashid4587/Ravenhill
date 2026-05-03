@@ -1,4 +1,5 @@
 import { Download, FileText } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import type { ChatAttachment } from "@/lib/types";
 
 interface ChatMessageProps {
@@ -64,6 +65,72 @@ function AttachmentCard({
   );
 }
 
+function MarkdownContent({ content, isAgent }: { content: string; isAgent: boolean }) {
+  if (!isAgent) {
+    return <div className="text-sm leading-relaxed whitespace-pre-wrap">{content}</div>;
+  }
+
+  return (
+    <div className="prose-raven text-sm leading-relaxed">
+      <ReactMarkdown
+        components={{
+          h1: ({ children }) => (
+            <h3 className="text-[15px] font-semibold text-bone mt-3 mb-1.5">{children}</h3>
+          ),
+          h2: ({ children }) => (
+            <h3 className="text-[14px] font-semibold text-bone mt-3 mb-1.5">{children}</h3>
+          ),
+          h3: ({ children }) => (
+            <h4 className="text-[13px] font-semibold text-bone mt-2.5 mb-1">{children}</h4>
+          ),
+          p: ({ children }) => (
+            <p className="mb-2 last:mb-0">{children}</p>
+          ),
+          ul: ({ children }) => (
+            <ul className="list-disc pl-4 mb-2 space-y-0.5">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>
+          ),
+          li: ({ children }) => (
+            <li className="text-sm leading-relaxed">{children}</li>
+          ),
+          strong: ({ children }) => (
+            <strong className="font-semibold text-bone">{children}</strong>
+          ),
+          em: ({ children }) => (
+            <em className="italic text-parchment/90">{children}</em>
+          ),
+          code: ({ children }) => (
+            <code className="text-[12px] bg-ink px-1.5 py-0.5 rounded font-mono text-parchment">{children}</code>
+          ),
+          pre: ({ children }) => (
+            <pre className="bg-ink rounded-lg p-3 overflow-x-auto mb-2 text-[12px]">{children}</pre>
+          ),
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="text-claret hover:text-[#D6596C] underline underline-offset-2"
+            >
+              {children}
+            </a>
+          ),
+          hr: () => <hr className="border-white/[0.08] my-3" />,
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-claret/40 pl-3 text-smoke italic my-2">
+              {children}
+            </blockquote>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 export default function ChatMessage({
   sender,
   content,
@@ -72,8 +139,7 @@ export default function ChatMessage({
   attachments,
   channel,
 }: ChatMessageProps) {
-  // Inter-agent routing messages get a distinct style
-  const isRouting = sender.includes("\u2192") && isAgent;
+  const isRouting = sender.includes("→") && isAgent;
 
   if (isRouting) {
     return (
@@ -121,11 +187,7 @@ export default function ChatMessage({
             </span>
           )}
         </div>
-        {content && (
-          <div className="text-sm leading-relaxed whitespace-pre-wrap">
-            {content}
-          </div>
-        )}
+        {content && <MarkdownContent content={content} isAgent={isAgent} />}
         {attachments && attachments.length > 0 && (
           <div className="space-y-1">
             {attachments.map((att) => (
