@@ -300,7 +300,14 @@ function ChatInner() {
     name: string;
     role: string;
   } | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem("ravenhill.chat.messages");
+      if (raw) return JSON.parse(raw) as Message[];
+    } catch { /* ignore */ }
+    return [];
+  });
   const [input, setInput] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
@@ -308,7 +315,26 @@ function ChatInner() {
   const voiceBaseRef = useRef<string>("");
   const [loading, setLoading] = useState(false);
   const [approval, setApproval] = useState<PendingApproval | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("ravenhill.chat.sessionId") || null;
+  });
+
+  useEffect(() => {
+    try {
+      const persistable = messages.filter(
+        (m) => m.type !== "thinking" && m.type !== "file_choice" && m.type !== "team_picker",
+      );
+      window.localStorage.setItem("ravenhill.chat.messages", JSON.stringify(persistable));
+    } catch { /* quota or private mode */ }
+  }, [messages]);
+
+  useEffect(() => {
+    try {
+      if (sessionId) window.localStorage.setItem("ravenhill.chat.sessionId", sessionId);
+      else window.localStorage.removeItem("ravenhill.chat.sessionId");
+    } catch { /* ignore */ }
+  }, [sessionId]);
 
   // Pending attachments staged for the next send
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
@@ -1187,7 +1213,6 @@ function ChatInner() {
 
   const handleReset = async () => {
     await resetDemo();
-    // Revoke blob URLs to avoid leaks
     pendingAttachments.forEach((a) => {
       if (a.url?.startsWith("blob:")) URL.revokeObjectURL(a.url);
     });
@@ -1204,6 +1229,10 @@ function ChatInner() {
     setSessionId(null);
     setPendingAttachments([]);
     setAttachmentError(null);
+    try {
+      window.localStorage.removeItem("ravenhill.chat.messages");
+      window.localStorage.removeItem("ravenhill.chat.sessionId");
+    } catch { /* ignore */ }
     closeSlackChannel();
   };
 
