@@ -1349,7 +1349,7 @@ async def orchestrate_stream(request: OrchestrateRequest):
                     f"NEVER invent facts."
                     f"{source_hint}"
                 )
-                max_tok = 1200 if "drive.read" in tool_exec.tools_called else 800
+                max_tok = 2000 if "drive.read" in tool_exec.tools_called else 1000
                 answer = await call_llm(
                     system=system, user_message=request.message,
                     model_tier="reasoning", max_tokens=max_tok,

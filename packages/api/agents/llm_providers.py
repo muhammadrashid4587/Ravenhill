@@ -29,7 +29,7 @@ _MODELS = {
     "cerebras": {"fast": "llama3.1-8b", "reasoning": "qwen-3-235b-a22b-instruct-2507"},
     "groq": {"fast": "llama-3.3-70b-versatile", "reasoning": "llama-3.3-70b-versatile"},
     "anthropic": {"fast": "claude-haiku-4-5", "reasoning": "claude-sonnet-4-6"},
-    "gemini": {"fast": "gemini-2.5-flash", "reasoning": "gemini-2.5-flash"},
+    "gemini": {"fast": "gemini-2.5-flash", "reasoning": "gemini-2.5-pro"},
 }
 
 # Provider order for "auto" mode — fastest free tiers first
