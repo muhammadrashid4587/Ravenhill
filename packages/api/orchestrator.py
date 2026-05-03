@@ -461,7 +461,9 @@ async def _hydrate_google_context(agent_id: str) -> str:
         list_google_contacts,
     )
 
-    if not await _has_real_connection(agent_id):
+    connected = await _has_real_connection(agent_id)
+    log.info(f"[hydrate] agent_id={agent_id} _has_real_connection={connected}")
+    if not connected:
         return ""
 
     # Pull all four in parallel, with a 10s cap so chat doesn't hang.
@@ -482,6 +484,11 @@ async def _hydrate_google_context(agent_id: str) -> str:
     mail_threads = results[1] if isinstance(results[1], list) else []
     drive_files = results[2] if isinstance(results[2], list) else []
     contacts = results[3] if isinstance(results[3], list) else []
+
+    log.info(
+        f"[hydrate] agent_id={agent_id} cal={len(cal_events)} "
+        f"mail={len(mail_threads)} drive={len(drive_files)} contacts={len(contacts)}"
+    )
 
     if not cal_events and not mail_threads and not drive_files and not contacts:
         return ""
@@ -616,133 +623,129 @@ async def _conversational_fallback(
 ) -> str:
     """When no agents match a query, let the agent respond directly.
 
-    Uses the LLM with the agent's persona + Google Workspace context +
-    conversation history for natural conversation. Falls back to a
-    friendly generic response if LLM is unavailable.
+    Always attempts Google Workspace hydration + LLM call regardless of
+    the current provider state. Falls back to data-aware mock responses
+    only when the LLM is truly unavailable.
     """
-    from agents.llm_providers import call_llm, get_active_provider
+    from agents.llm_providers import call_llm
 
-    if get_active_provider() != "mock":
-        history_block = ""
-        if conversation_history:
-            history_block = (
-                "\n\nRecent conversation:\n"
-                + "\n".join(conversation_history[-6:])
-            )
-
-        # Hydrate Google Workspace context if the user has connected.
-        # This is the bridge that makes "what's on my calendar?" work
-        # in chat — without it, the agent is blind to the user's
-        # Calendar, Drive, and Gmail even when connected.
-        google_block = ""
-        try:
-            google_block = await _hydrate_google_context(str(agent.id))
-        except Exception:
-            pass  # Google hydration is best-effort; never blocks chat
-
-        # If the user seems to be asking about a specific file's CONTENT,
-        # try to fetch it from Drive and add the body to the context.
-        file_content_block = ""
-        try:
-            file_content_block = await _fetch_file_if_referenced(
-                str(agent.id), message, google_block
-            )
-        except Exception:
-            pass
-
-        # Knowledge sources we can actually ground in.
-        kb_lines: list[str] = []
-        for entry in (agent.knowledge_entries or []):
-            topic = entry.get("topic", "?") if isinstance(entry, dict) else getattr(entry, "topic", "?")
-            content = entry.get("content", "") if isinstance(entry, dict) else getattr(entry, "content", "")
-            if content:
-                kb_lines.append(f"- [{topic}] {content}")
-        if agent.knowledge_base:
-            kb_lines.append(f"- {agent.knowledge_base}")
-        if agent.role_description:
-            kb_lines.append(f"- About me: {agent.role_description}")
-        kb_text = "\n".join(kb_lines).strip()
-
-        # Two distinct empty-state postures:
-        # 1. The agent has SOME grounded knowledge (entries / role) — answer
-        #    from it, conversationally, like an assistant who knows you.
-        # 2. The agent is brand-new, no knowledge yet — be useful and warm
-        #    rather than stonewalling. Brainstorm, reason, suggest connecting
-        #    Google so the agent can learn from real data. The previous
-        #    prompt forced "I don't have information" on every non-greeting
-        #    message, which made the chat feel dead even when the LLM was up.
-        # Build the system prompt. Three knowledge tiers:
-        #   1. knowledge_entries (manually set or seeded)
-        #   2. Google Workspace (calendar + inbox + drive — live data)
-        #   3. Neither (brand-new user, no data at all)
-        has_knowledge = bool(kb_text)
-        has_google = bool(google_block)
-        has_any_context = has_knowledge or has_google
-
-        context_parts: list[str] = []
-        if kb_text:
-            context_parts.append(f"What I know about {agent.name}:\n{kb_text}")
-        if google_block:
-            context_parts.append(google_block)
-        if file_content_block:
-            context_parts.append(file_content_block)
-        full_context = "\n\n".join(context_parts)
-
-        if has_any_context:
-            system = (
-                f"You are {agent.name}'s personal AI agent. Speak in their voice.\n\n"
-                f"{full_context}\n\n"
-                f"Answer the user's question using the data above. Be specific — "
-                f"name real meetings, real files, real emails, real dates from "
-                f"the context. For greetings, be warm and brief. For questions "
-                f"outside the data above, say what you DO know and offer to "
-                f"help differently. NEVER invent facts. Keep answers under "
-                f"120 words."
-                f"{history_block}"
-            )
-        else:
-            system = (
-                f"You are {agent.name}'s personal AI agent. They just signed "
-                f"up — you don't yet have any data about their work, team, "
-                f"calendar, or files.\n\n"
-                f"Be a useful, thoughtful assistant: answer general questions, "
-                f"brainstorm, reason through problems, draft text, summarize "
-                f"things they paste. The one rule: NEVER invent facts about "
-                f"{agent.name}'s specific team, projects, meetings, or "
-                f"colleagues — you don't know any of that yet. If they ask "
-                f"about their work specifically, gently mention they can "
-                f"connect Google in /settings so you can read their "
-                f"calendar/drive/gmail and become useful for that.\n\n"
-                f"For greetings, greet warmly in 1 sentence. Otherwise keep "
-                f"answers conversational, under 100 words."
-                f"{history_block}"
-            )
-        result = await call_llm(
-            system=system,
-            user_message=message,
-            model_tier="reasoning",
-            max_tokens=400,
+    history_block = ""
+    if conversation_history:
+        history_block = (
+            "\n\nRecent conversation:\n"
+            + "\n".join(conversation_history[-6:])
         )
-        if result:
-            return result
 
-    # Mock fallback — handle common patterns
+    google_block = ""
+    try:
+        agent_id_str = str(agent.id)
+        log.info(f"[chat-hydrate] agent_id={agent_id_str} — starting Google context hydration")
+        google_block = await _hydrate_google_context(agent_id_str)
+        if google_block:
+            line_count = google_block.count("\n")
+            log.info(f"[chat-hydrate] agent_id={agent_id_str} — got {line_count} context lines")
+        else:
+            log.info(f"[chat-hydrate] agent_id={agent_id_str} — empty (not connected or no data)")
+    except Exception as exc:
+        log.warning(f"[chat-hydrate] agent_id={str(agent.id)} — failed: {exc}")
+
+    file_content_block = ""
+    try:
+        file_content_block = await _fetch_file_if_referenced(
+            str(agent.id), message, google_block
+        )
+    except Exception:
+        pass
+
+    kb_lines: list[str] = []
+    for entry in (agent.knowledge_entries or []):
+        topic = entry.get("topic", "?") if isinstance(entry, dict) else getattr(entry, "topic", "?")
+        content = entry.get("content", "") if isinstance(entry, dict) else getattr(entry, "content", "")
+        if content:
+            kb_lines.append(f"- [{topic}] {content}")
+    if agent.knowledge_base:
+        kb_lines.append(f"- {agent.knowledge_base}")
+    if agent.role_description:
+        kb_lines.append(f"- About me: {agent.role_description}")
+    kb_text = "\n".join(kb_lines).strip()
+
+    has_knowledge = bool(kb_text)
+    has_google = bool(google_block)
+    has_any_context = has_knowledge or has_google
+
+    context_parts: list[str] = []
+    if kb_text:
+        context_parts.append(f"What I know about {agent.name}:\n{kb_text}")
+    if google_block:
+        context_parts.append(google_block)
+    if file_content_block:
+        context_parts.append(file_content_block)
+    full_context = "\n\n".join(context_parts)
+
+    if has_any_context:
+        system = (
+            f"You are {agent.name}'s personal AI agent. Speak in their voice.\n\n"
+            f"{full_context}\n\n"
+            f"Answer the user's question using the data above. Be specific — "
+            f"name real meetings, real files, real emails, real dates from "
+            f"the context. For greetings, be warm and brief. For questions "
+            f"outside the data above, say what you DO know and offer to "
+            f"help differently. NEVER invent facts. Keep answers under "
+            f"120 words."
+            f"{history_block}"
+        )
+    else:
+        system = (
+            f"You are {agent.name}'s personal AI agent. They just signed "
+            f"up — you don't yet have any data about their work, team, "
+            f"calendar, or files.\n\n"
+            f"Be a useful, thoughtful assistant: answer general questions, "
+            f"brainstorm, reason through problems, draft text, summarize "
+            f"things they paste. The one rule: NEVER invent facts about "
+            f"{agent.name}'s specific team, projects, meetings, or "
+            f"colleagues — you don't know any of that yet. If they ask "
+            f"about their work specifically, gently mention they can "
+            f"connect Google in /settings so you can read their "
+            f"calendar/drive/gmail and become useful for that.\n\n"
+            f"For greetings, greet warmly in 1 sentence. Otherwise keep "
+            f"answers conversational, under 100 words."
+            f"{history_block}"
+        )
+    result = await call_llm(
+        system=system,
+        user_message=message,
+        model_tier="reasoning",
+        max_tokens=400,
+    )
+    if result:
+        return result
+
+    # LLM unavailable — return data-aware fallback instead of generic copy
     msg_lower = message.lower().strip()
     if any(g in msg_lower for g in ("hello", "hi", "hey", "good morning", "good afternoon")):
+        if has_google:
+            return (
+                "Hey! I can see your Google Calendar, Drive, and Gmail. "
+                "Ask me about your meetings, files, or emails — I'm pulling from real data."
+            )
         return (
-            "Hey! I'm your AI agent — here to help you stay on top of everything "
-            "happening across the team. Ask me about project status, blockers, "
-            "metrics, or I can share documents between teams. What would you like to know?"
+            "Hey! Connect Google in Settings so I can read your calendar, "
+            "drive, and inbox. Until then I can help with general questions."
         )
     if any(g in msg_lower for g in ("thank", "thanks", "appreciate")):
         return "You're welcome! Let me know if there's anything else you'd like to check on."
     if any(g in msg_lower for g in ("bye", "goodbye", "see you", "that's all")):
         return "Talk soon! I'm always here when you need an update."
 
+    if has_google:
+        return (
+            "I have your Google Workspace data loaded but my language model "
+            "is temporarily unavailable. Try again in a moment — I'll be able "
+            "to answer from your real calendar, drive, and inbox data."
+        )
     return (
-        "I'm not sure I have specific org data on that, but I can help with things like "
-        "project status, team blockers, sprint updates, KPIs, or document sharing. "
-        "What would you like to know?"
+        "Google isn't connected yet, so I can't see your calendar, files, or "
+        "emails. Connect Google in Settings → Google to unlock that."
     )
 
 
