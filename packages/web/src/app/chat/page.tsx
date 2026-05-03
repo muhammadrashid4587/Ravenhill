@@ -43,13 +43,15 @@ import {
   type AgentLedgerMessage,
 } from "@/lib/api";
 import {
-  fetchSlackChannels,
-  fetchSlackThread,
-} from "@/lib/mocks";
+  listSlackChannels,
+  listSlackChannelMessages,
+  fetchSlackStatus,
+} from "@/lib/api";
 import type {
   ChatAttachment,
   NotificationItem,
   SlackChannel,
+  SlackChannelKind,
   SlackMessage,
   VerificationStatus,
 } from "@/lib/types";
@@ -496,7 +498,24 @@ function ChatInner() {
         );
       })
       .catch(() => setRawInbox([]));
-    fetchSlackChannels().then(setSlackChannels).catch(() => setSlackChannels([]));
+    if (myAgent?.id) {
+      fetchSlackStatus(myAgent.id)
+        .then((s) => {
+          if (s.connected) {
+            listSlackChannels(myAgent.id).then((res) => {
+              const mapped = (res.channels || []).map((c) => ({
+                id: c.id,
+                name: c.name,
+                kind: (c.is_private ? "dm" : "channel") as SlackChannelKind,
+                unread: 0,
+                is_private: c.is_private,
+              }));
+              setSlackChannels(mapped);
+            }).catch(() => setSlackChannels([]));
+          }
+        })
+        .catch(() => {});
+    }
   }, [myAgent]);
 
   // Poll the inbox every 5s so incoming messages from other agents land
@@ -679,11 +698,25 @@ function ChatInner() {
 
   // ---- Slack handlers ----
   const openSlackChannel = async (channel: SlackChannel) => {
+    if (!myAgent?.id) return;
     setActiveSlackChannel(channel);
     setSlackLoading(true);
     try {
-      const thread = await fetchSlackThread(channel.id);
-      setSlackThread(thread);
+      const res = await listSlackChannelMessages(myAgent.id, channel.id);
+      const mapped: SlackMessage[] = (res.messages || []).map((m) => ({
+        id: m.ts || String(Math.random()),
+        channel_id: channel.id,
+        author: m.user_name || m.user || "Unknown",
+        text: m.text || "",
+        timestamp: m.ts
+          ? new Date(parseFloat(m.ts) * 1000).toLocaleString([], {
+              month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+            })
+          : "",
+      }));
+      setSlackThread(mapped);
+    } catch {
+      setSlackThread([]);
     } finally {
       setSlackLoading(false);
     }
