@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Ravenhill (repo: `e-agent`) is a per-employee AI agent platform for enterprise. Every employee gets a personal agent; agents talk to each other to handle work that currently requires human chains (questions, file requests, status updates). ETO (eto.markets) is the inter-agent communication backbone for messaging, payments, and file transfer.
+Ravenhill (repo: `e-agent`) is a per-employee AI agent platform for enterprise. Every employee gets a personal agent; agents talk to each other to handle work that currently requires human chains (questions, file requests, status updates). Singularity is the inter-agent communication backbone for messaging, payments, and file transfer.
 
 **Stage**: Pre-seed, Phase 0 (demo build). Ship date: March 27, 2026.
 **Team**: Muhammad (CTO, sole engineer), Max (CEO), Likitha (COO/QA).
@@ -20,7 +20,7 @@ e-agent/
 │   │   ├── agents/       # Agent runtime, LLM providers, personas, seed data
 │   │   ├── orchestrator.py  # The brain: classify → route → answer/approve
 │   │   ├── registry/     # Agent discovery (keyword match now, pgvector later)
-│   │   ├── messaging/    # Inter-agent message models, ETO client stub
+│   │   ├── messaging/    # Inter-agent message models, Singularity client stub
 │   │   ├── approvals/    # Human-in-the-loop approval flows
 │   │   ├── permissions/  # RBAC, scope checks, approval requirements
 │   │   ├── admin/        # Admin control plane (Phase 2, stubs only)
@@ -54,7 +54,7 @@ e-agent/
 | Frontend | TypeScript, React 18, Next.js 14.2, Tailwind CSS 3.4 |
 | Database | PostgreSQL 16 + pgvector (via Docker, not yet used in code) |
 | Cache | Redis 7 (via Docker, not yet used in code) |
-| Inter-agent | ETO (stubbed, real integration Week 2) |
+| Inter-agent | Singularity (stubbed, real integration Week 2) |
 | Deploy | Fly.io, GitHub Actions CI/CD |
 | Lint | Ruff (Python), ESLint (TypeScript) |
 | Test | pytest + pytest-asyncio |
@@ -187,8 +187,8 @@ Copy `.env.example` to `.env` and fill in. At minimum, set one LLM key or use `L
 | `GEMINI_API_KEY` | No* | — | Required if using Gemini |
 | `DATABASE_URL` | No | `postgresql://eagent:eagent@localhost:5432/eagent` | Not actively used in Phase 0 |
 | `REDIS_URL` | No | `redis://localhost:6379` | Not actively used in Phase 0 |
-| `ETO_API_KEY` | No | — | ETO integration (stub) |
-| `ETO_API_URL` | No | `https://api.eto.markets/v1` | ETO endpoint |
+| `SINGULARITY_API_KEY` | No | — | Singularity integration (stub) |
+| `SINGULARITY_API_URL` | No | `https://api.singularity.markets/v1` | Singularity endpoint |
 | `APP_ENV` | No | `development` | |
 | `API_PORT` | No | `8000` | |
 | `WEB_PORT` | No | `3000` | |
@@ -233,7 +233,7 @@ Tests run against mock mode (no API keys needed). CI runs `ruff check . && pytes
 
 ## Key Design Decisions
 
-1. **ETO is the inter-agent backbone** — messaging, file transfers, payments all through ETO. We don't build our own messaging infra.
+1. **Singularity is the inter-agent backbone** — messaging, file transfers, payments all through Singularity. We don't build our own messaging infra.
 2. **Human-in-the-loop defaults to conservative** — all file sharing requires approval in Phase 0.
 3. **Mock mode is first-class** — demo must work perfectly with zero API keys.
 4. **Two-tier LLM calls** — fast model for classification, reasoning model for answers.

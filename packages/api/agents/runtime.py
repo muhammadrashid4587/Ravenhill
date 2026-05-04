@@ -5,7 +5,7 @@ Each agent instance:
 - Has a persona (role, department, knowledge areas)
 - Calls an LLM for reasoning (fast tier for routing, reasoning tier for complex tasks)
 - Executes tools on behalf of the employee
-- Sends/receives messages through ETO
+- Sends/receives messages through Singularity
 
 Provider selection is handled by `agents.llm_providers` — supports Anthropic,
 Groq, Gemini, and auto-fallback.  When all providers are unavailable, falls back

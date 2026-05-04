@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # The Singularity (formerly ETO)
     singularity_api_key: str = ""
-    singularity_api_url: str = "https://api.eto.markets/v1"
+    singularity_api_url: str = "https://api.singularity.markets/v1"
 
     # Frontend
     next_public_api_url: str = "http://localhost:8000"

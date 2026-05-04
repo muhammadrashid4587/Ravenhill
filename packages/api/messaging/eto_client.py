@@ -1,7 +1,7 @@
-"""ETO integration client — handles agent-to-agent messaging via ETO infrastructure.
+"""Singularity integration client — handles agent-to-agent messaging via Singularity infrastructure.
 
 Messages are always persisted to the database for observability.
-When ETO_API_KEY is set, messages are also sent to the ETO API.
+When SINGULARITY_API_KEY is set, messages are also sent to the Singularity API.
 """
 
 import logging
@@ -11,10 +11,10 @@ import httpx
 from config import settings
 from messaging.models import InterAgentMessage, MessageResponse
 
-log = logging.getLogger("eto")
+log = logging.getLogger("singularity")
 
 
-def _eto_is_live() -> bool:
+def _singularity_is_live() -> bool:
     return bool(settings.singularity_api_key) and not settings.singularity_api_key.startswith("your-")
 
 
@@ -42,8 +42,8 @@ async def _persist_ledger_entry(entry: dict):
         await session.commit()
 
 
-class ETOClient:
-    """Client for ETO messaging and file transfer APIs."""
+class SingularityClient:
+    """Client for Singularity messaging and file transfer APIs."""
 
     def __init__(self):
         self.base_url = settings.singularity_api_url
@@ -60,7 +60,7 @@ class ETOClient:
         return self._client
 
     async def send_message(self, message: InterAgentMessage) -> dict:
-        """Send an inter-agent message. Routes through ETO when live, local otherwise."""
+        """Send an inter-agent message. Routes through Singularity when live, local otherwise."""
         entry = {
             "message_id": str(message.message_id),
             "trace_id": str(message.trace_id),
@@ -73,7 +73,7 @@ class ETOClient:
             "status": "pending",
         }
 
-        if _eto_is_live():
+        if _singularity_is_live():
             try:
                 client = self._get_client()
                 resp = await client.post("/messages/send", json={
@@ -89,13 +89,13 @@ class ETOClient:
                 data = resp.json()
                 entry["eto_tx_id"] = data.get("tx_id")
                 entry["status"] = "delivered"
-                log.info(f"[eto] Message sent via ETO: {entry['message_id']}")
+                log.info(f"[singularity] Message sent via Singularity: {entry['message_id']}")
             except Exception as e:
                 entry["status"] = "delivered_local"
-                log.warning(f"[eto] ETO send failed, delivered locally: {e}")
+                log.warning(f"[singularity] Singularity send failed, delivered locally: {e}")
         else:
             entry["status"] = "delivered_local"
-            log.info(f"[eto] Message delivered locally: {entry['message_id']}")
+            log.info(f"[singularity] Message delivered locally: {entry['message_id']}")
 
         await _persist_ledger_entry(entry)
         return {
@@ -117,7 +117,7 @@ class ETOClient:
             "eto_tx_id": None,
         }
 
-        if _eto_is_live():
+        if _singularity_is_live():
             try:
                 client = self._get_client()
                 resp = await client.post("/messages/respond", json={
@@ -132,13 +132,13 @@ class ETOClient:
                 entry["eto_tx_id"] = data.get("tx_id")
                 entry["status"] = "delivered"
             except Exception as e:
-                log.warning(f"[eto] ETO response failed, recorded locally: {e}")
+                log.warning(f"[singularity] Singularity response failed, recorded locally: {e}")
 
         await _persist_ledger_entry(entry)
         return entry
 
     async def request_file(self, from_agent: str, to_agent: str, file_description: str) -> dict:
-        """Request a file transfer through ETO."""
+        """Request a file transfer through Singularity."""
         entry = {
             "type": "file_request",
             "from_agent": from_agent,
@@ -148,7 +148,7 @@ class ETOClient:
             "eto_tx_id": None,
         }
 
-        if _eto_is_live():
+        if _singularity_is_live():
             try:
                 client = self._get_client()
                 resp = await client.post("/files/request", json={
@@ -159,9 +159,9 @@ class ETOClient:
                 resp.raise_for_status()
                 data = resp.json()
                 entry["eto_tx_id"] = data.get("tx_id")
-                log.info(f"[eto] File request via ETO: tx={entry['eto_tx_id']}")
+                log.info(f"[singularity] File request via Singularity: tx={entry['eto_tx_id']}")
             except Exception as e:
-                log.warning(f"[eto] ETO file request failed, handled locally: {e}")
+                log.warning(f"[singularity] Singularity file request failed, handled locally: {e}")
 
         await _persist_ledger_entry(entry)
         return entry
@@ -171,5 +171,5 @@ class ETOClient:
             await self._client.aclose()
 
 
-# Singleton
-eto_client = ETOClient()
+# Singleton — variable kept as `eto_client` to avoid renaming the import everywhere.
+eto_client = SingularityClient()

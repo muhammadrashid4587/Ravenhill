@@ -321,16 +321,16 @@ async def mark_read(
         return {"status": row.status}
 
 
-# ---------- Legacy endpoints (kept for back-compat with ETO stub) ----------
+# ---------- Legacy endpoints (kept for back-compat with Singularity stub) ----------
 
 
 @router.post("/send")
 async def send_message(message: InterAgentMessage):
-    """Send an inter-agent message via the (stub) ETO transport.
+    """Send an inter-agent message via the (stub) Singularity transport.
 
     DEPRECATED for in-app agent-to-agent traffic — use POST /api/messages/agent
     instead, which persists to the ledger and propagates to the recipient.
-    Kept for the eventual ETO cross-org integration.
+    Kept for the eventual Singularity cross-org integration.
     """
     result = await eto_client.send_message(message)
     return result
