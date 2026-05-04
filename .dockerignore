@@ -1,0 +1,79 @@
+# flyctl launch added from .gitignore
+# Python
+**/__pycache__
+**/*.py[cod]
+**/*$py.class
+**/*.so
+**/.Python
+**/env
+**/venv
+**/.venv
+**/*.egg-info
+**/dist
+**/build
+
+# Node
+**/node_modules
+**/.next
+**/out
+**/.turbo
+
+# Environment
+**/.env
+**/.env.local
+**/.env.*.local
+
+# IDE
+**/.vscode
+**/.idea
+**/*.swp
+**/*.swo
+**/*~
+
+# OS
+**/.DS_Store
+**/Thumbs.db
+
+# Docker
+**/docker-compose.override.yml
+
+# Testing
+**/.coverage
+**/htmlcov
+**/.pytest_cache
+
+# Claude
+**/.claude
+
+# Confidential docs / binary originals (markdown versions in docs/)
+**/cofounder-alignment.docx
+**/*.pdf
+**/*.docx
+**/*.pptx
+**/*.html
+**/~$*
+**/Ravenhill
+**/tsconfig.tsbuildinfo
+
+# flyctl launch added from .pytest_cache/.gitignore
+# Created by pytest automatically.
+.pytest_cache/**/*
+
+# flyctl launch added from .venv/.gitignore
+.venv/**/*
+
+# flyctl launch added from packages/api/.pytest_cache/.gitignore
+# Created by pytest automatically.
+packages/api/.pytest_cache/**/*
+
+# flyctl launch added from packages/api/.ruff_cache/.gitignore
+# Automatically created by ruff.
+packages/api/.ruff_cache/**/*
+
+# flyctl launch added from packages/api/.venv/.gitignore
+packages/api/.venv/**/*
+
+# flyctl launch added from packages/web/.pytest_cache/.gitignore
+# Created by pytest automatically.
+packages/web/.pytest_cache/**/*
+fly.toml

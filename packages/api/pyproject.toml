@@ -1,22 +1,31 @@
 [project]
 name = "e-agent-api"
 version = "0.1.0"
-description = "e-agent backend — per-employee autonomous agents for enterprise"
+description = "Ravenhill backend — per-employee autonomous agents for enterprise"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
     "anthropic>=0.49.0",
-    "sqlalchemy>=2.0.0",
-    "asyncpg>=0.29.0",
-    "alembic>=1.13.0",
-    "pgvector>=0.2.0",
-    "redis>=5.0.0",
-    "pydantic>=2.0.0",
+    "pydantic[email]>=2.0.0",
     "pydantic-settings>=2.0.0",
     "httpx>=0.27.0",
     "python-dotenv>=1.0.0",
-    "websockets>=12.0",
+    "cerebras-cloud-sdk>=1.0.0",
+    "groq>=0.9.0",
+    "google-genai>=1.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "cryptography>=42.0.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-auth>=2.25.0",
+    # File-upload summarization — extracts text from PDFs and Word docs
+    # so chat uploads aren't summarized by canned templates.
+    "pypdf>=4.0.0",
+    "python-docx>=1.1.0",
+    # Required by FastAPI's UploadFile / multipart-form-data parsing.
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +33,21 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.3.0",
+    "aiosqlite>=0.20.0",
+    "email-validator>=2.0.0",
 ]
+phase1 = [
+    "alembic>=1.13.0",
+    "pgvector>=0.2.0",
+    "redis>=5.0.0",
+    "websockets>=12.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-auth>=2.25.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["agents*", "auth*", "messaging*", "registry*", "approvals*", "permissions*", "admin*", "integrations*", "integrations.*", "activity*", "meetings*", "security*", "events*", "graph*"]
 
 [tool.ruff]
 target-version = "py311"

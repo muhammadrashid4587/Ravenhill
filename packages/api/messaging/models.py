@@ -16,13 +16,13 @@ class MessageType(str, Enum):
 
 class PermissionContext(BaseModel):
     role: str
-    department: str
+    departments: list[str] = []
     scopes: list[str] = []
 
 
 class InterAgentMessage(BaseModel):
     """The wire format for all agent-to-agent communication.
-    Transported via ETO infrastructure.
+    Transported via Singularity infrastructure.
     """
     message_id: UUID = Field(default_factory=uuid4)
     type: MessageType

@@ -3,42 +3,107 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from activity.router import router as activity_router
 from agents.router import router as agents_router
+from auth.router import router as auth_router
+from capabilities.router import router as capabilities_router
+from behavior.router import router as behavior_router
+from feedback.router import router as feedback_router
+from files.router import router as files_router
+from tasks.router import router as tasks_router
 from registry.router import router as registry_router
 from messaging.router import router as messaging_router
 from approvals.router import router as approvals_router
+from events.router import router as events_router
+from graph.router import router as graph_router
+from integrations.slack.router import router as slack_router
+from integrations.workspace.router import router as workspace_router
+from meetings.router import router as meetings_router
+from orchestrator import router as orchestrator_router
+from orgs.router import router as orgs_router
+from people.router import router as people_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: initialize DB pool, Redis, ETO connection
-    print("Starting e-agent API...")
+    from db import (
+        alter_table_if_needed,
+        close_db,
+        init_db,
+        pre_migrate_org_columns,
+        seed_default_org,
+    )
+
+    print("Starting Ravenhill API...")
+    # Order matters:
+    #   1. init_db()               — create tables.
+    #   2. pre_migrate_org_columns — add any NEW columns to the
+    #      organizations table BEFORE seed_default_org, so the ORM
+    #      doesn't crash trying to SELECT columns that don't exist yet
+    #      (this caused the seniority + setup_token prod outages).
+    #   3. seed_default_org()      — the org row exists for FK targets.
+    #   4. alter_table_if_needed() — add columns on ALL other tables,
+    #      backfill NULLs to the default org, swap constraints, purge
+    #      demo agents, create indexes.
+    await init_db()
+    await pre_migrate_org_columns()
+    await seed_default_org()
+    await alter_table_if_needed()
     yield
-    # Shutdown: cleanup connections
-    print("Shutting down e-agent API...")
+    await close_db()
+    print("Shutting down Ravenhill API...")
 
 
 app = FastAPI(
-    title="e-agent API",
+    title="Ravenhill API",
     description="Per-employee autonomous agents for enterprise",
     version="0.1.0",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "https://raven-hill.org",
+        "https://www.raven-hill.org",
+        "https://ravenhillai.com",
+        "https://www.ravenhillai.com",
+        "https://ravenhill-api.fly.dev",
+    ],
+    # Match every Vercel preview/production URL on this project so the
+    # frontend can talk to the API regardless of which preview it's on.
+    allow_origin_regex=r"https://raven-hill(-[a-z0-9]+)?(-muhammad-rashids-projects-[a-z0-9]+)?\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(activity_router, prefix="/api/activity", tags=["activity"])
 app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
 app.include_router(registry_router, prefix="/api/registry", tags=["registry"])
 app.include_router(messaging_router, prefix="/api/messages", tags=["messaging"])
 app.include_router(approvals_router, prefix="/api/approvals", tags=["approvals"])
+app.include_router(events_router, prefix="/api/events", tags=["events"])
+app.include_router(graph_router, prefix="/api/graph", tags=["graph"])
+app.include_router(slack_router, prefix="/api/integrations/slack", tags=["integrations"])
+app.include_router(workspace_router, prefix="/api/workspace", tags=["workspace"])
+app.include_router(meetings_router, prefix="/api/meetings", tags=["meetings"])
+app.include_router(orchestrator_router, prefix="/api/orchestrate", tags=["orchestrator"])
+app.include_router(orgs_router, prefix="/api/orgs", tags=["orgs"])
+app.include_router(capabilities_router, prefix="/api/capabilities", tags=["capabilities"])
+app.include_router(feedback_router, prefix="/api/feedback", tags=["feedback"])
+app.include_router(files_router, prefix="/api/files", tags=["files"])
+app.include_router(behavior_router, prefix="/api/behavior", tags=["behavior"])
+app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(people_router, prefix="/api/people", tags=["people"])
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "e-agent-api"}
+    from agents.llm_providers import get_active_provider
+    return {"status": "ok", "service": "ravenhill-api", "llm_provider": get_active_provider()}

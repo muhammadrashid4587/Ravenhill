@@ -44,5 +44,13 @@ htmlcov/
 # Claude
 .claude/
 
-# Confidential docs (don't push to remote)
+# Confidential docs / binary originals (markdown versions in docs/)
 cofounder-alignment.docx
+*.pdf
+*.docx
+*.pptx
+*.html
+~$*
+Ravenhill/
+tsconfig.tsbuildinfo
+.vercel

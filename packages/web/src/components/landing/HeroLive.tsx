@@ -1,0 +1,85 @@
+"use client";
+
+import { useEffect, useRef, type ReactNode } from "react";
+
+/**
+ * HeroLive — wraps the landing hero with a cursor-reactive oxblood spotlight
+ * and a subtle parallax hook for the inner content.
+ *
+ * All live behavior disables automatically under `prefers-reduced-motion`.
+ * No WebGL, no libraries — a single rAF loop that lerps the spotlight
+ * position toward the pointer.
+ */
+export default function HeroLive({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof window === "undefined") return;
+
+    const reduced =
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+    // Initial rest position
+    el.style.setProperty("--spot-x", "50%");
+    el.style.setProperty("--spot-y", "38%");
+    el.style.setProperty("--parallax-x", "0px");
+    el.style.setProperty("--parallax-y", "0px");
+
+    if (reduced) return;
+
+    let targetX = 50;
+    let targetY = 38;
+    let currentX = 50;
+    let currentY = 38;
+    let raf = 0;
+
+    const onMove = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      targetX = (x / rect.width) * 100;
+      targetY = (y / rect.height) * 100;
+    };
+
+    const onLeave = () => {
+      targetX = 50;
+      targetY = 38;
+    };
+
+    const tick = () => {
+      // Soft lerp for premium feel
+      currentX += (targetX - currentX) * 0.06;
+      currentY += (targetY - currentY) * 0.06;
+      el.style.setProperty("--spot-x", `${currentX.toFixed(2)}%`);
+      el.style.setProperty("--spot-y", `${currentY.toFixed(2)}%`);
+
+      // Parallax drift removed — the headline stays still. Keeping the
+      // CSS variables pinned at 0 so any .hero-parallax descendants don't
+      // jitter on re-renders.
+      raf = requestAnimationFrame(tick);
+    };
+
+    el.addEventListener("pointermove", onMove, { passive: true });
+    el.addEventListener("pointerleave", onLeave, { passive: true });
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerleave", onLeave);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className={`hero-live ${className}`} aria-hidden={false}>
+      {children}
+    </div>
+  );
+}
