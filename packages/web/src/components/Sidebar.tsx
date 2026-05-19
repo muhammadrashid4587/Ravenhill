@@ -9,11 +9,9 @@ import {
   Building2,
   CalendarDays,
   LogOut,
-  ShieldCheck,
   MoreHorizontal,
   CalendarCheck,
   HardDriveUpload,
-  Brain,
   Inbox,
   Settings,
   BarChart3,
@@ -34,10 +32,8 @@ const PRIMARY_NAV = [
 
 const SECONDARY_NAV = [
   { href: "/drive", label: "Drive", icon: HardDriveUpload },
-  { href: "/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/organization", label: "Organization", icon: Building2 },
   { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/knowledge", label: "Knowledge", icon: Brain },
   { href: "/people", label: "People", icon: Contact },
   { href: "/hr", label: "HR", icon: Users },
   { href: "/account", label: "Account", icon: CircleUser },
