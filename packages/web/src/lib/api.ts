@@ -201,39 +201,15 @@ export async function replyToAgentMessage(
 //
 // `MessageLedgerRow` only has a `content` (text) column, so to ship real
 // file payloads between two users without a backend migration we encode
-// the file metadata (and base64 bytes for textual files within the size
-// cap) into the body of a normal inter-agent message. The body keeps a
-// human-readable preamble so the recipient's auto-reply LLM doesn't trip
-// on a JSON-only blob, and the marker itself is stripped out at render
-// time on the receiving side.
+// the file metadata (and base64 bytes for any file within the size cap,
+// regardless of mime type) into the body of a normal inter-agent
+// message. The body keeps a human-readable preamble so the recipient's
+// auto-reply LLM doesn't trip on a JSON-only blob, and the marker itself
+// is stripped out at render time on the receiving side.
 
 const FILE_MARKER_OPEN = "⟦file:RAVENHILL_V1⟧";
 const FILE_MARKER_CLOSE = "⟦/file⟧";
 const MAX_EMBEDDED_FILE_BYTES = 256 * 1024;
-
-const TEXTUAL_API_MIME_PREFIXES = ["text/"];
-const TEXTUAL_API_MIME_EXACT = new Set([
-  "application/json",
-  "application/xml",
-  "application/javascript",
-  "application/x-yaml",
-  "application/x-typescript",
-  "application/sql",
-]);
-const TEXTUAL_API_EXTENSIONS = new Set([
-  "md", "txt", "csv", "tsv", "json", "yaml", "yml", "xml", "html", "htm",
-  "css", "scss", "js", "jsx", "ts", "tsx", "py", "rb", "go", "rs", "java",
-  "kt", "swift", "c", "h", "cpp", "hpp", "sh", "bash", "zsh", "sql",
-  "ini", "cfg", "toml", "log", "rst", "tex",
-]);
-
-function isShareableAsText(mime: string, name: string): boolean {
-  const m = (mime || "").toLowerCase();
-  if (TEXTUAL_API_MIME_PREFIXES.some((p) => m.startsWith(p))) return true;
-  if (TEXTUAL_API_MIME_EXACT.has(m)) return true;
-  const ext = name.split(".").pop()?.toLowerCase() || "";
-  return TEXTUAL_API_EXTENSIONS.has(ext);
-}
 
 async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -271,10 +247,11 @@ export interface ParsedFileMessage {
 }
 
 // Sends a file from the caller's agent to another agent through the same
-// `/api/messages/agent` endpoint a normal text message uses. For textual
-// files within `MAX_EMBEDDED_FILE_BYTES` the actual bytes ride along as
-// base64; for binary or oversized files only the metadata travels and
-// the recipient sees a "real bytes pending Drive ingestion" affordance.
+// `/api/messages/agent` endpoint a normal text message uses. Any file
+// within `MAX_EMBEDDED_FILE_BYTES` has its bytes ride along as base64
+// (works for binary types too — receiver gets a `data:` URL it can
+// download); for oversized files only the metadata travels and the
+// recipient sees a "real bytes pending Drive ingestion" affordance.
 export async function sendFileToAgent(
   toAgentId: string,
   attachment: {
@@ -296,7 +273,6 @@ export async function sendFileToAgent(
   const canEmbed =
     !!attachment.url &&
     attachment.url.startsWith("blob:") &&
-    isShareableAsText(attachment.mime_type, attachment.name) &&
     attachment.size_bytes <= MAX_EMBEDDED_FILE_BYTES;
 
   if (canEmbed) {

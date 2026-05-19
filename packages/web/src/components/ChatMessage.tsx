@@ -43,7 +43,11 @@ function AttachmentCard({
       href={attachment.url ?? "#"}
       target={attachment.url ? "_blank" : undefined}
       rel="noreferrer"
-      download={attachment.source === "upload" ? attachment.name : undefined}
+      download={
+        attachment.url && (attachment.source === "upload" || attachment.source === "shared")
+          ? attachment.name
+          : undefined
+      }
       className={`flex items-center gap-2.5 mt-2 px-3 py-2 rounded-lg border ${cardBg} hover:border-white/[0.2] transition`}
     >
       <div className="w-8 h-8 rounded-md bg-graphite border border-white/[0.06] flex items-center justify-center shrink-0">
