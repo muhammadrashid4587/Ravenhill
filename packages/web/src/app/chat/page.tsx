@@ -23,6 +23,8 @@ import {
   CheckCircle2,
   ChevronDown,
   Trash2,
+  Wand2,
+  Loader2,
 } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import ApprovalPopup from "@/components/ApprovalPopup";
@@ -38,6 +40,7 @@ import {
   fetchAgentInbox,
   fetchAgentThread,
   parseFileMarker,
+  summarizeSession,
   type AgentLedgerMessage,
 } from "@/lib/api";
 import {
@@ -49,6 +52,7 @@ import {
   loadSession,
   saveSession,
   deleteSession,
+  markSessionCompressed,
   newSessionId,
   formatRelative,
   MAX_SESSIONS,
@@ -324,6 +328,7 @@ function ChatInner() {
   );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySessions, setHistorySessions] = useState<StoredSession[]>([]);
+  const [compressingId, setCompressingId] = useState<string | null>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
   // Pending attachments staged for the next send
@@ -1127,10 +1132,12 @@ function ChatInner() {
 
   // Restore a previous session from local history. Attachments come
   // back as metadata only — their bytes don't survive localStorage.
+  // Compressed sessions are read-only (their summary stays inline in
+  // the dropdown) so we skip restore for them.
   const handleLoadHistory = (sessionLocalId: string) => {
     if (!myAgent) return;
     const stored = loadSession(myAgent.id, sessionLocalId);
-    if (!stored) return;
+    if (!stored || stored.compressed) return;
     messages.forEach((m) => {
       m.attachments?.forEach((a) => {
         if (a.url?.startsWith("blob:")) URL.revokeObjectURL(a.url);
@@ -1168,6 +1175,33 @@ function ChatInner() {
     if (!myAgent) return;
     deleteSession(myAgent.id, sessionLocalId);
     setHistorySessions(listSessions(myAgent.id));
+  };
+
+  // Compress an older session: call the backend to produce a short
+  // summary, then replace the session's messages with that summary in
+  // localStorage. The row stays in history (still counts toward
+  // MAX_SESSIONS) but reads as a 2–4 sentence note instead of the full
+  // thread.
+  const handleCompressHistory = async (sessionLocalId: string) => {
+    if (!myAgent || compressingId) return;
+    const stored = loadSession(myAgent.id, sessionLocalId);
+    if (!stored || stored.compressed || stored.messages.length === 0) return;
+    setCompressingId(sessionLocalId);
+    try {
+      const summary = await summarizeSession(
+        stored.messages.map((m) => ({
+          role: m.type === "user" ? "user" : "assistant",
+          content: m.content,
+        })),
+      );
+      markSessionCompressed(myAgent.id, sessionLocalId, summary);
+      setHistorySessions(listSessions(myAgent.id));
+    } catch {
+      // Surface failure via the same toast channel used for share confirmations
+      showToast("Couldn't compress chat — try again later.");
+    } finally {
+      setCompressingId(null);
+    }
   };
 
   // Persist the active conversation to localStorage whenever it
@@ -1474,6 +1508,11 @@ function ChatInner() {
                       ) : (
                         historySessions.map((s) => {
                           const isActive = s.id === currentSessionLocalId;
+                          const isCompressing = compressingId === s.id;
+                          const msgCount =
+                            s.compressed && s.originalMessageCount !== undefined
+                              ? s.originalMessageCount
+                              : s.messages.length;
                           return (
                             <div
                               key={s.id}
@@ -1484,18 +1523,31 @@ function ChatInner() {
                               <button
                                 type="button"
                                 onClick={() => handleLoadHistory(s.id)}
-                                className="flex-1 min-w-0 text-left"
+                                disabled={s.compressed}
+                                className="flex-1 min-w-0 text-left disabled:cursor-default"
                                 role="menuitem"
                               >
-                                <div className="text-[12px] text-parchment truncate">
-                                  {s.title}
+                                <div className="text-[12px] text-parchment truncate flex items-center gap-1.5">
+                                  {s.compressed && (
+                                    <Sparkles
+                                      className="w-3 h-3 text-claret shrink-0"
+                                      strokeWidth={1.75}
+                                      aria-label="Summarized"
+                                    />
+                                  )}
+                                  <span className="truncate">{s.title}</span>
                                 </div>
+                                {s.compressed && s.summary && (
+                                  <div className="text-[11px] text-smoke mt-1 leading-snug whitespace-pre-wrap">
+                                    {s.summary}
+                                  </div>
+                                )}
                                 <div className="text-[10px] text-dusk flex items-center gap-1.5 mt-0.5">
                                   <span>{formatRelative(s.updatedAt)}</span>
                                   <span>·</span>
                                   <span>
-                                    {s.messages.length} msg
-                                    {s.messages.length === 1 ? "" : "s"}
+                                    {s.compressed ? "was " : ""}
+                                    {msgCount} msg{msgCount === 1 ? "" : "s"}
                                   </span>
                                   {s.targetAgentName && (
                                     <>
@@ -1507,6 +1559,25 @@ function ChatInner() {
                                   )}
                                 </div>
                               </button>
+                              {!s.compressed && s.messages.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCompressHistory(s.id);
+                                  }}
+                                  disabled={isCompressing}
+                                  className="opacity-0 group-hover:opacity-100 text-dusk hover:text-claret disabled:opacity-50 transition shrink-0 p-1"
+                                  aria-label={`Compress chat: ${s.title}`}
+                                  title="Summarize this chat"
+                                >
+                                  {isCompressing ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.75} />
+                                  ) : (
+                                    <Wand2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+                                  )}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={(e) => {

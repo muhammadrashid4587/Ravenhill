@@ -1381,6 +1381,71 @@ async def reset_demo():
     return {"status": "ok", "message": "Demo state reset"}
 
 
+class SummarizeSessionMessage(BaseModel):
+    role: str
+    content: str
+
+
+class SummarizeSessionRequest(BaseModel):
+    messages: list[SummarizeSessionMessage]
+
+
+class SummarizeSessionResponse(BaseModel):
+    summary: str
+
+
+_SUMMARIZE_SYSTEM = (
+    "You compress a chat history into a short note the user can scan in five "
+    "seconds. Preserve concrete details that matter (decisions, names, "
+    "numbers, dates, file shares, action items) and drop pleasantries. Write "
+    "2–4 sentences, plain text, no bullet points, no headers."
+)
+
+
+def _mock_session_summary(messages: list[SummarizeSessionMessage]) -> str:
+    user_msgs = [m.content for m in messages if m.role == "user" and m.content.strip()]
+    first = (user_msgs[0] if user_msgs else "").replace("\n", " ").strip()
+    if len(first) > 90:
+        first = first[:87] + "…"
+    return (
+        f"{len(messages)}-message conversation; "
+        f"opening turn: {first or '(no user message)'}."
+    )
+
+
+@router.post("/summarize-session", response_model=SummarizeSessionResponse)
+async def summarize_session(request: SummarizeSessionRequest):
+    """Compress a chat session to a 2–4 sentence summary.
+
+    Used by the browser's chat history feature to replace the message list
+    of an older session with a scannable note. Falls back to a deterministic
+    mock summary when no LLM provider is reachable so the UI flow still
+    completes in offline / mock mode.
+    """
+    if not request.messages:
+        return SummarizeSessionResponse(summary="(empty conversation)")
+
+    from agents.llm_providers import call_llm
+
+    transcript_lines = []
+    for m in request.messages:
+        role = "User" if m.role == "user" else "Agent"
+        content = (m.content or "").strip()
+        if content:
+            transcript_lines.append(f"{role}: {content}")
+    transcript = "\n".join(transcript_lines)
+
+    summary = await call_llm(
+        system=_SUMMARIZE_SYSTEM,
+        user_message=f"Conversation:\n\n{transcript}\n\nWrite the summary now.",
+        model_tier="fast",
+        max_tokens=200,
+    )
+    if not summary:
+        summary = _mock_session_summary(request.messages)
+    return SummarizeSessionResponse(summary=summary.strip())
+
+
 def _build_second_hop_hint(
     ref_agent: Agent, topic: str, agent_responses: list[dict]
 ) -> str:

@@ -415,6 +415,19 @@ export async function resetDemo() {
   return res.json();
 }
 
+export async function summarizeSession(
+  messages: Array<{ role: string; content: string }>,
+): Promise<string> {
+  const res = await apiFetch(`/api/orchestrate/summarize-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+  if (!res.ok) throw new Error(`summarize-session failed: ${res.status}`);
+  const data = (await res.json()) as { summary: string };
+  return data.summary;
+}
+
 export async function fetchActivity(type?: string, limit?: number) {
   const params = new URLSearchParams();
   if (type) params.set("type", type);

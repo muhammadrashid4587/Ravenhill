@@ -44,6 +44,15 @@ export interface StoredSession {
   updatedAt: number;
   targetAgentId?: string;
   targetAgentName?: string;
+  // When set, the session has been compressed: `messages` is empty and
+  // `summary` holds the LLM-generated note. Title and other metadata
+  // are preserved so the row still renders sensibly in the dropdown.
+  compressed?: boolean;
+  summary?: string;
+  // Original message count before compression — shown in the dropdown
+  // so the user knows "this was a 12-message conversation, now folded
+  // into 3 sentences."
+  originalMessageCount?: number;
 }
 
 function hasStorage(): boolean {
@@ -93,6 +102,30 @@ export function deleteSession(agentId: string, sessionId: string): void {
     agentId,
     readAll(agentId).filter((s) => s.id !== sessionId),
   );
+}
+
+// Replace a session's full message list with a compressed summary. The
+// session row stays in history (it still counts against MAX_SESSIONS)
+// but `messages` is emptied and `summary` carries the gist.
+export function markSessionCompressed(
+  agentId: string,
+  sessionId: string,
+  summary: string,
+): void {
+  const all = readAll(agentId);
+  const idx = all.findIndex((s) => s.id === sessionId);
+  if (idx < 0) return;
+  const original = all[idx];
+  all[idx] = {
+    ...original,
+    messages: [],
+    compressed: true,
+    summary,
+    originalMessageCount:
+      original.originalMessageCount ?? original.messages.length,
+    updatedAt: Date.now(),
+  };
+  writeAll(agentId, all);
 }
 
 // Derive a human-readable title from the first user message, falling
