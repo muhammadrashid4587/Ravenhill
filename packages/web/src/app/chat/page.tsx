@@ -21,6 +21,8 @@ import {
   Search,
   Sparkles,
   CheckCircle2,
+  ChevronDown,
+  Trash2,
 } from "lucide-react";
 import ChatMessage from "@/components/ChatMessage";
 import ApprovalPopup from "@/components/ApprovalPopup";
@@ -42,6 +44,16 @@ import {
   fetchSlackChannels,
   fetchSlackThread,
 } from "@/lib/mocks";
+import {
+  listSessions,
+  loadSession,
+  saveSession,
+  deleteSession,
+  newSessionId,
+  formatRelative,
+  MAX_SESSIONS,
+  type StoredSession,
+} from "@/lib/chatHistory";
 import type {
   ChatAttachment,
   NotificationItem,
@@ -302,6 +314,17 @@ function ChatInner() {
   const [loading, setLoading] = useState(false);
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // Local chat history (browser-only, per-agent localStorage). The
+  // `currentSessionLocalId` identifies which slot in history this open
+  // conversation is bound to; rotates when the user clicks "New chat" or
+  // loads a past session from the dropdown.
+  const [currentSessionLocalId, setCurrentSessionLocalId] = useState<string>(
+    () => newSessionId(),
+  );
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historySessions, setHistorySessions] = useState<StoredSession[]>([]);
+  const historyRef = useRef<HTMLDivElement>(null);
 
   // Pending attachments staged for the next send
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
@@ -1078,10 +1101,9 @@ function ChatInner() {
     setLoading(false);
   };
 
-  // Starts a fresh chat session. Clears client-side state and drops
-  // `sessionId` so the next orchestrate call mints a new server-side
-  // session. The previous session's rows stay in `conversation_messages`
-  // so they can be surfaced from history later.
+  // Starts a fresh chat session. Clears client-side state, drops the
+  // server `sessionId`, and rotates `currentSessionLocalId` so the new
+  // conversation persists as its own slot in localStorage history.
   const handleNewChat = () => {
     pendingAttachments.forEach((a) => {
       if (a.url?.startsWith("blob:")) URL.revokeObjectURL(a.url);
@@ -1099,8 +1121,106 @@ function ChatInner() {
     setSessionId(null);
     setPendingAttachments([]);
     setAttachmentError(null);
+    setCurrentSessionLocalId(newSessionId());
     closeSlackChannel();
   };
+
+  // Restore a previous session from local history. Attachments come
+  // back as metadata only — their bytes don't survive localStorage.
+  const handleLoadHistory = (sessionLocalId: string) => {
+    if (!myAgent) return;
+    const stored = loadSession(myAgent.id, sessionLocalId);
+    if (!stored) return;
+    messages.forEach((m) => {
+      m.attachments?.forEach((a) => {
+        if (a.url?.startsWith("blob:")) URL.revokeObjectURL(a.url);
+      });
+    });
+    const restored: Message[] = stored.messages.map((m) => ({
+      id: m.id,
+      sender: m.sender,
+      content: m.content,
+      isAgent: m.isAgent,
+      timestamp: m.timestamp,
+      type: m.type as Message["type"],
+      channel: m.channel,
+      attachments: m.attachments?.map((a) => ({
+        id: a.id,
+        name: a.name,
+        mime_type: a.mime_type,
+        size_bytes: a.size_bytes,
+        source: a.source,
+      })),
+    }));
+    setMessages(restored);
+    setApproval(null);
+    setActivitySteps([]);
+    setReachOuts([]);
+    setCurrentSources([]);
+    setSessionId(null);
+    setPendingAttachments([]);
+    setAttachmentError(null);
+    setCurrentSessionLocalId(sessionLocalId);
+    setHistoryOpen(false);
+  };
+
+  const handleDeleteHistory = (sessionLocalId: string) => {
+    if (!myAgent) return;
+    deleteSession(myAgent.id, sessionLocalId);
+    setHistorySessions(listSessions(myAgent.id));
+  };
+
+  // Persist the active conversation to localStorage whenever it
+  // changes. `saveSession` no-ops on empty message lists so opening the
+  // page and never sending anything doesn't pollute history.
+  useEffect(() => {
+    if (!myAgent) return;
+    saveSession(myAgent.id, {
+      id: currentSessionLocalId,
+      messages: messages.map((m) => ({
+        id: m.id,
+        sender: m.sender,
+        content: m.content,
+        isAgent: m.isAgent,
+        timestamp: m.timestamp,
+        type: m.type,
+        channel: m.channel,
+        attachments: m.attachments?.map((a) => ({
+          id: a.id,
+          name: a.name,
+          mime_type: a.mime_type,
+          size_bytes: a.size_bytes,
+          source: a.source,
+        })),
+      })),
+      targetAgentId: targetAgent?.id,
+      targetAgentName: targetAgent?.name,
+    });
+  }, [messages, currentSessionLocalId, myAgent, targetAgent]);
+
+  // Refresh the history list whenever the dropdown opens so it reflects
+  // the latest entries (including the one being actively written to).
+  useEffect(() => {
+    if (!historyOpen || !myAgent) return;
+    setHistorySessions(listSessions(myAgent.id));
+  }, [historyOpen, myAgent, messages]);
+
+  // Close the history dropdown on outside click / Escape.
+  useEffect(() => {
+    if (!historyOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (!historyRef.current?.contains(e.target as Node)) setHistoryOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHistoryOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [historyOpen]);
 
   // ---- Not logged in ----
   if (!myAgent) {
@@ -1320,12 +1440,92 @@ function ChatInner() {
                   <p className="text-[11px] text-smoke">{myAgent.role}</p>
                 </div>
               </div>
-              <button
-                onClick={handleNewChat}
-                className="text-xs text-smoke hover:text-parchment px-2.5 py-1 rounded-md hover:bg-white/[0.04] transition"
-              >
-                New chat
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleNewChat}
+                  className="text-xs text-smoke hover:text-parchment px-2.5 py-1 rounded-md hover:bg-white/[0.04] transition"
+                >
+                  New chat
+                </button>
+                <div className="relative" ref={historyRef}>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen((v) => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={historyOpen}
+                    aria-label="Chat history"
+                    className="flex items-center gap-1 text-xs text-smoke hover:text-parchment px-2 py-1 rounded-md hover:bg-white/[0.04] transition"
+                  >
+                    <Clock className="w-3.5 h-3.5" strokeWidth={1.75} />
+                    <ChevronDown className="w-3 h-3" strokeWidth={1.75} />
+                  </button>
+                  {historyOpen && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 top-full mt-1.5 w-72 max-h-96 overflow-y-auto bg-obsidian border border-white/[0.08] rounded-lg shadow-[0_10px_40px_-12px_rgba(0,0,0,0.8)] py-1 z-30"
+                    >
+                      <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-dusk border-b border-white/[0.06]">
+                        Recent chats · last {MAX_SESSIONS}
+                      </div>
+                      {historySessions.length === 0 ? (
+                        <div className="px-3 py-4 text-[11px] text-dusk">
+                          No saved chats yet.
+                        </div>
+                      ) : (
+                        historySessions.map((s) => {
+                          const isActive = s.id === currentSessionLocalId;
+                          return (
+                            <div
+                              key={s.id}
+                              className={`group flex items-start gap-2 px-3 py-2 hover:bg-white/[0.04] transition ${
+                                isActive ? "bg-white/[0.04]" : ""
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleLoadHistory(s.id)}
+                                className="flex-1 min-w-0 text-left"
+                                role="menuitem"
+                              >
+                                <div className="text-[12px] text-parchment truncate">
+                                  {s.title}
+                                </div>
+                                <div className="text-[10px] text-dusk flex items-center gap-1.5 mt-0.5">
+                                  <span>{formatRelative(s.updatedAt)}</span>
+                                  <span>·</span>
+                                  <span>
+                                    {s.messages.length} msg
+                                    {s.messages.length === 1 ? "" : "s"}
+                                  </span>
+                                  {s.targetAgentName && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="truncate">
+                                        → {s.targetAgentName}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteHistory(s.id);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 text-dusk hover:text-claret transition shrink-0 p-1"
+                                aria-label={`Delete chat: ${s.title}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" strokeWidth={1.75} />
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </header>
 
             {targetAgent && (
