@@ -30,7 +30,6 @@ import {
   orchestrateStream,
   submitApproval,
   completeDocRequest,
-  resetDemo,
   fetchAgents,
   sendAgentMessage,
   sendFileToAgent,
@@ -1079,9 +1078,11 @@ function ChatInner() {
     setLoading(false);
   };
 
-  const handleReset = async () => {
-    await resetDemo();
-    // Revoke blob URLs to avoid leaks
+  // Starts a fresh chat session. Clears client-side state and drops
+  // `sessionId` so the next orchestrate call mints a new server-side
+  // session. The previous session's rows stay in `conversation_messages`
+  // so they can be surfaced from history later.
+  const handleNewChat = () => {
     pendingAttachments.forEach((a) => {
       if (a.url?.startsWith("blob:")) URL.revokeObjectURL(a.url);
     });
@@ -1320,10 +1321,10 @@ function ChatInner() {
                 </div>
               </div>
               <button
-                onClick={handleReset}
+                onClick={handleNewChat}
                 className="text-xs text-smoke hover:text-parchment px-2.5 py-1 rounded-md hover:bg-white/[0.04] transition"
               >
-                Clear
+                New chat
               </button>
             </header>
 

@@ -209,7 +209,7 @@ export async function replyToAgentMessage(
 
 const FILE_MARKER_OPEN = "⟦file:RAVENHILL_V1⟧";
 const FILE_MARKER_CLOSE = "⟦/file⟧";
-const MAX_EMBEDDED_FILE_BYTES = 256 * 1024;
+const MAX_EMBEDDED_FILE_BYTES = 5 * 1024 * 1024;
 
 async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
