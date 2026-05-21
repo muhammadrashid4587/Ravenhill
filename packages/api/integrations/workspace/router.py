@@ -1,7 +1,9 @@
 """HTTP router for Google Workspace endpoints — Calendar / Drive / Gmail."""
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
+from auth.deps import get_current_agent
+from db import AgentRow
 from integrations.google_meet import (
     _coerce_agent_uuid,
     _has_tokens,
@@ -16,6 +18,8 @@ from integrations.workspace.adapters import (
     list_drive_files,
     list_drive_folders,
     list_gmail_threads,
+    list_google_birthdays,
+    upload_to_drive,
 )
 from integrations.workspace.agent_surfaces import (
     build_pre_meeting_brief,
@@ -23,6 +27,10 @@ from integrations.workspace.agent_surfaces import (
 )
 
 router = APIRouter()
+
+
+MAX_DRIVE_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB — anything larger should
+# come from Drive directly, not be re-encoded over the wire.
 
 
 # The "agent_id" query param is optional — when omitted, seed data is returned.
@@ -51,6 +59,50 @@ async def drive_folders(agent_id: str = Query(default="demo")):
         return await list_drive_folders(agent_id)
     except Exception as e:  # pragma: no cover
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/drive/upload")
+async def drive_upload(
+    file: UploadFile = File(...),
+    filename: str | None = Form(default=None),
+    agent: AgentRow = Depends(get_current_agent),
+):
+    """Mirror an in-chat shared file into the sender's Google Drive.
+
+    Best-effort: when the user hasn't connected Google, or the drive.file
+    scope is missing (because they consented under an older OAuth flow),
+    the endpoint returns `{"uploaded": false, "reason": "..."}`. The
+    chat share itself is independent of this call — the Drive copy is a
+    convenience mirror, not the source of truth.
+    """
+    content = await file.read()
+    if len(content) > MAX_DRIVE_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file_too_large")
+
+    name = (filename or file.filename or "Untitled").strip() or "Untitled"
+    mime = file.content_type or "application/octet-stream"
+
+    result = await upload_to_drive(str(agent.id), name, mime, content)
+    if result is None:
+        return {
+            "uploaded": False,
+            "reason": (
+                "google_not_connected_or_scope_missing"
+            ),
+        }
+    return {
+        "uploaded": True,
+        "file": result,
+    }
+
+
+@router.get("/contacts/birthdays")
+async def contacts_birthdays(
+    agent: AgentRow = Depends(get_current_agent),
+):
+    """Birthdays for the user's Google contacts. Empty list when the user
+    hasn't connected Google."""
+    return await list_google_birthdays(str(agent.id))
 
 
 @router.get("/gmail/threads")
@@ -121,6 +173,7 @@ async def google_status(agent_id: str = Query(default="demo")):
         "scopes": [
             "calendar.events",
             "drive.readonly",
+            "drive.file",
             "gmail.readonly",
             "contacts.readonly",
             "contacts.other.readonly",

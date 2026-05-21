@@ -253,6 +253,98 @@ async def list_drive_files(agent_id: str) -> list[dict[str, Any]]:
     return await asyncio.to_thread(_fetch)
 
 
+RAVENHILL_FOLDER_NAME = "Ravenhill — Shared files"
+
+
+async def upload_to_drive(
+    agent_id: str,
+    filename: str,
+    mime_type: str,
+    content: bytes,
+) -> dict[str, Any] | None:
+    """Upload a file to the user's Drive into the Ravenhill folder.
+
+    Finds or creates a folder named `Ravenhill — Shared files` at the root
+    of the user's Drive, then uploads `content` into it under `filename`.
+    Returns {id, name, url} on success, None when Drive isn't writable
+    (no Google credentials, or scopes haven't been bumped yet).
+
+    The folder + file are created with the `drive.file` scope, which means
+    the user only ever grants the app access to *files we created* — we
+    can't read or touch anything else in their Drive.
+    """
+    if await _use_seed(agent_id):
+        return None
+
+    import asyncio
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaInMemoryUpload
+
+    creds = await _build_credentials(agent_id)
+    scopes = set(creds.scopes or [])
+    write_scope = "https://www.googleapis.com/auth/drive.file"
+    if write_scope not in scopes:
+        log.info(
+            "drive.upload: skipping — agent %s has not consented to drive.file",
+            agent_id,
+        )
+        return None
+
+    def _upload() -> dict[str, Any] | None:
+        try:
+            service = build("drive", "v3", credentials=creds)
+
+            # Find-or-create the Ravenhill folder.
+            q = (
+                f"name = '{RAVENHILL_FOLDER_NAME}' and "
+                "mimeType = 'application/vnd.google-apps.folder' and "
+                "trashed = false"
+            )
+            search = service.files().list(
+                q=q,
+                fields="files(id,name)",
+                pageSize=1,
+            ).execute()
+            folder_id: str | None = None
+            existing = search.get("files") or []
+            if existing:
+                folder_id = existing[0]["id"]
+            else:
+                folder = service.files().create(
+                    body={
+                        "name": RAVENHILL_FOLDER_NAME,
+                        "mimeType": "application/vnd.google-apps.folder",
+                    },
+                    fields="id",
+                ).execute()
+                folder_id = folder.get("id")
+
+            if not folder_id:
+                return None
+
+            media = MediaInMemoryUpload(content, mimetype=mime_type or "application/octet-stream")
+            created = service.files().create(
+                body={
+                    "name": filename,
+                    "parents": [folder_id],
+                    "mimeType": mime_type or "application/octet-stream",
+                    "description": "Mirrored from Ravenhill chat share.",
+                },
+                media_body=media,
+                fields="id,name,webViewLink",
+            ).execute()
+            return {
+                "id": created.get("id"),
+                "name": created.get("name"),
+                "url": created.get("webViewLink"),
+            }
+        except Exception:  # pragma: no cover — defensive log only
+            log.exception("drive.upload failed for agent %s", agent_id)
+            return None
+
+    return await asyncio.to_thread(_upload)
+
+
 async def list_drive_folders(agent_id: str) -> list[dict[str, Any]]:
     """Virtual folders (My Drive / Shared / Starred / Recent / Meet).
 
@@ -519,6 +611,15 @@ _CONTACTS_SEED: list[dict[str, Any]] = [
 ]
 
 
+_BIRTHDAYS_SEED: list[dict[str, Any]] = [
+    # Year is intentionally missing on some seeds — Google returns
+    # year-less birthdays for contacts who never filled the year in.
+    {"name": "Muhammad Rashid", "email": "muhammad@e-agent.ai", "month": 7, "day": 12, "year": None},
+    {"name": "Max Chamuel", "email": "max@e-agent.ai", "month": 11, "day": 3, "year": 1997},
+    {"name": "Likitha Kambidi", "email": "likitha@e-agent.ai", "month": 4, "day": 26, "year": None},
+]
+
+
 async def list_google_contacts(agent_id: str) -> list[dict[str, Any]]:
     """Return the user's Google contacts as [{name, email}].
 
@@ -588,6 +689,90 @@ async def list_google_contacts(agent_id: str) -> list[dict[str, Any]]:
                     break
         except Exception:  # pragma: no cover
             log.exception("People.otherContacts.list failed for agent %s", agent_id)
+
+        return out
+
+    return await asyncio.to_thread(_fetch)
+
+
+async def list_google_birthdays(agent_id: str) -> list[dict[str, Any]]:
+    """Return [{name, email, month, day, year?}] for the user's contacts.
+
+    Birthdays from the People API arrive as either a `date` sub-object
+    (year/month/day, where year is optional) or as a free-text string.
+    We only return ones with a numeric month + day — the calendar
+    needs that to position the event.
+
+    Year may be None when the contact only stored month/day (common
+    when people add birthdays from email signature parsing). Callers
+    that need a concrete date in the current year just default it to
+    the cursor year.
+    """
+    if await _use_seed(agent_id):
+        return list(_BIRTHDAYS_SEED)
+
+    import asyncio
+    from googleapiclient.discovery import build
+
+    creds = await _build_credentials(agent_id)
+
+    def _fetch() -> list[dict[str, Any]]:
+        service = build("people", "v1", credentials=creds)
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        def _absorb(person: dict[str, Any]) -> None:
+            birthdays = person.get("birthdays") or []
+            if not birthdays:
+                return
+            bday = next(
+                (b for b in birthdays if (b.get("date") or {}).get("month")),
+                None,
+            )
+            if not bday:
+                return
+            date_obj = bday.get("date") or {}
+            month = date_obj.get("month")
+            day = date_obj.get("day")
+            if month is None or day is None:
+                return
+            year = date_obj.get("year")
+
+            emails = person.get("emailAddresses") or []
+            email = ""
+            if emails:
+                email = (emails[0].get("value") or "").strip().lower()
+            names = person.get("names") or []
+            display = (names[0].get("displayName") or "") if names else ""
+            key = (email or display).strip().lower()
+            if not key or key in seen:
+                return
+            seen.add(key)
+            out.append({
+                "name": display or (email.split("@", 1)[0] if email else "(unknown)"),
+                "email": email,
+                "month": month,
+                "day": day,
+                "year": year,
+            })
+
+        try:
+            page_token: str | None = None
+            for _ in range(5):
+                req = service.people().connections().list(
+                    resourceName="people/me",
+                    pageSize=1000,
+                    personFields="names,emailAddresses,birthdays",
+                    pageToken=page_token,
+                )
+                res = req.execute()
+                for p in res.get("connections", []) or []:
+                    _absorb(p)
+                page_token = res.get("nextPageToken")
+                if not page_token:
+                    break
+        except Exception:  # pragma: no cover
+            log.exception("People.connections.list (birthdays) failed for %s", agent_id)
 
         return out
 

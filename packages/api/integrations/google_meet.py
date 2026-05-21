@@ -42,6 +42,10 @@ log = logging.getLogger("integrations.google_meet")
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/drive.readonly",
+    # drive.file is restricted to files the app created (or that the user
+    # explicitly opens with our app). Used by /api/workspace/drive/upload
+    # to mirror chat-shared files into a "Ravenhill — Shared files" folder.
+    "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/gmail.readonly",
     # People API — read the user's saved contacts and auto-discovered
     # "other contacts" (people they've corresponded with). Used by /api/people

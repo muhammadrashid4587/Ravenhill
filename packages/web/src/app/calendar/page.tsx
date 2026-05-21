@@ -20,15 +20,18 @@ import {
   Plus,
   Trash2,
   X,
+  Cake,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
   createTimeBlock,
   deleteTimeBlock,
+  fetchBirthdays,
   fetchGoogleStatus,
   fetchMeetings,
   fetchTimeBlocks,
   fetchWorkspaceCalendar,
+  type BirthdayContact,
   type GoogleStatus,
   type Meeting,
   type TimeBlock,
@@ -81,6 +84,15 @@ type CalendarItem =
       blockKind: TimeBlockKind;
       synced_to_google: boolean;
       notes: string | null;
+    }
+  | {
+      kind: "birthday";
+      id: string;
+      title: string;
+      start: Date;
+      end: Date;
+      email: string;
+      age: number | null;
     };
 
 const BLOCK_KIND_LABEL: Record<TimeBlockKind, string> = {
@@ -275,6 +287,7 @@ export default function CalendarPage() {
   const [source, setSource] = useState<CalendarSource>("google");
   const [blocks, setBlocks] = useState<TimeBlock[]>([]);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
+  const [birthdays, setBirthdays] = useState<BirthdayContact[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -305,6 +318,18 @@ export default function CalendarPage() {
   useEffect(() => {
     refreshBlocks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myAgent]);
+
+  // Birthdays from Google Contacts — global per-user, not day-scoped.
+  // Cheap to refetch; we only do it once per session anyway.
+  useEffect(() => {
+    if (!myAgent) {
+      setBirthdays([]);
+      return;
+    }
+    fetchBirthdays()
+      .then(setBirthdays)
+      .catch(() => setBirthdays([]));
   }, [myAgent]);
 
   useEffect(() => {
@@ -444,10 +469,33 @@ export default function CalendarPage() {
       notes: b.notes,
     }));
 
-    return [...evs, ...mtgs, ...deadlines, ...blockItems].sort(
+    // Birthdays — generate three calendar entries per contact (this year,
+    // last year, next year) so the right one shows up regardless of which
+    // year the user is browsing. They're all-day at midnight local.
+    const birthdayItems: CalendarItem[] = [];
+    const cursorYear = cursor.getFullYear();
+    const years = [cursorYear - 1, cursorYear, cursorYear + 1];
+    for (const b of birthdays) {
+      for (const y of years) {
+        const start = new Date(y, b.month - 1, b.day, 0, 0, 0, 0);
+        const end = new Date(y, b.month - 1, b.day, 23, 59, 0, 0);
+        const age = b.year ? y - b.year : null;
+        birthdayItems.push({
+          kind: "birthday",
+          id: `bd:${b.email || b.name}:${y}`,
+          title: b.name,
+          start,
+          end,
+          email: b.email,
+          age,
+        });
+      }
+    }
+
+    return [...evs, ...mtgs, ...deadlines, ...blockItems, ...birthdayItems].sort(
       (a, b) => a.start.getTime() - b.start.getTime(),
     );
-  }, [events, meetings, pending, blocks]);
+  }, [events, meetings, pending, blocks, birthdays, cursor]);
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, CalendarItem[]>();
@@ -867,6 +915,9 @@ function AgendaView({
   const blocksOnly = items.filter(
     (i): i is Extract<CalendarItem, { kind: "block" }> => i.kind === "block",
   );
+  const birthdaysOnly = items.filter(
+    (i): i is Extract<CalendarItem, { kind: "birthday" }> => i.kind === "birthday",
+  );
   const high = eventsOnly.filter((e) => e.eventPriority === "high");
   const low = eventsOnly.filter((e) => e.eventPriority === "low");
 
@@ -926,6 +977,34 @@ function AgendaView({
                 <BlockRow key={b.id} block={b} now={now} />
               ))}
             </div>
+          )}
+
+          {birthdaysOnly.length > 0 && (
+            <>
+              <h3 className="text-[10px] uppercase tracking-wider text-dusk mt-5 mb-2 flex items-center gap-1.5">
+                <Cake className="w-3 h-3 text-[#F9A8D4]" />
+                Birthdays
+                <span className="font-mono">{birthdaysOnly.length}</span>
+              </h3>
+              <div className="space-y-1.5">
+                {birthdaysOnly.map((b) => (
+                  <div
+                    key={b.id}
+                    className="bg-ink border border-white/[0.06] rounded-md px-2.5 py-1.5 text-[12px] flex items-center gap-2"
+                  >
+                    <Cake className="w-3 h-3 text-[#F9A8D4] shrink-0" />
+                    <span className="text-parchment truncate flex-1">
+                      {b.title}
+                    </span>
+                    {b.age !== null && (
+                      <span className="text-dusk text-[10px]">
+                        turns {b.age}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </section>
 
@@ -1439,6 +1518,17 @@ function CellChip({ item, expanded }: { item: CalendarItem; expanded?: boolean }
       </span>
     );
   }
+  if (item.kind === "birthday") {
+    return (
+      <span
+        className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[rgba(244,114,182,0.14)] text-[#F9A8D4] border border-[rgba(244,114,182,0.35)] truncate"
+        title={`Birthday — ${item.title}`}
+      >
+        <Cake className="w-2.5 h-2.5 shrink-0" />
+        <span className="truncate">{item.title}</span>
+      </span>
+    );
+  }
   const key = item.status === "done" ? "done" : item.priority;
   return (
     <span
@@ -1779,6 +1869,10 @@ function BoardView({
                         ) : it.kind === "block" ? (
                           <span className="text-[9px] px-1.5 py-0.5 rounded border shrink-0 bg-[rgba(96,165,250,0.10)] text-[#BFDBFE] border-[rgba(96,165,250,0.35)]">
                             {BLOCK_KIND_LABEL[it.blockKind]}
+                          </span>
+                        ) : it.kind === "birthday" ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded border shrink-0 bg-[rgba(244,114,182,0.10)] text-[#F9A8D4] border-[rgba(244,114,182,0.35)]">
+                            birthday
                           </span>
                         ) : (
                           <span

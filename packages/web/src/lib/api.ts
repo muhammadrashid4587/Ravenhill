@@ -965,6 +965,54 @@ export async function fetchPeople(): Promise<Person[]> {
   return res.json();
 }
 
+// ---- Drive auto-upload (chat file mirror) ----
+
+export interface DriveUploadResult {
+  uploaded: boolean;
+  reason?: string;
+  file?: {
+    id: string;
+    name: string;
+    url: string;
+  };
+}
+
+export async function uploadFileToDrive(
+  blob: Blob,
+  filename: string,
+  mimeType: string,
+): Promise<DriveUploadResult> {
+  const form = new FormData();
+  // Re-wrap so the server sees the right MIME, even if the source blob
+  // didn't carry one.
+  form.append("file", new File([blob], filename, { type: mimeType }));
+  form.append("filename", filename);
+  const res = await apiFetch("/api/workspace/drive/upload", {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    return { uploaded: false, reason: `http_${res.status}` };
+  }
+  return res.json();
+}
+
+// ---- Birthdays (Google Contacts) ----
+
+export interface BirthdayContact {
+  name: string;
+  email: string;
+  month: number;
+  day: number;
+  year: number | null;
+}
+
+export async function fetchBirthdays(): Promise<BirthdayContact[]> {
+  const res = await apiFetch("/api/workspace/contacts/birthdays");
+  if (!res.ok) return [];
+  return res.json();
+}
+
 // ---- Time blocks (focus / deep-work blocks) ----
 
 export type TimeBlockKind = "focus" | "buffer" | "deep_work" | "personal";

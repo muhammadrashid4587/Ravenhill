@@ -41,6 +41,7 @@ import {
   fetchAgentThread,
   parseFileMarker,
   summarizeSession,
+  uploadFileToDrive,
   type AgentLedgerMessage,
 } from "@/lib/api";
 import {
@@ -768,6 +769,30 @@ function ChatInner() {
           `${att.name} was sent to ${person.name}`,
           "system",
         );
+        // Best-effort: mirror the file into the sender's Google Drive in
+        // a "Ravenhill — Shared files" folder. Failure here is silent —
+        // the ledger share is the source of truth; the Drive copy is a
+        // convenience so the user can find it later from drive.google.com.
+        if (att.url && att.url.startsWith("blob:")) {
+          try {
+            const blobRes = await fetch(att.url);
+            const blob = await blobRes.blob();
+            const result = await uploadFileToDrive(
+              blob,
+              att.name,
+              att.mime_type || blob.type || "application/octet-stream",
+            );
+            if (result.uploaded && result.file?.url) {
+              pushMsg(
+                "System",
+                `${att.name} also mirrored to your Drive — ${result.file.url}`,
+                "system",
+              );
+            }
+          } catch {
+            // Network / blob unreadable — ignore, share is already done.
+          }
+        }
       }
       pushActivity(
         "Sent",
