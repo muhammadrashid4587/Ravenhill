@@ -1,24 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Loader2, Search, Users } from "lucide-react";
 import { useAuth, type Agent } from "@/lib/AuthContext";
 import { fetchAgents } from "@/lib/api";
-
-// Three.js pulls in `window` at module init, so load client-only.
-const OrgWorld = dynamic(
-  () => import("@/components/organization/OrgWorld"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-5 h-5 text-claret animate-spin" />
-      </div>
-    ),
-  },
-);
+import OrgGraph from "@/components/organization/OrgGraph";
 
 export default function OrganizationPage() {
   const router = useRouter();
@@ -44,8 +31,7 @@ export default function OrganizationPage() {
         <div>
           <h1 className="text-lg font-semibold text-bone">Organization</h1>
           <p className="text-xs text-smoke mt-0.5">
-            {agents.length} people — drag to orbit, pinch to zoom, click a
-            person to reach out
+            {agents.length} people — hover to isolate, click a person to reach out
           </p>
         </div>
 
@@ -74,7 +60,7 @@ export default function OrganizationPage() {
             </p>
           </div>
         ) : (
-          <OrgWorld
+          <OrgGraph
             agents={agents}
             myAgentId={myAgent?.id ?? null}
             myAgentName={myAgent?.name}
