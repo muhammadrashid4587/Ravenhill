@@ -512,6 +512,37 @@ class MeetingFileRow(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class TimeBlockRow(Base):
+    """User-created focus / time block.
+
+    Owned by exactly one agent, scoped to their org. When the user is
+    connected to Google with calendar.events scope, `google_event_id`
+    holds the corresponding Calendar event id so we can keep the two
+    in sync. When Google isn't connected, the block lives in Ravenhill
+    only and `google_event_id` stays NULL.
+    """
+
+    __tablename__ = "time_blocks"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    org_id = Column(Uuid, ForeignKey("organizations.id"), nullable=True)
+    agent_id = Column(Uuid, ForeignKey("agents.id"), nullable=False)
+    title = Column(String(300), nullable=False)
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=False)
+    # "focus" | "buffer" | "deep_work" | "personal" — affects colour only
+    kind = Column(String(20), default="focus", nullable=False)
+    notes = Column(Text, nullable=True)
+    google_event_id = Column(String(300), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_time_blocks_agent_start", "agent_id", "start_time"),
+        Index("ix_time_blocks_org", "org_id"),
+    )
+
+
 async def init_db():
     """Create all tables if they don't exist."""
     async with engine.begin() as conn:
@@ -601,6 +632,13 @@ async def alter_table_if_needed():
             #     where the table already exists from a prior create_all. ---
             "CREATE INDEX IF NOT EXISTS ix_google_oauth_tokens_agent ON google_oauth_tokens (agent_id)",
             "CREATE INDEX IF NOT EXISTS ix_google_oauth_tokens_org ON google_oauth_tokens (org_id)",
+
+            # --- Time blocks (focus / deep-work scheduling).
+            #     create_all builds the table on fresh DBs; the index +
+            #     org backfill below make this idempotent on prod. ---
+            "CREATE INDEX IF NOT EXISTS ix_time_blocks_agent_start ON time_blocks (agent_id, start_time)",
+            "CREATE INDEX IF NOT EXISTS ix_time_blocks_org ON time_blocks (org_id)",
+            f"UPDATE time_blocks SET org_id = '{default_org}' WHERE org_id IS NULL",
         ]
         for col_def in statements:
             try:

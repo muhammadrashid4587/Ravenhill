@@ -119,7 +119,7 @@ async def google_status(agent_id: str = Query(default="demo")):
         "connected": connected,
         "agent_id": agent_id,
         "scopes": [
-            "calendar.readonly",
+            "calendar.events",
             "drive.readonly",
             "gmail.readonly",
             "contacts.readonly",

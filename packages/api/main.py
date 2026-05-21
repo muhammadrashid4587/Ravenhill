@@ -17,6 +17,7 @@ from meetings.router import router as meetings_router
 from orchestrator import router as orchestrator_router
 from orgs.router import router as orgs_router
 from people.router import router as people_router
+from time_blocks.router import router as time_blocks_router
 
 
 @asynccontextmanager
@@ -85,6 +86,7 @@ app.include_router(meetings_router, prefix="/api/meetings", tags=["meetings"])
 app.include_router(orchestrator_router, prefix="/api/orchestrate", tags=["orchestrator"])
 app.include_router(orgs_router, prefix="/api/orgs", tags=["orgs"])
 app.include_router(people_router, prefix="/api/people", tags=["people"])
+app.include_router(time_blocks_router, prefix="/api/time-blocks", tags=["time-blocks"])
 
 
 @app.get("/health")

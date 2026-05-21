@@ -964,3 +964,72 @@ export async function fetchPeople(): Promise<Person[]> {
   if (!res.ok) throw new Error(`people fetch failed: ${res.status}`);
   return res.json();
 }
+
+// ---- Time blocks (focus / deep-work blocks) ----
+
+export type TimeBlockKind = "focus" | "buffer" | "deep_work" | "personal";
+
+export interface TimeBlock {
+  id: string;
+  agent_id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  kind: TimeBlockKind;
+  notes: string | null;
+  google_event_id: string | null;
+  synced_to_google: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CreateTimeBlockPayload {
+  title: string;
+  start_time: string;
+  end_time: string;
+  kind?: TimeBlockKind;
+  notes?: string | null;
+  sync_to_google?: boolean;
+}
+
+export async function fetchTimeBlocks(opts?: {
+  start?: Date;
+  end?: Date;
+}): Promise<TimeBlock[]> {
+  const params = new URLSearchParams();
+  if (opts?.start) params.set("start", opts.start.toISOString());
+  if (opts?.end) params.set("end", opts.end.toISOString());
+  const qs = params.toString();
+  const res = await apiFetch(`/api/time-blocks${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(`time blocks fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTimeBlock(
+  payload: CreateTimeBlockPayload,
+): Promise<TimeBlock> {
+  const res = await apiFetch("/api/time-blocks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = ((await res.json()) as { detail?: string }).detail ?? "";
+    } catch {
+      // ignore
+    }
+    throw new Error(detail || `time block create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteTimeBlock(blockId: string): Promise<void> {
+  const res = await apiFetch(`/api/time-blocks/${blockId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`time block delete failed: ${res.status}`);
+  }
+}

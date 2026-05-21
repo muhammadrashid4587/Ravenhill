@@ -30,8 +30,17 @@ log = logging.getLogger("integrations.google_meet")
 # Google OAuth scopes needed.
 # Single consent covers Calendar + Drive + Gmail so one OAuth flow unlocks
 # every workspace surface (Calendar, Drive, Inbox, Meet transcript fetch).
+#
+# `calendar.events` is a read+write scope — it supersedes the older
+# `calendar.readonly` (the reads still work) and adds the ability to
+# create/update/delete events. Required by /api/time-blocks so the user
+# can mirror their Ravenhill focus blocks onto Google Calendar.
+#
+# NOTE: Existing users who consented under the prior read-only scope will
+# need to re-authorize once for time-block sync to work — until they do,
+# blocks are created in Ravenhill only and silently skip the Google push.
 SCOPES = [
-    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/gmail.readonly",
     # People API — read the user's saved contacts and auto-discovered

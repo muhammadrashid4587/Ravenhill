@@ -16,14 +16,23 @@ import {
   CheckSquare,
   PenLine,
   BellRing,
+  Focus,
+  Plus,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
+  createTimeBlock,
+  deleteTimeBlock,
   fetchGoogleStatus,
   fetchMeetings,
+  fetchTimeBlocks,
   fetchWorkspaceCalendar,
   type GoogleStatus,
   type Meeting,
+  type TimeBlock,
+  type TimeBlockKind,
 } from "@/lib/api";
 import { fetchPendingItems } from "@/lib/mocks";
 import type { CalendarEvent, PendingItem } from "@/lib/types";
@@ -61,7 +70,25 @@ type CalendarItem =
       end: Date;
       priority: "high" | "medium" | "low";
       status: "todo" | "in_progress" | "done";
+    }
+  | {
+      kind: "block";
+      id: string;
+      title: string;
+      start: Date;
+      end: Date;
+      blockId: string;
+      blockKind: TimeBlockKind;
+      synced_to_google: boolean;
+      notes: string | null;
     };
+
+const BLOCK_KIND_LABEL: Record<TimeBlockKind, string> = {
+  focus: "Focus",
+  deep_work: "Deep work",
+  buffer: "Buffer",
+  personal: "Personal",
+};
 
 type ActionKind = "attend" | "note_taker" | "reminder";
 type ActionItem = {
@@ -246,6 +273,8 @@ export default function CalendarPage() {
   const [notifyEnabled, setNotifyEnabled] = useState(false);
   const [google, setGoogle] = useState<GoogleStatus | null>(null);
   const [source, setSource] = useState<CalendarSource>("google");
+  const [blocks, setBlocks] = useState<TimeBlock[]>([]);
+  const [blockModalOpen, setBlockModalOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -260,6 +289,22 @@ export default function CalendarPage() {
       setMeetings(m);
       setLoading(false);
     });
+  }, [myAgent]);
+
+  // Time blocks — separate fetch so signed-out users still get the rest of
+  // the calendar (blocks need a session; the API call would 401 anyway).
+  const refreshBlocks = async () => {
+    if (!myAgent) return;
+    try {
+      const next = await fetchTimeBlocks();
+      setBlocks(next);
+    } catch {
+      // Silently ignore — likely 401 in dev when not signed in.
+    }
+  };
+  useEffect(() => {
+    refreshBlocks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myAgent]);
 
   useEffect(() => {
@@ -387,10 +432,22 @@ export default function CalendarPage() {
         };
       });
 
-    return [...evs, ...mtgs, ...deadlines].sort(
+    const blockItems: CalendarItem[] = blocks.map((b) => ({
+      kind: "block",
+      id: `bl:${b.id}`,
+      blockId: b.id,
+      title: b.title,
+      start: new Date(b.start_time),
+      end: new Date(b.end_time),
+      blockKind: b.kind,
+      synced_to_google: b.synced_to_google,
+      notes: b.notes,
+    }));
+
+    return [...evs, ...mtgs, ...deadlines, ...blockItems].sort(
       (a, b) => a.start.getTime() - b.start.getTime(),
     );
-  }, [events, meetings, pending]);
+  }, [events, meetings, pending, blocks]);
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, CalendarItem[]>();
@@ -471,6 +528,14 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setBlockModalOpen(true)}
+              disabled={!myAgent}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-[rgba(96,165,250,0.30)] bg-[rgba(96,165,250,0.10)] text-[#BFDBFE] hover:bg-[rgba(96,165,250,0.18)] transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Time block
+            </button>
             <button
               onClick={handleToggleNotify}
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition ${
@@ -630,6 +695,27 @@ export default function CalendarPage() {
       {view !== "agenda" && view !== "list" && view !== "board" && (
         <DayDetailPanel day={selectedDay} items={dayItems(selectedDay)} />
       )}
+
+      {blockModalOpen && (
+        <TimeBlockModal
+          initialDay={selectedDay}
+          googleConnected={!!google?.connected}
+          onClose={() => setBlockModalOpen(false)}
+          onCreated={async () => {
+            setBlockModalOpen(false);
+            await refreshBlocks();
+          }}
+          onDelete={async (blockId) => {
+            try {
+              await deleteTimeBlock(blockId);
+              await refreshBlocks();
+            } catch {
+              /* swallow — surfacing via console is enough for now */
+            }
+          }}
+          existing={blocks}
+        />
+      )}
     </div>
   );
 }
@@ -778,6 +864,9 @@ function AgendaView({
   const eventsOnly = items.filter(
     (i): i is Extract<CalendarItem, { kind: "event" }> => i.kind === "event",
   );
+  const blocksOnly = items.filter(
+    (i): i is Extract<CalendarItem, { kind: "block" }> => i.kind === "block",
+  );
   const high = eventsOnly.filter((e) => e.eventPriority === "high");
   const low = eventsOnly.filter((e) => e.eventPriority === "low");
 
@@ -820,6 +909,21 @@ function AgendaView({
             <div className="space-y-2">
               {low.map((e) => (
                 <MeetingRow key={e.id} ev={e} now={now} muted />
+              ))}
+            </div>
+          )}
+
+          <h3 className="text-[10px] uppercase tracking-wider text-dusk mt-5 mb-2 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#60A5FA]" />
+            Focus blocks
+            <span className="font-mono">{blocksOnly.length}</span>
+          </h3>
+          {blocksOnly.length === 0 ? (
+            <EmptyCard label="No time blocks scheduled — add one with the Time block button." />
+          ) : (
+            <div className="space-y-2">
+              {blocksOnly.map((b) => (
+                <BlockRow key={b.id} block={b} now={now} />
               ))}
             </div>
           )}
@@ -929,6 +1033,359 @@ const ACTION_TINT: Record<ActionKind, string> = {
     "bg-[rgba(234,179,8,0.12)] text-[#FACC15] border-[rgba(234,179,8,0.36)]",
 };
 
+function BlockRow({
+  block,
+  now,
+}: {
+  block: Extract<CalendarItem, { kind: "block" }>;
+  now: Date;
+}) {
+  const past = block.end.getTime() < now.getTime();
+  const active =
+    block.start.getTime() <= now.getTime() && block.end.getTime() > now.getTime();
+  const durationMin = Math.max(
+    1,
+    Math.round((block.end.getTime() - block.start.getTime()) / 60_000),
+  );
+  return (
+    <div
+      className={`bg-ink border rounded-lg px-3 py-2.5 ${
+        active
+          ? "border-[rgba(96,165,250,0.55)]"
+          : "border-white/[0.06]"
+      } ${past ? "opacity-55" : ""}`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-[rgba(96,165,250,0.35)] bg-[rgba(96,165,250,0.10)] text-[#BFDBFE]">
+          <Focus className="w-3 h-3" />
+          {BLOCK_KIND_LABEL[block.blockKind]}
+        </span>
+        <span className="text-sm text-parchment truncate">{block.title}</span>
+        {!block.synced_to_google && (
+          <span
+            className="text-[9px] text-dusk"
+            title="Not synced to Google Calendar — connect Google with calendar.events scope to mirror this block."
+          >
+            local only
+          </span>
+        )}
+      </div>
+      <div className="mt-1 flex items-center gap-3 text-[11px] text-dusk">
+        <span className="flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          {formatTime(block.start)} – {formatTime(block.end)}
+        </span>
+        <span>{durationMin} min</span>
+        {active && <span className="text-[#60A5FA]">now</span>}
+      </div>
+      {block.notes && (
+        <p className="mt-1 text-[11px] text-smoke line-clamp-2">{block.notes}</p>
+      )}
+    </div>
+  );
+}
+
+function TimeBlockModal({
+  initialDay,
+  googleConnected,
+  existing,
+  onClose,
+  onCreated,
+  onDelete,
+}: {
+  initialDay: Date;
+  googleConnected: boolean;
+  existing: TimeBlock[];
+  onClose: () => void;
+  onCreated: () => Promise<void> | void;
+  onDelete: (blockId: string) => Promise<void> | void;
+}) {
+  // Seed default times: next half-hour boundary on the selected day, 60 min long.
+  const seed = useMemo(() => {
+    const base = new Date(initialDay);
+    const now = new Date();
+    if (sameDay(base, now)) {
+      base.setHours(now.getHours());
+      base.setMinutes(now.getMinutes() < 30 ? 30 : 0);
+      if (now.getMinutes() >= 30) base.setHours(now.getHours() + 1);
+    } else {
+      base.setHours(9);
+      base.setMinutes(0);
+    }
+    base.setSeconds(0);
+    base.setMilliseconds(0);
+    const start = base;
+    const end = new Date(start);
+    end.setMinutes(end.getMinutes() + 60);
+    return { start, end };
+  }, [initialDay]);
+
+  const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<TimeBlockKind>("focus");
+  const [date, setDate] = useState(toDateInput(seed.start));
+  const [startTime, setStartTime] = useState(toTimeInput(seed.start));
+  const [endTime, setEndTime] = useState(toTimeInput(seed.end));
+  const [notes, setNotes] = useState("");
+  const [syncToGoogle, setSyncToGoogle] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const todayBlocks = useMemo(
+    () =>
+      existing
+        .filter((b) => sameDay(new Date(b.start_time), initialDay))
+        .sort(
+          (a, b) =>
+            new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+        ),
+    [existing, initialDay],
+  );
+
+  const handleSubmit = async () => {
+    setError(null);
+    const startISO = combineDateTime(date, startTime).toISOString();
+    const endISO = combineDateTime(date, endTime).toISOString();
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+    if (new Date(endISO).getTime() <= new Date(startISO).getTime()) {
+      setError("End must be after start.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createTimeBlock({
+        title: title.trim(),
+        start_time: startISO,
+        end_time: endISO,
+        kind,
+        notes: notes.trim() || null,
+        sync_to_google: syncToGoogle,
+      });
+      await onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create the block.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-obsidian border border-white/[0.08] rounded-xl max-w-md w-[92vw] p-5 shadow-2xl">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h2 className="text-sm font-semibold text-bone flex items-center gap-2">
+              <Focus className="w-4 h-4 text-[#60A5FA]" />
+              New time block
+            </h2>
+            <p className="text-[11px] text-dusk mt-0.5">
+              {initialDay.toLocaleDateString([], {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-white/[0.05] text-smoke hover:text-parchment transition"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <label className="block">
+            <span className="text-[11px] text-dusk uppercase tracking-wider">
+              Title
+            </span>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Deep work on V1 onboarding"
+              className="mt-1 w-full bg-ink border border-white/[0.08] rounded-md px-3 py-2 text-sm text-parchment placeholder:text-dusk focus:outline-none focus:border-[rgba(96,165,250,0.55)]"
+              autoFocus
+            />
+          </label>
+
+          <div className="grid grid-cols-3 gap-2">
+            <label className="block">
+              <span className="text-[11px] text-dusk uppercase tracking-wider">
+                Date
+              </span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="mt-1 w-full bg-ink border border-white/[0.08] rounded-md px-2 py-2 text-sm text-parchment focus:outline-none focus:border-[rgba(96,165,250,0.55)]"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-dusk uppercase tracking-wider">
+                Start
+              </span>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="mt-1 w-full bg-ink border border-white/[0.08] rounded-md px-2 py-2 text-sm text-parchment focus:outline-none focus:border-[rgba(96,165,250,0.55)]"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] text-dusk uppercase tracking-wider">
+                End
+              </span>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="mt-1 w-full bg-ink border border-white/[0.08] rounded-md px-2 py-2 text-sm text-parchment focus:outline-none focus:border-[rgba(96,165,250,0.55)]"
+              />
+            </label>
+          </div>
+
+          <div>
+            <span className="text-[11px] text-dusk uppercase tracking-wider">
+              Type
+            </span>
+            <div className="mt-1 flex gap-1">
+              {(Object.keys(BLOCK_KIND_LABEL) as TimeBlockKind[]).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setKind(k)}
+                  className={`text-[11px] px-2.5 py-1 rounded border transition ${
+                    kind === k
+                      ? "bg-[rgba(96,165,250,0.18)] text-[#BFDBFE] border-[rgba(96,165,250,0.45)]"
+                      : "bg-ink text-smoke border-white/[0.08] hover:text-parchment"
+                  }`}
+                >
+                  {BLOCK_KIND_LABEL[k]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="text-[11px] text-dusk uppercase tracking-wider">
+              Notes
+            </span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional — what you're protecting this time for."
+              rows={2}
+              className="mt-1 w-full bg-ink border border-white/[0.08] rounded-md px-3 py-2 text-sm text-parchment placeholder:text-dusk focus:outline-none focus:border-[rgba(96,165,250,0.55)] resize-none"
+            />
+          </label>
+
+          <label className="flex items-center gap-2 text-[11px] text-smoke">
+            <input
+              type="checkbox"
+              checked={syncToGoogle}
+              onChange={(e) => setSyncToGoogle(e.target.checked)}
+              className="accent-[#60A5FA]"
+            />
+            <span>
+              Mirror to Google Calendar
+              {!googleConnected && (
+                <span className="text-dusk">
+                  {" "}
+                  — connect Google to enable
+                </span>
+              )}
+            </span>
+          </label>
+
+          {error && (
+            <div className="text-[11px] text-[#F87171] bg-[rgba(220,38,38,0.10)] border border-[rgba(220,38,38,0.30)] rounded px-2.5 py-1.5">
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="flex-1 px-3 py-2 text-sm rounded-md bg-[rgba(96,165,250,0.18)] text-[#BFDBFE] border border-[rgba(96,165,250,0.45)] hover:bg-[rgba(96,165,250,0.26)] transition disabled:opacity-50 disabled:cursor-wait"
+            >
+              {submitting ? "Saving…" : "Create block"}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-3 py-2 text-sm rounded-md border border-white/[0.08] text-smoke hover:text-parchment hover:bg-white/[0.04] transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        {todayBlocks.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-white/[0.06]">
+            <div className="text-[11px] text-dusk uppercase tracking-wider mb-2">
+              Today's blocks
+            </div>
+            <div className="space-y-1.5">
+              {todayBlocks.map((b) => (
+                <div
+                  key={b.id}
+                  className="flex items-center gap-2 text-[12px] bg-ink border border-white/[0.05] rounded px-2.5 py-1.5"
+                >
+                  <span className="text-[#BFDBFE] text-[10px]">
+                    {BLOCK_KIND_LABEL[b.kind]}
+                  </span>
+                  <span className="text-parchment flex-1 truncate">
+                    {b.title}
+                  </span>
+                  <span className="text-dusk text-[10px] tabular-nums">
+                    {formatTime(new Date(b.start_time))}–
+                    {formatTime(new Date(b.end_time))}
+                  </span>
+                  <button
+                    onClick={() => onDelete(b.id)}
+                    className="p-0.5 text-dusk hover:text-[#F87171] transition"
+                    aria-label="Delete block"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function toDateInput(d: Date): string {
+  // YYYY-MM-DD in local time — the <input type="date"> expects local
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function toTimeInput(d: Date): string {
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+function combineDateTime(dateStr: string, timeStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const [h, mm] = timeStr.split(":").map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, h ?? 0, mm ?? 0, 0, 0);
+}
+
 function ActionRow({ action }: { action: ActionItem }) {
   const Icon = ACTION_ICON[action.kind];
   return (
@@ -963,6 +1420,19 @@ function CellChip({ item, expanded }: { item: CalendarItem; expanded?: boolean }
         title={item.title}
       >
         <span className="w-1 h-1 rounded-full bg-[#F0B8C0] shrink-0" />
+        <span className="truncate">
+          {expanded ? `${formatTime(item.start)} · ${item.title}` : item.title}
+        </span>
+      </span>
+    );
+  }
+  if (item.kind === "block") {
+    return (
+      <span
+        className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[rgba(96,165,250,0.14)] text-[#BFDBFE] border border-[rgba(96,165,250,0.35)] truncate"
+        title={`${BLOCK_KIND_LABEL[item.blockKind]} · ${item.title}`}
+      >
+        <Focus className="w-2.5 h-2.5 shrink-0" />
         <span className="truncate">
           {expanded ? `${formatTime(item.start)} · ${item.title}` : item.title}
         </span>
@@ -1305,6 +1775,10 @@ function BoardView({
                             }`}
                           >
                             {it.eventPriority}
+                          </span>
+                        ) : it.kind === "block" ? (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded border shrink-0 bg-[rgba(96,165,250,0.10)] text-[#BFDBFE] border-[rgba(96,165,250,0.35)]">
+                            {BLOCK_KIND_LABEL[it.blockKind]}
                           </span>
                         ) : (
                           <span
